@@ -1,0 +1,11 @@
+{
+  "name": "biolink-launcher",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node start.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

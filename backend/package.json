@@ -1,0 +1,29 @@
+{
+  "name": "biolink-api",
+  "version": "1.0.0",
+  "description": "BioLink PostgreSQL Backend API",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "import-data": "tsx src/scripts/import-data.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.13.0",
+    "@azure/openai": "^2.0.0",
+    "@hono/node-server": "^1.13.0",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "hono": "^4.6.0",
+    "openai": "^6.15.0",
+    "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}
