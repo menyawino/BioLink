@@ -31,9 +31,9 @@ else
     sleep 3
 fi
 
-# Start Backend
-echo -e "${GREEN}Starting Backend Server...${NC}"
-(cd "$SCRIPT_DIR/backend" && mamba run -n gcloud npm run dev) &
+# Start Backend (Python FastAPI)
+echo -e "${GREEN}Starting Backend Server (Python FastAPI)...${NC}"
+(cd "$SCRIPT_DIR/backend-py" && bash start.sh) &
 BACKEND_PID=$!
 sleep 2
 

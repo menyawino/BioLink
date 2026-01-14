@@ -5,9 +5,10 @@ import { Input } from "./ui/input";
 import { ScrollArea } from "./ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Badge } from "./ui/badge";
-import { Send, Loader2, Bot, User, Sparkles, ArrowRight, Activity, Users, BarChart3 } from "lucide-react";
+import { Send, Loader2, Bot, User, Sparkles, ArrowRight, Activity, Users, BarChart3, Copy, Check } from "lucide-react";
 import { sendChatMessage } from "../api/chat";
 import { useApp } from "../context/AppContext";
+import { createFoundryAgentService, AgentResponseChunk } from "../api/foundry";
 
 interface Message {
   id: string;
@@ -17,11 +18,88 @@ interface Message {
   actions?: { label: string; view?: string; onClick?: () => void }[];
   error?: boolean;
   data?: any;
+  chunks?: AgentResponseChunk[];
 }
 
 interface WelcomeScreenProps {
   onNavigate: (view: string) => void;
   patientData?: any;
+}
+
+// Component to render different content types from Foundry agent
+function ChunkRenderer({ chunk }: { chunk: AgentResponseChunk }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  switch (chunk.type) {
+    case 'text':
+      return <p className="whitespace-pre-wrap">{chunk.content}</p>;
+
+    case 'code':
+      return (
+        <div className="bg-muted/80 rounded-lg p-4 my-2 border border-muted-foreground/20">
+          <div className="flex justify-between items-center mb-2">
+            <Badge variant="secondary" className="text-xs">
+              {chunk.language || 'code'}
+            </Badge>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 w-6 p-0"
+              onClick={() => copyToClipboard(chunk.content)}
+            >
+              {copied ? (
+                <Check className="h-4 w-4 text-green-500" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+          <pre className="overflow-x-auto text-xs">
+            <code className="font-mono">{chunk.content}</code>
+          </pre>
+        </div>
+      );
+
+    case 'reasoning':
+      return (
+        <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4 my-2 border border-blue-200/50 dark:border-blue-900/50">
+          <div className="flex items-start">
+            <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-sm text-blue-900 dark:text-blue-100 mb-1">Reasoning</p>
+              <p className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">{chunk.content}</p>
+            </div>
+          </div>
+        </div>
+      );
+
+    case 'image':
+      return (
+        <div className="my-2 rounded-lg overflow-hidden">
+          <img 
+            src={chunk.content} 
+            alt="Agent response image"
+            className="max-w-full max-h-96 rounded-lg"
+          />
+        </div>
+      );
+
+    case 'error':
+      return (
+        <div className="bg-red-50 dark:bg-red-950/20 rounded-lg p-3 my-2 border border-red-200/50 dark:border-red-900/50">
+          <p className="text-sm text-red-800 dark:text-red-200">{chunk.content}</p>
+        </div>
+      );
+
+    default:
+      return <p className="text-muted-foreground">{chunk.content}</p>;
+  }
 }
 
 export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
@@ -30,7 +108,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
     {
       id: '1',
       role: 'assistant',
-      content: 'Welcome to BioLink. I\'m your AI research assistant. I have access to the entire patient registry, analytics engine, and cohort builder.\n\nHow can I assist you with your research today?',
+      content: 'Welcome to BioLink. I\'m your AI research assistant powered by Azure Foundry Agent. I have access to the entire patient registry, analytics engine, and cohort builder.\n\nHow can I assist you with your research today?',
       timestamp: new Date(),
       actions: [
         { label: "View Patient Registry", view: "registry" },
@@ -41,9 +119,30 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [useFoundryAgent, setUseFoundryAgent] = useState(true); // Try Foundry by default
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const foundryAgentRef = useRef(useFoundryAgent ? createFoundryAgentService() : null);
+
+  // Initialize Foundry agent thread on mount
+  useEffect(() => {
+    if (useFoundryAgent && foundryAgentRef.current) {
+      foundryAgentRef.current.initializeThread().catch((error) => {
+        console.warn('Failed to initialize Foundry agent, will fall back to local responses:', error);
+        setUseFoundryAgent(false);
+        // Show notification to user
+        const errorMsg: Message = {
+          id: 'init_error',
+          role: 'system',
+          content: `Note: Foundry Agent unavailable - ${error instanceof Error ? error.message : 'Unknown error'}. Using fallback responses.`,
+          timestamp: new Date(),
+          error: true
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      });
+    }
+  }, []);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -112,57 +211,86 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
     setIsLoading(true);
 
     try {
-      // Try real API call first
-      const response = await sendChatMessage(
-        currentInput,
-        messages.map(m => ({ role: m.role, content: m.content }))
-      );
+      let assistantMessage: Message | null = null;
 
-      if (response.success && response.data?.content) {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: response.data.content,
-          timestamp: new Date(),
-          actions: generateResponse(response.data.content).actions,
-          data: response.data
-        };
+      // Try Foundry agent first if enabled
+      if (useFoundryAgent && foundryAgentRef.current) {
+        try {
+          const agentResponse = await foundryAgentRef.current.runAgent(currentInput);
 
-        setMessages(prev => [...prev, assistantMessage]);
-        
-        // Handle navigation if response contains view directive
-        if (response.data.action === 'navigate' && response.data.view) {
-          setTimeout(() => {
-            if (appContext?.navigateToView) {
-              appContext.navigateToView(response.data!.view as any);
-            } else if (response.data?.view) {
-              onNavigate(response.data.view);
-            }
-          }, 1000);
+          if (agentResponse.status === 'completed' && agentResponse.chunks) {
+            assistantMessage = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: agentResponse.text || 'Response received',
+              timestamp: new Date(),
+              chunks: agentResponse.chunks,
+              data: agentResponse.raw
+            };
+          } else if (agentResponse.status === 'failed') {
+            throw new Error(agentResponse.error || 'Agent request failed');
+          }
+        } catch (error) {
+          console.warn('Foundry agent failed, falling back to local API:', error);
+          setUseFoundryAgent(false);
         }
-      } else {
-        throw new Error(response.error || 'Failed to get response');
+      }
+
+      // Fallback to traditional API if Foundry is disabled or failed
+      if (!assistantMessage) {
+        const response = await sendChatMessage(
+          currentInput,
+          messages.map(m => ({ role: m.role, content: m.content }))
+        );
+
+        if (response.success && response.data?.content) {
+          assistantMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: response.data.content,
+            timestamp: new Date(),
+            actions: generateResponse(response.data.content).actions,
+            data: response.data
+          };
+
+          // Handle navigation if response contains view directive
+          if (response.data.action === 'navigate' && response.data.view) {
+            setTimeout(() => {
+              if (appContext?.navigateToView) {
+                appContext.navigateToView(response.data!.view as any);
+              } else if (response.data?.view) {
+                onNavigate(response.data.view);
+              }
+            }, 1000);
+          }
+        } else {
+          throw new Error(response.error || 'Failed to get response');
+        }
+      }
+
+      if (assistantMessage) {
+        setMessages(prev => [...prev, assistantMessage]);
       }
     } catch (error) {
-      console.warn('API call failed, falling back to local response:', error);
+      console.warn('Chat error:', error);
       
       // Fallback to local response generation
       const fallbackResponse = generateResponse(currentInput);
-      const assistantMessage: Message = {
+      const fallbackMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: fallbackResponse.content,
         timestamp: new Date(),
-        actions: fallbackResponse.actions
+        actions: fallbackResponse.actions,
+        error: true
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages(prev => [...prev, fallbackMessage]);
     } finally {
       setIsLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      inputRef.current?.focus();
     }
   };
-
 
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto w-full">
@@ -202,7 +330,16 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
                       ? 'bg-primary text-primary-foreground rounded-tr-none'
                       : 'bg-muted/50 text-foreground rounded-tl-none'
                   }`}>
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    {/* Render chunks if available (Foundry agent responses) */}
+                    {message.chunks && message.chunks.length > 0 ? (
+                      <div className="space-y-2">
+                        {message.chunks.map((chunk, chunkIdx) => (
+                          <ChunkRenderer key={chunkIdx} chunk={chunk} />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    )}
                   </div>
 
                   {/* Action Buttons */}
