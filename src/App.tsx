@@ -494,6 +494,12 @@ export default function App() {
 function AppContent() {
   const { currentView, setCurrentView, selectedPatient, setSelectedPatient } = useApp();
   const [currentTab, setCurrentTab] = useState<string>("vitals");
+  const { data: patient, error: patientError, isLoading: patientLoading } = usePatient(selectedPatient || '');
+  
+  const handlePatientSelect = (dnaId: string) => {
+    setSelectedPatient(dnaId);
+    setCurrentView("patient");
+  };
   
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -501,7 +507,7 @@ function AppContent() {
       
       <div className="flex-1 overflow-auto">
         <div className="p-6">
-          {renderContent(currentView, selectedPatient, setSelectedPatient, currentTab, setCurrentTab)}
+          {renderContent(currentView, selectedPatient, setSelectedPatient, currentTab, setCurrentTab, patient, patientError, patientLoading, handlePatientSelect)}
         </div>
       </div>
     </div>
@@ -513,19 +519,23 @@ function renderContent(
   selectedPatient: string | null,
   setSelectedPatient: (id: string | null) => void,
   currentTab: string,
-  setCurrentTab: (tab: string) => void
+  setCurrentTab: (tab: string) => void,
+  patient: any,
+  patientError: any,
+  patientLoading: boolean,
+  handlePatientSelect: (dnaId: string) => void
 ) {
   const renderMainContent = () => {
     switch (currentView) {
       case "welcome":
         return <ChatInterface />;
       case "registry":
-        return <PatientRegistryTable onPatientClick={setSelectedPatient} />;
+        return <PatientRegistryTable onPatientSelect={handlePatientSelect} />;
       case "patient":
         if (!selectedPatient) {
-          return <PatientSearch onSelectPatient={setSelectedPatient} />;
+          return <PatientSearch onPatientSelect={setSelectedPatient} />;
         }
-        return renderPatientView(selectedPatient, currentTab, setCurrentTab);
+        return renderPatientView(selectedPatient, currentTab, setCurrentTab, patient, patientError, patientLoading);
       case "analytics":
         return <RegistryAnalytics />;
       case "cohort":
@@ -546,9 +556,7 @@ function renderContent(
   return renderMainContent();
 }
 
-function renderPatientView(patientId: string, currentTab: string, setCurrentTab: (tab: string) => void) {
-  const { data: patient, error, isLoading } = usePatient(patientId);
-
+function renderPatientView(patientId: string, currentTab: string, setCurrentTab: (tab: string) => void, patient: any, error: any, isLoading: boolean) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -570,11 +578,11 @@ function renderPatientView(patientId: string, currentTab: string, setCurrentTab:
   const vitalsData = transformToVitals(patient);
   const riskFactorsData = transformToRiskFactors(patient);
   const medicalHistoryData = transformToMedicalHistory(patient);
-  const imagingData = transformToImaging(patient);
+  const imagingData = transformToImagingData(patient);
 
   return (
     <div className="space-y-6">
-      <PatientHeader {...headerData} />
+      <PatientHeader patient={headerData} />
       
       <Tabs value={currentTab} onValueChange={setCurrentTab}>
         <TabsList className="grid w-full grid-cols-4">
