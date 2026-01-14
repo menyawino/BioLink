@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AppProvider, useApp } from "./context/AppContext";
 import { Sidebar } from "./components/Sidebar";
-import { ChatInterface } from "./components/EnhancedChatInterface";
+import { ChatInterface } from "./components/ChatInterface";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientSearch } from "./components/PatientSearch";
 import { VitalSigns } from "./components/VitalSigns";

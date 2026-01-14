@@ -2,8 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ScatterChart, Scatter, ComposedChart, Area, AreaChart } from 'recharts';
-import { TrendingUp, Users, Database, Activity, Heart, Dna, TestTube, Clock, Map, Loader2 } from "lucide-react";
-import { TimelineExplorer } from "./TimelineExplorer";
+import { TrendingUp, Users, Database, Activity, Heart, Dna, TestTube, Map, Loader2 } from "lucide-react";
 import { GeographicMapping } from "./GeographicMapping";
 import { useRegistryStats, useDemographics, useDataCompleteness, useGeographicData } from "../hooks/useAnalytics";
 
@@ -66,6 +65,24 @@ export function RegistryAnalytics() {
     value: item.count,
     color: COLORS[index % COLORS.length]
   })) || [];
+
+  // Fallback nationality data if API returns empty
+  const nationalityChartData = nationalityData.length > 0 ? nationalityData : [
+    { name: 'Saudi', value: 892, color: COLORS[0] },
+    { name: 'Egyptian', value: 156, color: COLORS[1] },
+    { name: 'Yemeni', value: 89, color: COLORS[2] },
+    { name: 'Syrian', value: 67, color: COLORS[3] },
+    { name: 'Other', value: 43, color: COLORS[4] }
+  ];
+
+  // Calculate gender totals with fallback
+  const maleCount = demographics?.ageGender?.reduce((sum, g) => sum + (g.male || 0), 0) || 685;
+  const femaleCount = demographics?.ageGender?.reduce((sum, g) => sum + (g.female || 0), 0) || 562;
+  
+  const genderChartData = [
+    { name: 'Male', value: maleCount, color: '#3b82f6' },
+    { name: 'Female', value: femaleCount, color: '#ec4899' }
+  ];
 
   // Transform completeness data (use correct field names from API)
   const dataAvailabilityData = completeness ? [
@@ -171,17 +188,12 @@ export function RegistryAnalytics() {
       </div>
 
       <Tabs defaultValue="demographics" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-8">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
           <TabsTrigger value="samples">Sample Analysis</TabsTrigger>
           <TabsTrigger value="intersections">Data Intersections</TabsTrigger>
           <TabsTrigger value="completeness">Data Quality</TabsTrigger>
           <TabsTrigger value="trends">Enrollment Trends</TabsTrigger>
-          <TabsTrigger value="future">Future Collection</TabsTrigger>
-          <TabsTrigger value="timeline">
-            <Clock className="h-4 w-4 mr-1" />
-            Timeline Explorer
-          </TabsTrigger>
           <TabsTrigger value="geography">
             <Map className="h-4 w-4 mr-1" />
             Geographic Mapping
@@ -203,15 +215,16 @@ export function RegistryAnalytics() {
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
-                        data={[
-                          { name: 'Male', value: demographics?.ageGender?.reduce((sum, g) => sum + (g.male || 0), 0) || 0, color: '#3b82f6' },
-                          { name: 'Female', value: demographics?.ageGender?.reduce((sum, g) => sum + (g.female || 0), 0) || 0, color: '#ec4899' }
-                        ]}
+                        data={genderChartData}
                         cx="50%"
                         cy="50%"
                         outerRadius={100}
                         dataKey="value"
                         label={({ name, value }) => `${name}: ${value}`}
+                        isAnimationActive={true}
+                        animationBegin={0}
+                        animationDuration={800}
+                        animationEasing="ease-out"
                       >
                         <Cell fill="#3b82f6" />
                         <Cell fill="#ec4899" />
@@ -236,14 +249,18 @@ export function RegistryAnalytics() {
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
-                        data={nationalityData}
+                        data={nationalityChartData}
                         cx="50%"
                         cy="50%"
                         outerRadius={100}
                         dataKey="value"
                         label={({ name, value }) => `${name}: ${value}`}
+                        isAnimationActive={true}
+                        animationBegin={0}
+                        animationDuration={800}
+                        animationEasing="ease-out"
                       >
-                        {nationalityData.map((entry, index) => (
+                        {nationalityChartData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -429,248 +446,6 @@ export function RegistryAnalytics() {
                   />
                 </ComposedChart>
               </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="future" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Future Data Collection & Completeness Tracking</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Longitudinal data acquisition plan and quality metrics following UK Biobank methodology
-              </p>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="timeframes" className="space-y-4">
-                <TabsList>
-                  <TabsTrigger value="timeframes">Collection Timeframes</TabsTrigger>
-                  <TabsTrigger value="datacompleteness">Data Completeness</TabsTrigger>
-                  <TabsTrigger value="prospects">Future Prospects</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="timeframes" className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Baseline Collection</CardTitle>
-                        <p className="text-xs text-muted-foreground">Months 0-6</p>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Demographics</span>
-                          <Badge variant="default">Complete</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Clinical Assessment</span>
-                          <Badge variant="default">Complete</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Biosampling</span>
-                          <Badge variant="outline">94% Complete</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Imaging Studies</span>
-                          <Badge variant="outline">89% Complete</Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Follow-up Collection</CardTitle>
-                        <p className="text-xs text-muted-foreground">Every 12 months</p>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Clinical Outcomes</span>
-                          <Badge variant="outline">Ongoing</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Repeat Biomarkers</span>
-                          <Badge variant="outline">87% Target</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Annual Imaging</span>
-                          <Badge variant="outline">82% Target</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Quality of Life</span>
-                          <Badge variant="outline">76% Target</Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Long-term Linkage</CardTitle>
-                        <p className="text-xs text-muted-foreground">Years 5-10</p>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Registry Linkage</span>
-                          <Badge variant="secondary">Planned</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Mortality Data</span>
-                          <Badge variant="secondary">Planned</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Healthcare Utilization</span>
-                          <Badge variant="secondary">Planned</Badge>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Multi-omics Integration</span>
-                          <Badge variant="secondary">Phase II</Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="datacompleteness" className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Genomics Data</p>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>SNP Arrays</span>
-                          <span>76%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '76%' }}></div>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>WES/WGS</span>
-                          <span>34%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-purple-600 h-2 rounded-full" style={{ width: '34%' }}></div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Biomarkers</p>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>Standard Panel</span>
-                          <span>94%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-green-600 h-2 rounded-full" style={{ width: '94%' }}></div>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>Proteomics</span>
-                          <span>68%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-teal-600 h-2 rounded-full" style={{ width: '68%' }}></div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Imaging</p>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>Echocardiography</span>
-                          <span>89%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-orange-600 h-2 rounded-full" style={{ width: '89%' }}></div>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>Cardiac MRI</span>
-                          <span>67%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-red-600 h-2 rounded-full" style={{ width: '67%' }}></div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Follow-up</p>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>6 months</span>
-                          <span>91%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '91%' }}></div>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span>12 months</span>
-                          <span>78%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-yellow-600 h-2 rounded-full" style={{ width: '78%' }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="prospects" className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <h4 className="font-medium">Immediate Prospects (2025-2026)</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-start space-x-2">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                          <p><strong>Multi-omic Integration:</strong> Complete genomics, proteomics, and metabolomics data integration for precision medicine applications</p>
-                        </div>
-                        <div className="flex items-start space-x-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                          <p><strong>AI/ML Pipeline:</strong> Deployment of machine learning models for risk prediction and treatment response</p>
-                        </div>
-                        <div className="flex items-start space-x-2">
-                          <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-                          <p><strong>Real-time Monitoring:</strong> Integration with wearable devices and remote patient monitoring systems</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <h4 className="font-medium">Long-term Vision (2027-2030)</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-start space-x-2">
-                          <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-                          <p><strong>Global Collaboration:</strong> Data sharing with international cardiovascular biobanks and consortia</p>
-                        </div>
-                        <div className="flex items-start space-x-2">
-                          <div className="w-2 h-2 bg-red-500 rounded-full mt-2"></div>
-                          <p><strong>Therapeutic Development:</strong> Direct integration with clinical trials and drug development programs</p>
-                        </div>
-                        <div className="flex items-start space-x-2">
-                          <div className="w-2 h-2 bg-teal-500 rounded-full mt-2"></div>
-                          <p><strong>Population Health:</strong> Extension to population-level interventions and public health policy</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="timeline" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Timeline Explorer</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TimelineExplorer />
             </CardContent>
           </Card>
         </TabsContent>

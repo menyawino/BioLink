@@ -7,9 +7,11 @@ import { Checkbox } from "./ui/checkbox";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, ScatterChart, Scatter, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Download, Save, Settings, BarChart3, LineChart as LineChartIcon, PieChart as PieChartIcon, Zap, Loader2, AlertCircle } from "lucide-react";
+import { Download, Save, Code2, BarChart3, LineChart as LineChartIcon, PieChart as PieChartIcon, Zap, Loader2, AlertCircle } from "lucide-react";
 import { useScatterData, useAgeDistribution, useGenderDistribution } from "../hooks/useCharts";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { ScrollArea } from "./ui/scroll-area";
 
 interface ChartConfig {
   type: 'bar' | 'line' | 'scatter' | 'pie';
@@ -82,6 +84,7 @@ export function ChartBuilder() {
 
   const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
   const [savedCharts, setSavedCharts] = useState<ChartConfig[]>([]);
+  const [showCodeDialog, setShowCodeDialog] = useState(false);
 
   // Get field info
   const xField = availableFields.find(f => f.id === chartConfig.xAxis);
@@ -104,6 +107,135 @@ export function ChartBuilder() {
 
   const updateConfig = (field: keyof ChartConfig, value: any) => {
     setChartConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Save chart configuration
+  const saveChart = () => {
+    if (savedCharts.some(c => c.title === chartConfig.title)) {
+      alert(`A chart with the title "${chartConfig.title}" already exists. Please use a different title.`);
+      return;
+    }
+    setSavedCharts(prev => [...prev, { ...chartConfig }]);
+    alert(`Chart "${chartConfig.title}" saved successfully!`);
+  };
+
+  // Export chart data as CSV
+  const exportData = () => {
+    let data: any[] = [];
+    let filename = `${chartConfig.title.replace(/\s+/g, '_')}_data.csv`;
+    
+    // Get the current chart data based on chart type
+    if (chartConfig.type === 'bar' || chartConfig.type === 'pie') {
+      data = getBarPieData();
+      if (data.length > 0) {
+        const csv = ['Label,Count', ...data.map(d => `"${d.label}",${d.count}`)].join('\n');
+        downloadCSV(csv, filename);
+      }
+    } else if (chartConfig.type === 'scatter' && scatterData) {
+      const xLabel = xField?.label || chartConfig.xAxis;
+      const yLabel = yField?.label || chartConfig.yAxis;
+      const csv = [`${xLabel},${yLabel}`, ...scatterData.map(d => `${d.x},${d.y}`)].join('\n');
+      downloadCSV(csv, filename);
+    } else if (chartConfig.type === 'line' && scatterData) {
+      const lineData = binNumericData(scatterData);
+      const xLabel = xField?.label || chartConfig.xAxis;
+      const yLabel = yField?.label || chartConfig.yAxis;
+      const csv = [`${xLabel} Range,Count,Average ${yLabel}`, ...lineData.map(d => `"${d.label}",${d.count},${d.average}`)].join('\n');
+      downloadCSV(csv, filename);
+    } else {
+      alert('No data available to export');
+    }
+  };
+
+  // Helper to trigger CSV download
+  const downloadCSV = (csv: string, filename: string) => {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Generate code snippet for the current chart
+  const generateChartCode = () => {
+    const xLabel = xField?.label || chartConfig.xAxis;
+    const yLabel = yField?.label || chartConfig.yAxis;
+    
+    const imports = `import { ${chartConfig.type === 'bar' ? 'BarChart, Bar' : chartConfig.type === 'line' ? 'LineChart, Line' : chartConfig.type === 'scatter' ? 'ScatterChart, Scatter' : 'PieChart, Pie, Cell'}, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer${chartConfig.type === 'pie' ? ', Legend' : ''} } from 'recharts';`;
+    
+    let chartComponent = '';
+    
+    if (chartConfig.type === 'bar') {
+      chartComponent = `<ResponsiveContainer width="100%" height={400}>
+  <BarChart data={data}>
+    <CartesianGrid strokeDasharray="3 3" />
+    <XAxis dataKey="label" label={{ value: "${xLabel}", position: 'insideBottom', offset: -5 }} />
+    <YAxis label={{ value: 'Count', angle: -90, position: 'insideLeft' }} />
+    <Tooltip />
+    <Bar dataKey="count" fill="#3b82f6" />
+  </BarChart>
+</ResponsiveContainer>`;
+    } else if (chartConfig.type === 'line') {
+      chartComponent = `<ResponsiveContainer width="100%" height={400}>
+  <LineChart data={data}>
+    <CartesianGrid strokeDasharray="3 3" />
+    <XAxis dataKey="label" label={{ value: "${xLabel} (range)", position: 'insideBottom', offset: -5 }} />
+    <YAxis yAxisId="left" label={{ value: 'Average ${yLabel}', angle: -90, position: 'insideLeft' }} />
+    <YAxis yAxisId="right" orientation="right" label={{ value: 'Count', angle: 90, position: 'insideRight' }} />
+    <Tooltip />
+    <Line yAxisId="left" type="monotone" dataKey="average" stroke="#3b82f6" strokeWidth={2} />
+    <Line yAxisId="right" type="monotone" dataKey="count" stroke="#22c55e" strokeWidth={2} />
+  </LineChart>
+</ResponsiveContainer>`;
+    } else if (chartConfig.type === 'scatter') {
+      chartComponent = `<ResponsiveContainer width="100%" height={400}>
+  <ScatterChart>
+    <CartesianGrid strokeDasharray="3 3" />
+    <XAxis type="number" dataKey="x" name="${xLabel}" label={{ value: "${xLabel}", position: 'insideBottom', offset: -5 }} />
+    <YAxis type="number" dataKey="y" name="${yLabel}" label={{ value: "${yLabel}", angle: -90, position: 'insideLeft' }} />
+    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+    <Scatter data={data} fill="#3b82f6" />
+  </ScatterChart>
+</ResponsiveContainer>`;
+    } else if (chartConfig.type === 'pie') {
+      chartComponent = `const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+<ResponsiveContainer width="100%" height={400}>
+  <PieChart>
+    <Pie
+      data={data}
+      cx="50%"
+      cy="50%"
+      outerRadius={120}
+      dataKey="count"
+      nameKey="label"
+      label={({ label, count, percent }) => \`\${label}: \${count} (\${(percent * 100).toFixed(0)}%)\`}
+    >
+      {data.map((_: any, index: number) => (
+        <Cell key={\`cell-\${index}\`} fill={COLORS[index % COLORS.length]} />
+      ))}
+    </Pie>
+    <Tooltip />
+    <Legend />
+  </PieChart>
+</ResponsiveContainer>`;
+    }
+    
+    return `// Chart: ${chartConfig.title}
+// Type: ${chartConfig.type.toUpperCase()} CHART
+// X-Axis: ${xLabel}${needsYAxis ? `\n// Y-Axis: ${yLabel}` : ''}
+
+${imports}
+
+// Sample data structure
+const data = ${JSON.stringify(chartConfig.type === 'scatter' ? (scatterData?.slice(0, 5) || []) : getBarPieData().slice(0, 5), null, 2)};
+
+// Chart component
+${chartComponent}`;
   };
 
   // Helper function to bin numeric data into ranges
@@ -494,18 +626,32 @@ export function ChartBuilder() {
               <CardTitle className="text-base">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button className="w-full" size="sm">
+              <Button className="w-full" size="sm" onClick={saveChart} disabled={!configValid}>
                 <Save className="h-4 w-4 mr-2" />
                 Save Chart
               </Button>
-              <Button variant="outline" className="w-full" size="sm">
+              <Button variant="outline" className="w-full" size="sm" onClick={exportData} disabled={!configValid}>
                 <Download className="h-4 w-4 mr-2" />
                 Export Data
               </Button>
-              <Button variant="outline" className="w-full" size="sm">
-                <Settings className="h-4 w-4 mr-2" />
-                Advanced Options
-              </Button>
+              <Dialog open={showCodeDialog} onOpenChange={setShowCodeDialog}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="w-full" size="sm" disabled={!configValid}>
+                    <Code2 className="h-4 w-4 mr-2" />
+                    Code
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-3xl max-h-[80vh]">
+                  <DialogHeader>
+                    <DialogTitle>Chart Code</DialogTitle>
+                  </DialogHeader>
+                  <ScrollArea className="h-[60vh] w-full rounded-md border p-4">
+                    <pre className="text-sm">
+                      <code>{generateChartCode()}</code>
+                    </pre>
+                  </ScrollArea>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
         </div>
@@ -532,9 +678,35 @@ export function ChartBuilder() {
               <CardTitle className="text-base">Saved Charts</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-sm text-muted-foreground text-center py-8">
-                No saved charts yet. Create and save a chart to see it here.
-              </div>
+              {savedCharts.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-8">
+                  No saved charts yet. Create and save a chart to see it here.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {savedCharts.map((chart, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer" onClick={() => setChartConfig(chart)}>
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{chart.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {chart.type} • {xField?.label || chart.xAxis}
+                          {chart.yAxis && ` vs ${yField?.label || chart.yAxis}`}
+                        </div>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSavedCharts(prev => prev.filter((_, i) => i !== index));
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

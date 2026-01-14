@@ -1,8 +1,5 @@
 import { Hono } from 'hono';
 import postgres from 'postgres';
-import { AzureOpenAI } from 'openai';
-import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
-import '@azure/openai/types';
 
 const chat = new Hono();
 
@@ -11,24 +8,9 @@ const sql = postgres(process.env.DATABASE_URL || 'postgres://postgres:postgres@l
 
 // Configuration for Azure OpenAI
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || '';
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || '';
 const AZURE_OPENAI_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
-const AZURE_API_VERSION = process.env.AZURE_API_VERSION || '2024-10-21';
-
-// Azure credential for authentication
-const credential = new DefaultAzureCredential();
-const scope = 'https://cognitiveservices.azure.com/.default';
-const azureADTokenProvider = getBearerTokenProvider(credential, scope);
-
-// Create Azure OpenAI client
-let openaiClient: AzureOpenAI | null = null;
-if (AZURE_OPENAI_ENDPOINT) {
-  openaiClient = new AzureOpenAI({
-    azureADTokenProvider,
-    deployment: AZURE_OPENAI_DEPLOYMENT,
-    apiVersion: AZURE_API_VERSION,
-    endpoint: AZURE_OPENAI_ENDPOINT,
-  });
-}
+const AZURE_API_VERSION = process.env.AZURE_API_VERSION || '2024-02-15-preview';
 
 // Tool/Function definitions for Azure OpenAI
 const TOOLS = [
@@ -389,12 +371,12 @@ chat.post('/', async (c) => {
     }
 
     // Validate Azure configuration
-    if (!openaiClient) {
+    if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
       console.error('Azure OpenAI configuration missing');
       return c.json({
         success: true,
         data: {
-          content: 'Azure OpenAI is not configured. Please set AZURE_OPENAI_ENDPOINT in backend/.env, then restart the server.',
+          content: 'Azure OpenAI is not configured. Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in backend/.env, then restart the server.',
           role: 'assistant',
           timestamp: new Date().toISOString(),
         }
@@ -407,6 +389,8 @@ chat.post('/', async (c) => {
       ...history,
       { role: 'user', content: message }
     ];
+
+    const azureUrl = `${AZURE_OPENAI_ENDPOINT}/chat/completions?api-version=${AZURE_API_VERSION}`;
     
     let iterationCount = 0;
     const MAX_ITERATIONS = 5; // Prevent infinite loops
@@ -415,17 +399,47 @@ chat.post('/', async (c) => {
     while (iterationCount < MAX_ITERATIONS) {
       iterationCount++;
       
-      // Call Azure OpenAI using SDK
-      const completion = await openaiClient.chat.completions.create({
-        model: AZURE_OPENAI_DEPLOYMENT,
-        messages: messages as any,
-        tools: TOOLS as any,
-        tool_choice: 'auto',
-        temperature: 0.7,
-        max_completion_tokens: 1500,
+      // Call Azure OpenAI
+      const response = await fetch(azureUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': AZURE_OPENAI_API_KEY,
+        },
+        body: JSON.stringify({
+          model: AZURE_OPENAI_DEPLOYMENT,
+          messages,
+          tools: TOOLS,
+          tool_choice: 'auto',
+          temperature: 0.7,
+          max_tokens: 1500,
+        }),
       });
 
-      const choice = completion.choices?.[0];
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Azure OpenAI API error:', response.status, errorData);
+
+        // Provide a friendly, non-blocking message for auth/config issues
+        if (response.status === 401 || response.status === 403) {
+          return c.json({
+            success: true,
+            data: {
+              content: 'Azure OpenAI returned an authorization error (401/403). Please check that AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_DEPLOYMENT are correct and that the key has access to this deployment.',
+              role: 'assistant',
+              timestamp: new Date().toISOString(),
+            }
+          }, 200);
+        }
+
+        return c.json({ 
+          success: false, 
+          error: `Azure OpenAI API error: ${response.status}`
+        }, response.status);
+      }
+
+      const data = await response.json();
+      const choice = data.choices?.[0];
       const assistantMessage = choice?.message;
 
       if (!assistantMessage) {
@@ -438,17 +452,12 @@ chat.post('/', async (c) => {
       // Check if assistant wants to call tools
       if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
         // Add assistant message with tool calls to history
-        messages.push({
-          role: 'assistant',
-          content: assistantMessage.content || '',
-          tool_calls: assistantMessage.tool_calls as any
-        });
+        messages.push(assistantMessage);
         
         // Execute all tool calls
         for (const toolCall of assistantMessage.tool_calls) {
-          const tc = toolCall as any;
-          const functionName = tc.function.name;
-          const functionArgs = JSON.parse(tc.function.arguments);
+          const functionName = toolCall.function.name;
+          const functionArgs = JSON.parse(toolCall.function.arguments);
           
           console.log(`Tool call: ${functionName}`, functionArgs);
           
@@ -458,7 +467,7 @@ chat.post('/', async (c) => {
           // Add tool result to messages
           messages.push({
             role: 'tool',
-            tool_call_id: tc.id,
+            tool_call_id: toolCall.id,
             name: functionName,
             content: JSON.stringify(toolResult)
           });
@@ -499,7 +508,7 @@ chat.post('/', async (c) => {
 chat.get('/config', async (c) => {
   return c.json({
     success: true,
-    configured: !!openaiClient,
+    configured: !!(AZURE_OPENAI_ENDPOINT && AZURE_OPENAI_API_KEY),
     endpoint: AZURE_OPENAI_ENDPOINT ? '***configured***' : 'not set',
     deployment: AZURE_OPENAI_DEPLOYMENT,
     apiVersion: AZURE_API_VERSION,
