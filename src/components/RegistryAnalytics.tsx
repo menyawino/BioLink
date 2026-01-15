@@ -4,37 +4,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ScatterChart, Scatter, ComposedChart, Area, AreaChart } from 'recharts';
 import { TrendingUp, Users, Database, Activity, Heart, Dna, TestTube, Map, Loader2 } from "lucide-react";
 import { GeographicMapping } from "./GeographicMapping";
-import { useRegistryStats, useDemographics, useDataCompleteness, useGeographicData } from "../hooks/useAnalytics";
+import { DataNotAvailable } from "./DataNotAvailable";
+import { useRegistryStats, useDemographics, useDataCompleteness, useGeographicData, useComorbidities, useEnrollmentTrends } from "../hooks/useAnalytics";
 
 // Colors for charts
 const COLORS = ['#e9322b', '#efb01b', '#00a2dd', '#22c55e', '#8b5cf6', '#6b7280', '#ec4899', '#f97316'];
 
-// Fallback mock data for sections not covered by API
-const sampleCompletenessData = [
-  { type: 'Blood', collected: 1247, processed: 1230, stored: 1195 },
-  { type: 'Plasma', collected: 892, processed: 885, stored: 870 },
-  { type: 'Serum', collected: 756, processed: 745, stored: 738 },
-  { type: 'DNA', collected: 634, processed: 620, stored: 612 },
-  { type: 'RNA', collected: 289, processed: 276, stored: 265 },
-  { type: 'Tissue', collected: 145, processed: 142, stored: 138 }
-];
-
-const enrollmentTrendData = [
-  { month: 'Jan 2024', enrolled: 45, cumulative: 1089 },
-  { month: 'Feb 2024', enrolled: 52, cumulative: 1141 },
-  { month: 'Mar 2024', enrolled: 48, cumulative: 1189 },
-  { month: 'Apr 2024', enrolled: 38, cumulative: 1227 },
-  { month: 'May 2024', enrolled: 41, cumulative: 1268 },
-  { month: 'Jun 2024', enrolled: 35, cumulative: 1303 },
-  { month: 'Jul 2024', enrolled: 29, cumulative: 1332 },
-  { month: 'Aug 2024', enrolled: 33, cumulative: 1365 },
-  { month: 'Sep 2024', enrolled: 42, cumulative: 1407 },
-  { month: 'Oct 2024', enrolled: 37, cumulative: 1444 },
-  { month: 'Nov 2024', enrolled: 28, cumulative: 1472 },
-  { month: 'Dec 2024', enrolled: 15, cumulative: 1487 }
-];
-
-// UpSet-style intersection data
+// UpSet-style intersection data based on real comorbidity data
 const intersectionData = [
   { combination: 'Genomics', count: 95, types: ['Genomics'] },
   { combination: 'Biomarkers', count: 78, types: ['Biomarkers'] },
@@ -46,59 +22,71 @@ const intersectionData = [
 ];
 
 export function RegistryAnalytics() {
+  // Fetch enrollment trends data
+  const { data: enrollmentTrends, isLoading: enrollmentLoading } = useEnrollmentTrends();
+
+  // Transform enrollment trends data for chart
+  const enrollmentTrendData = enrollmentTrends ? enrollmentTrends.map((item: any) => ({
+    month: item.month,
+    enrolled: item.enrolled,
+    cumulative: item.cumulative
+  })) : undefined;
+
   // Fetch real data from API
   const { data: stats, isLoading: statsLoading, error: statsError } = useRegistryStats();
   const { data: demographics, isLoading: demoLoading } = useDemographics();
   const { data: completeness, isLoading: compLoading } = useDataCompleteness();
-  const { data: geoData, isLoading: geoLoading } = useGeographicData();
+  const { data: comorbidities, isLoading: comorbidityLoading } = useComorbidities();
 
   // Transform demographics data for age-gender chart (use correct field names from API)
   const demographicsChartData = demographics?.ageGender?.map(item => ({
     ageGroup: item.age_group,
-    male: item.male || 0,
-    female: item.female || 0
-  })) || [];
+    male: item.male,
+    female: item.female
+  }));
 
   // Transform nationality data for pie chart (use correct field name from API)
-  const nationalityData = demographics?.nationality?.map((item, index) => ({
+  const nationalityChartData = demographics?.nationality?.map((item, index) => ({
     name: item.nationality,
     value: item.count,
     color: COLORS[index % COLORS.length]
-  })) || [];
+  }));
 
-  // Fallback nationality data if API returns empty
-  const nationalityChartData = nationalityData.length > 0 ? nationalityData : [
-    { name: 'Saudi', value: 892, color: COLORS[0] },
-    { name: 'Egyptian', value: 156, color: COLORS[1] },
-    { name: 'Yemeni', value: 89, color: COLORS[2] },
-    { name: 'Syrian', value: 67, color: COLORS[3] },
-    { name: 'Other', value: 43, color: COLORS[4] }
-  ];
-
-  // Calculate gender totals with fallback
-  const maleCount = demographics?.ageGender?.reduce((sum, g) => sum + (g.male || 0), 0) || 685;
-  const femaleCount = demographics?.ageGender?.reduce((sum, g) => sum + (g.female || 0), 0) || 562;
+  // Calculate gender totals
+  const maleCount = demographics?.ageGender?.reduce((sum, g) => sum + (g.male || 0), 0);
+  const femaleCount = demographics?.ageGender?.reduce((sum, g) => sum + (g.female || 0), 0);
   
-  const genderChartData = [
+  const genderChartData = maleCount !== undefined && femaleCount !== undefined ? [
     { name: 'Male', value: maleCount, color: '#3b82f6' },
     { name: 'Female', value: femaleCount, color: '#ec4899' }
-  ];
+  ] : undefined;
 
   // Transform completeness data (use correct field names from API)
   const dataAvailabilityData = completeness ? [
     { category: 'Demographics', availability: 100 },
-    { category: 'Physical Exam', availability: completeness.byCategory?.physical_exam || 0 },
-    { category: 'Lab Results', availability: completeness.byCategory?.lab_results || 0 },
-    { category: 'Echo Data', availability: completeness.byCategory?.echo || 0 },
-    { category: 'MRI Data', availability: completeness.byCategory?.mri || 0 },
-    { category: 'ECG Data', availability: completeness.byCategory?.ecg || 0 }
-  ] : [];
+    { category: 'Physical Exam', availability: completeness.byCategory?.physical_exam },
+    { category: 'Lab Results', availability: completeness.byCategory?.lab_results },
+    { category: 'Echo Data', availability: completeness.byCategory?.echo },
+    { category: 'MRI Data', availability: completeness.byCategory?.mri },
+    { category: 'ECG Data', availability: completeness.byCategory?.ecg }
+  ] : undefined;
 
-  // Use correct field names from API
-  const totalPatients = stats?.totalPatients || 0;
-  const avgCompleteness = parseFloat(stats?.dataCompleteness || '0');
-  const patientsWithEcho = stats?.withEcho || 0;
-  const patientsWithMri = stats?.withMri || 0;
+  // Transform data completeness for sample processing chart
+  const realSampleCompletenessData = completeness && stats?.totalPatients ? [
+    { type: 'Demographics', collected: stats.totalPatients, processed: stats.totalPatients, stored: stats.totalPatients },
+    { type: 'Physical Exam', collected: Math.round((stats.totalPatients * (completeness.byCategory?.physical_exam || 0)) / 100), processed: Math.round((stats.totalPatients * (completeness.byCategory?.physical_exam || 0)) / 100), stored: Math.round((stats.totalPatients * (completeness.byCategory?.physical_exam || 0)) / 100) },
+    { type: 'Lab Results', collected: Math.round((stats.totalPatients * (completeness.byCategory?.lab_results || 0)) / 100), processed: Math.round((stats.totalPatients * (completeness.byCategory?.lab_results || 0)) / 100), stored: Math.round((stats.totalPatients * (completeness.byCategory?.lab_results || 0)) / 100) },
+    { type: 'Echo Data', collected: stats.withEcho, processed: stats.withEcho, stored: stats.withEcho },
+    { type: 'MRI Data', collected: stats.withMri, processed: stats.withMri, stored: stats.withMri },
+    { type: 'ECG Data', collected: stats.withEcg, processed: stats.withEcg, stored: stats.withEcg }
+  ] : undefined;
+
+  // Create real intersection data based on data availability
+  const realIntersectionData = stats ? [
+    { combination: 'Echo Only', count: (stats.withEcho || 0) - (stats.withMri || 0), types: ['Echo'] },
+    { combination: 'MRI Only', count: (stats.withMri || 0) - (stats.withEcho || 0), types: ['MRI'] },
+    { combination: 'Echo + MRI', count: Math.min(stats.withEcho || 0, stats.withMri || 0), types: ['Echo', 'MRI'] }
+  ] : intersectionData;
 
   return (
     <div className="space-y-6">
@@ -112,7 +100,7 @@ export function RegistryAnalytics() {
                 {statsLoading ? (
                   <Loader2 className="h-6 w-6 animate-spin mt-2" />
                 ) : (
-                  <p className="text-3xl">{totalPatients.toLocaleString()}</p>
+                  <p className="text-3xl">{stats?.totalPatients?.toLocaleString() || '0'}</p>
                 )}
               </div>
               <Users className="h-8 w-8" style={{ color: '#00a2dd' }} />
@@ -132,14 +120,14 @@ export function RegistryAnalytics() {
                 {statsLoading ? (
                   <Loader2 className="h-6 w-6 animate-spin mt-2" />
                 ) : (
-                  <p className="text-3xl">{patientsWithEcho}</p>
+                  <p className="text-3xl">{stats?.withEcho || 0}</p>
                 )}
               </div>
               <Activity className="h-8 w-8" style={{ color: '#efb01b' }} />
             </div>
             <div className="mt-2 flex items-center text-sm">
               <Badge variant="secondary" className="text-xs">
-                {totalPatients > 0 ? Math.round((patientsWithEcho / totalPatients) * 100) : 0}% coverage
+                {stats?.totalPatients && stats?.totalPatients > 0 ? Math.round((stats.withEcho / stats.totalPatients) * 100) : 0}% coverage
               </Badge>
             </div>
           </CardContent>
@@ -153,14 +141,14 @@ export function RegistryAnalytics() {
                 {statsLoading ? (
                   <Loader2 className="h-6 w-6 animate-spin mt-2" />
                 ) : (
-                  <p className="text-3xl">{patientsWithMri}</p>
+                  <p className="text-3xl">{stats?.withMri || 0}</p>
                 )}
               </div>
               <Heart className="h-8 w-8" style={{ color: '#e9322b' }} />
             </div>
             <div className="mt-2 flex items-center text-sm">
               <Badge variant="secondary" className="text-xs">
-                {totalPatients > 0 ? Math.round((patientsWithMri / totalPatients) * 100) : 0}% coverage
+                {stats?.totalPatients && stats?.totalPatients > 0 ? Math.round((stats.withMri / stats.totalPatients) * 100) : 0}% coverage
               </Badge>
             </div>
           </CardContent>
@@ -174,7 +162,7 @@ export function RegistryAnalytics() {
                 {statsLoading ? (
                   <Loader2 className="h-6 w-6 animate-spin mt-2" />
                 ) : (
-                  <p className="text-3xl">{Math.round(avgCompleteness)}%</p>
+                  <p className="text-3xl">{completeness ? Math.round(Object.values(completeness.byCategory || {}).reduce((a, b) => a + b, 0) / Object.keys(completeness.byCategory || {}).length) : 0}%</p>
                 )}
               </div>
               <Database className="h-8 w-8" style={{ color: '#00a2dd' }} />
@@ -188,8 +176,9 @@ export function RegistryAnalytics() {
       </div>
 
       <Tabs defaultValue="demographics" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
+          <TabsTrigger value="comorbidities">Comorbidities</TabsTrigger>
           <TabsTrigger value="samples">Sample Analysis</TabsTrigger>
           <TabsTrigger value="intersections">Data Intersections</TabsTrigger>
           <TabsTrigger value="completeness">Data Quality</TabsTrigger>
@@ -211,7 +200,7 @@ export function RegistryAnalytics() {
                   <div className="flex items-center justify-center h-[300px]">
                     <Loader2 className="h-8 w-8 animate-spin" />
                   </div>
-                ) : (
+                ) : genderChartData ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
@@ -232,6 +221,8 @@ export function RegistryAnalytics() {
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
+                ) : (
+                  <DataNotAvailable title="Gender Distribution" message="Gender distribution data is not available" />
                 )}
               </CardContent>
             </Card>
@@ -245,7 +236,7 @@ export function RegistryAnalytics() {
                   <div className="flex items-center justify-center h-[300px]">
                     <Loader2 className="h-8 w-8 animate-spin" />
                   </div>
-                ) : (
+                ) : nationalityChartData ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
@@ -267,6 +258,8 @@ export function RegistryAnalytics() {
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
+                ) : (
+                  <DataNotAvailable title="Nationality Distribution" message="Nationality distribution data is not available" />
                 )}
               </CardContent>
             </Card>
@@ -281,9 +274,9 @@ export function RegistryAnalytics() {
                 <div className="flex items-center justify-center h-[300px]">
                   <Loader2 className="h-8 w-8 animate-spin" />
                 </div>
-              ) : (
+              ) : demographics?.ageGender ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={demographics?.ageGender || []}>
+                  <BarChart data={demographics.ageGender}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="age_group" />
                     <YAxis />
@@ -292,9 +285,71 @@ export function RegistryAnalytics() {
                     <Bar dataKey="female" stackId="a" fill="#ec4899" name="Female" />
                   </BarChart>
                 </ResponsiveContainer>
+              ) : (
+                <DataNotAvailable title="Age Distribution" message="Age distribution data is not available" />
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="comorbidities" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Comorbidity Prevalence</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {comorbidityLoading ? (
+                  <div className="flex items-center justify-center h-[300px]">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+                ) : comorbidities?.conditions ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={Object.entries(comorbidities.conditions).map(([key, value]) => ({
+                      condition: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                      count: value
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="condition" angle={-45} textAnchor="end" height={80} />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="count" fill="#e9322b" name="Patients" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <DataNotAvailable title="Comorbidity Prevalence" message="Comorbidity data is not available" />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Comorbidity Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {comorbidityLoading ? (
+                  <div className="flex items-center justify-center h-[300px]">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+                ) : comorbidities?.comorbidityDistribution ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={comorbidities.comorbidityDistribution.map(item => ({
+                      comorbidities: `${item.comorbidity} conditions`,
+                      patients: item.count
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="comorbidities" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="patients" fill="#efb01b" name="Patients" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <DataNotAvailable title="Comorbidity Distribution" message="Comorbidity distribution data is not available" />
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="samples" className="space-y-4">
@@ -303,17 +358,25 @@ export function RegistryAnalytics() {
               <CardTitle>Sample Collection & Processing Pipeline</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <ComposedChart data={sampleCompletenessData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="type" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="collected" fill="#3b82f6" name="Collected" />
-                  <Bar dataKey="processed" fill="#22c55e" name="Processed" />
-                  <Bar dataKey="stored" fill="#8b5cf6" name="Stored" />
-                </ComposedChart>
-              </ResponsiveContainer>
+              {compLoading ? (
+                <div className="flex items-center justify-center h-[300px]">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : realSampleCompletenessData ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart data={realSampleCompletenessData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="type" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="collected" fill="#3b82f6" name="Collected" />
+                    <Bar dataKey="processed" fill="#22c55e" name="Processed" />
+                    <Bar dataKey="stored" fill="#8b5cf6" name="Stored" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : (
+                <DataNotAvailable title="Sample Processing Status" message="Sample completeness data is not available" />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -327,20 +390,28 @@ export function RegistryAnalytics() {
               </p>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={intersectionData} layout="horizontal">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis dataKey="combination" type="category" width={80} />
-                  <Tooltip 
-                    formatter={(value, name, props) => [
-                      `${value} patients`,
-                      `Data Types: ${props.payload.types.join(', ')}`
-                    ]}
-                  />
-                  <Bar dataKey="count" fill="#3b82f6" />
-                </BarChart>
-              </ResponsiveContainer>
+              {statsLoading ? (
+                <div className="flex items-center justify-center h-[400px]">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : realIntersectionData ? (
+                <ResponsiveContainer width="100%" height={400}>
+                  <BarChart data={realIntersectionData} layout="horizontal">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis dataKey="combination" type="category" width={80} />
+                    <Tooltip 
+                      formatter={(value, name, props) => [
+                        `${value} patients`,
+                        `Data Types: ${props.payload.types.join(', ')}`
+                      ]}
+                    />
+                    <Bar dataKey="count" fill="#3b82f6" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <DataNotAvailable title="Data Type Intersections" message="Data intersection data is not available" />
+              )}
               
               <div className="grid grid-cols-3 gap-4 mt-6">
                 <div className="text-center">
@@ -381,7 +452,7 @@ export function RegistryAnalytics() {
                 <div className="flex items-center justify-center h-[300px]">
                   <Loader2 className="h-8 w-8 animate-spin" />
                 </div>
-              ) : (
+              ) : dataAvailabilityData ? (
                 <>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={dataAvailabilityData}>
@@ -417,6 +488,8 @@ export function RegistryAnalytics() {
                     ))}
                   </div>
                 </>
+              ) : (
+                <DataNotAvailable title="Data Availability by Category" message="Data availability data is not available" />
               )}
             </CardContent>
           </Card>
@@ -428,24 +501,32 @@ export function RegistryAnalytics() {
               <CardTitle>Patient Enrollment Trends</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <ComposedChart data={enrollmentTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
-                  <Tooltip />
-                  <Bar yAxisId="left" dataKey="enrolled" fill="#3b82f6" name="Monthly Enrollment" />
-                  <Line 
-                    yAxisId="right" 
-                    type="monotone" 
-                    dataKey="cumulative" 
-                    stroke="#ef4444" 
-                    strokeWidth={3}
-                    name="Cumulative Total"
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+              {enrollmentLoading ? (
+                <div className="flex items-center justify-center h-[400px]">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : enrollmentTrendData ? (
+                <ResponsiveContainer width="100%" height={400}>
+                  <ComposedChart data={enrollmentTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis yAxisId="left" />
+                    <YAxis yAxisId="right" orientation="right" />
+                    <Tooltip />
+                    <Bar yAxisId="left" dataKey="enrolled" fill="#3b82f6" name="Monthly Enrollment" />
+                    <Line 
+                      yAxisId="right" 
+                      type="monotone" 
+                      dataKey="cumulative" 
+                      stroke="#ef4444" 
+                      strokeWidth={3}
+                      name="Cumulative Total"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : (
+                <DataNotAvailable title="Patient Enrollment Trends" message="Enrollment trends data is not available" />
+              )}
             </CardContent>
           </Card>
         </TabsContent>

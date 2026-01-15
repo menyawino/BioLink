@@ -22,7 +22,7 @@ class AzureOpenAIService:
                 )
                 logger.info("Azure OpenAI client initialized")
             except Exception as e:
-                logger.error(f"Failed to initialize Azure OpenAI: {e}")
+                logger.error(f"Fa   iled to initialize Azure OpenAI: {e}")
                 self.client = None
         else:
             logger.warning("Azure OpenAI credentials not configured")
