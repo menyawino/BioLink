@@ -35,9 +35,8 @@ trap cleanup SIGINT SIGTERM
 
 echo -e "${GREEN}Checking PostgreSQL connectivity...${NC}"
 if ! mamba run -n gcloud pg_isready -h localhost -p 5432 > /dev/null 2>&1; then
-    echo -e "${RED}PostgreSQL is not accepting connections on localhost:5432${NC}"
-    echo -e "${YELLOW}Start Postgres separately (this repo no longer manages an embedded pgdata directory).${NC}"
-    exit 1
+    echo -e "${YELLOW}PostgreSQL is not accepting connections on localhost:5432${NC}"
+    echo -e "${YELLOW}Continuing startup without database. Patient/analytics features will be unavailable.${NC}"
 fi
 
 # Start Backend (Python FastAPI)

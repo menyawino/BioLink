@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, Field, AliasChoices
 from typing import Optional
 
 class Settings(BaseSettings):
@@ -18,14 +18,18 @@ class Settings(BaseSettings):
     azure_api_version: str = "2024-10-21"
     
     # Azure AI Foundry (Agent Framework)
-    azure_existing_agent_id: str = "blnk"
-    azure_existing_aiproject_endpoint: str = ""
+    azure_existing_agent_id: str = Field(default="blnk", validation_alias=AliasChoices("AZURE_EXISTING_AGENT_ID", "AGENT_ID"))
+    azure_existing_aiproject_endpoint: str = Field(
+        default="",
+        validation_alias=AliasChoices("AZURE_EXISTING_AIPROJECT_ENDPOINT", "PROJECT_ENDPOINT")
+    )
     azure_existing_aiproject_resource_id: str = ""
     azure_existing_resource_id: str = ""
     azure_subscription_id: str = ""
     azure_env_name: str = "agents-playground-3547"
     azure_location: str = "swedencentral"
     azure_foundry_api_version: str = "v1"
+    model_deployment_name: str = Field(default="", validation_alias=AliasChoices("MODEL_DEPLOYMENT_NAME", "AZURE_OPENAI_DEPLOYMENT"))
     azd_allow_non_empty_folder: Optional[str] = None
 
     @field_validator("database_url")
@@ -39,7 +43,8 @@ class Settings(BaseSettings):
         return value
     
     class Config:
-        env_file = ".env"
+        env_file = (".env", "../.env")
         case_sensitive = False
+        extra = "ignore"
 
 settings = Settings()

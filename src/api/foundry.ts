@@ -114,7 +114,7 @@ class FoundryAgentService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          agentId: this.config.agentId
+          agent_id: this.config.agentId
         })
       });
 
@@ -123,7 +123,11 @@ class FoundryAgentService {
       }
 
       const data = await response.json();
-      this.conversationThreadId = data.threadId;
+      const threadId = data?.data?.thread_id || data?.thread_id || data?.data?.threadId || data?.threadId;
+      if (!threadId) {
+        throw new Error('Failed to initialize thread: missing thread id');
+      }
+      this.conversationThreadId = threadId;
       return this.conversationThreadId;
     } catch (error) {
       console.error('Error initializing thread:', error);
@@ -156,16 +160,16 @@ class FoundryAgentService {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            agentId: this.config.agentId,
-            threadId: finalThreadId || this.conversationThreadId,
-            userMessage: userMessage,
+            agent_id: this.config.agentId,
+            thread_id: finalThreadId || this.conversationThreadId,
+            user_message: userMessage,
             stream: true
           })
         });
 
         if (!response.ok) {
           const error = await response.json();
-          throw new Error(error.message || `Agent run failed: ${response.statusText}`);
+          throw new Error(error.detail || error.message || `Agent run failed: ${response.statusText}`);
         }
 
         const reader = response.body?.getReader();
@@ -221,22 +225,24 @@ class FoundryAgentService {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            agentId: this.config.agentId,
-            threadId: finalThreadId || this.conversationThreadId,
-            userMessage: userMessage,
+            agent_id: this.config.agentId,
+            thread_id: finalThreadId || this.conversationThreadId,
+            user_message: userMessage,
             stream: false
           })
         });
 
         if (!response.ok) {
           const error = await response.json();
-          throw new Error(error.message || `Agent run failed: ${response.statusText}`);
+          throw new Error(error.detail || error.message || `Agent run failed: ${response.statusText}`);
         }
 
         const data = await response.json();
+        const payload = data?.data || data;
+        const responseText = payload?.text || payload?.content || '';
 
         // Parse response into chunks
-        const chunks = this.parseAgentResponse(data.text);
+        const chunks = this.parseAgentResponse(responseText);
 
         // Notify on each chunk if callback provided
         if (onChunk) {
@@ -244,9 +250,9 @@ class FoundryAgentService {
         }
 
         return {
-          id: data.id || Date.now().toString(),
+          id: payload?.id || data?.id || Date.now().toString(),
           status: 'completed',
-          text: data.text,
+          text: responseText,
           chunks: chunks,
           raw: data
         };
@@ -277,7 +283,7 @@ class FoundryAgentService {
       }
 
       const response = await fetch(
-        `${this.apiBaseUrl}/api/foundry/history?threadId=${this.conversationThreadId}`,
+        `${this.apiBaseUrl}/api/foundry/history?thread_id=${this.conversationThreadId}`,
         {
           method: 'GET',
           headers: {
@@ -291,7 +297,7 @@ class FoundryAgentService {
       }
 
       const data = await response.json();
-      return data.messages || [];
+      return data?.data?.messages || data?.messages || [];
     } catch (error) {
       console.error('Error getting conversation history:', error);
       return [];
