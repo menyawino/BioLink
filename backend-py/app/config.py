@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     azure_api_version: str = "2024-10-21"
     
     # Azure AI Foundry (Agent Framework)
-    azure_existing_agent_id: str = "blnk:8"
+    azure_existing_agent_id: str = "blnk"
     azure_existing_aiproject_endpoint: str = ""
     azure_existing_aiproject_resource_id: str = ""
     azure_existing_resource_id: str = ""
@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     azure_env_name: str = "agents-playground-3547"
     azure_location: str = "swedencentral"
     azure_foundry_api_version: str = "v1"
+    azd_allow_non_empty_folder: Optional[str] = None
 
     @field_validator("database_url")
     @classmethod

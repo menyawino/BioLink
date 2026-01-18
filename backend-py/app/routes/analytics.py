@@ -22,10 +22,11 @@ async def registry_overview(db=Depends(get_db)):
         avg_age = db.execute(text("SELECT AVG(age) FROM patients WHERE age IS NOT NULL")).scalar()
         avg_age_val = float(avg_age) if avg_age is not None else 0.0
 
-        # Get patients with imaging data
-        with_echo = db.execute(text("SELECT COUNT(*) FROM patients WHERE dna_id IN (SELECT dna_id FROM echo WHERE ef IS NOT NULL)")).scalar() or 0
-        with_mri = db.execute(text("SELECT COUNT(*) FROM patients WHERE dna_id IN (SELECT dna_id FROM mri WHERE lv_ejection_fraction IS NOT NULL)")).scalar() or 0
-        with_ecg = db.execute(text("SELECT COUNT(*) FROM patients WHERE dna_id IN (SELECT dna_id FROM ecg WHERE conclusion IS NOT NULL)")).scalar() or 0
+        # Imaging availability (denormalized columns)
+        with_echo = db.execute(text("SELECT COUNT(*) FROM patients WHERE echo_ef IS NOT NULL")).scalar() or 0
+        with_mri = db.execute(text("SELECT COUNT(*) FROM patients WHERE mri_ef IS NOT NULL")).scalar() or 0
+        # ECG isn't modeled in the denormalized schema yet
+        with_ecg = 0
 
         # Calculate average data completeness
         completeness_result = db.execute(text("""
@@ -136,38 +137,32 @@ async def clinical_metrics(db=Depends(get_db)):
 @router.get("/comorbidities")
 async def comorbidities(db=Depends(get_db)):
     try:
-        # Count comorbidities from medical data
+        # Comorbidities derived from denormalized patients table
         comorbidity_query = text("""
             SELECT
-                COUNT(CASE WHEN high_blood_pressure THEN 1 END) as hypertension,
-                COUNT(CASE WHEN diabetes_mellitus THEN 1 END) as diabetes,
-                COUNT(CASE WHEN dyslipidemia THEN 1 END) as dyslipidemia,
-                COUNT(CASE WHEN heart_attack_or_angina THEN 1 END) as cad,
-                COUNT(CASE WHEN prior_heart_failure THEN 1 END) as heart_failure,
-                COUNT(CASE WHEN kidney_problems THEN 1 END) as kidney_disease,
-                COUNT(CASE WHEN liver_problems THEN 1 END) as liver_disease,
-                COUNT(CASE WHEN anaemia THEN 1 END) as anaemia
-            FROM medical
+                COUNT(*) FILTER (WHERE COALESCE(high_blood_pressure, false)) AS hypertension,
+                COUNT(*) FILTER (WHERE COALESCE(diabetes_mellitus, false)) AS diabetes,
+                COUNT(*) FILTER (WHERE COALESCE(dyslipidemia, false)) AS dyslipidemia,
+                COUNT(*) FILTER (WHERE COALESCE(heart_attack_or_angina, false)) AS cad,
+                COUNT(*) FILTER (WHERE COALESCE(prior_heart_failure, false)) AS heart_failure
+            FROM patients
         """)
         comorbidity_result = db.execute(comorbidity_query).fetchone()
 
-        # Comorbidity distribution (patients with 0, 1, 2, 3+ conditions)
         distribution_query = text("""
             SELECT
                 comorbidity_count,
-                COUNT(*) as patient_count
+                COUNT(*) AS patient_count
             FROM (
                 SELECT
-                    (CASE WHEN high_blood_pressure THEN 1 ELSE 0 END +
-                     CASE WHEN diabetes_mellitus THEN 1 ELSE 0 END +
-                     CASE WHEN dyslipidemia THEN 1 ELSE 0 END +
-                     CASE WHEN heart_attack_or_angina THEN 1 ELSE 0 END +
-                     CASE WHEN prior_heart_failure THEN 1 ELSE 0 END +
-                     CASE WHEN kidney_problems THEN 1 ELSE 0 END +
-                     CASE WHEN liver_problems THEN 1 ELSE 0 END +
-                     CASE WHEN anaemia THEN 1 ELSE 0 END) as comorbidity_count
-                FROM medical
-            ) as comorbidity_counts
+                    (CASE WHEN COALESCE(high_blood_pressure, false) THEN 1 ELSE 0 END +
+                     CASE WHEN COALESCE(diabetes_mellitus, false) THEN 1 ELSE 0 END +
+                     CASE WHEN COALESCE(dyslipidemia, false) THEN 1 ELSE 0 END +
+                     CASE WHEN COALESCE(heart_attack_or_angina, false) THEN 1 ELSE 0 END +
+                     CASE WHEN COALESCE(prior_heart_failure, false) THEN 1 ELSE 0 END
+                    ) AS comorbidity_count
+                FROM patients
+            ) AS c
             GROUP BY comorbidity_count
             ORDER BY comorbidity_count
         """)
@@ -186,9 +181,9 @@ async def comorbidities(db=Depends(get_db)):
                     "dyslipidemia": comorbidity_result[2] or 0,
                     "cad": comorbidity_result[3] or 0,
                     "heart_failure": comorbidity_result[4] or 0,
-                    "kidney_disease": comorbidity_result[5] or 0,
-                    "liver_disease": comorbidity_result[6] or 0,
-                    "anaemia": comorbidity_result[7] or 0,
+                    "kidney_disease": 0,
+                    "liver_disease": 0,
+                    "anaemia": 0,
                 },
                 "comorbidityDistribution": distribution_data,
             },
@@ -201,29 +196,26 @@ async def comorbidities(db=Depends(get_db)):
 @router.get("/lifestyle")
 async def lifestyle(db=Depends(get_db)):
     try:
-        # Smoking statistics
         smoking_query = text("""
             SELECT
-                COUNT(CASE WHEN current_smoker THEN 1 END) as current_smokers,
-                COUNT(CASE WHEN former_smoker THEN 1 END) as former_smokers,
-                COUNT(CASE WHEN NOT current_smoker AND NOT former_smoker THEN 1 END) as never_smoked
-            FROM lifestyle
+                COUNT(*) FILTER (WHERE COALESCE(current_smoker, false)) AS current_smokers,
+                COUNT(*) FILTER (WHERE COALESCE(former_smoker, false)) AS former_smokers,
+                COUNT(*) FILTER (WHERE NOT COALESCE(current_smoker, false) AND NOT COALESCE(former_smoker, false)) AS never_smoked
+            FROM patients
         """)
         smoking_result = db.execute(smoking_query).fetchone()
 
-        # Smoking duration distribution for current smokers
         duration_query = text("""
-            SELECT smoking_duration_years, COUNT(*) as count
-            FROM lifestyle
-            WHERE current_smoker AND smoking_duration_years IS NOT NULL
-            GROUP BY smoking_duration_years
-            ORDER BY smoking_duration_years
+            SELECT
+                smoking_years,
+                COUNT(*) AS count
+            FROM patients
+            WHERE COALESCE(current_smoker, false) AND smoking_years IS NOT NULL
+            GROUP BY smoking_years
+            ORDER BY smoking_years
         """)
         duration_results = db.execute(duration_query).fetchall()
-        duration_data = [
-            {"years": row[0], "count": row[1]}
-            for row in duration_results
-        ]
+        duration_data = [{"years": row[0], "count": row[1]} for row in duration_results]
 
         return {
             "success": True,

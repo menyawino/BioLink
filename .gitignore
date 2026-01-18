@@ -29,6 +29,11 @@ node_modules/
 pgdata/
 db/
 backend/
+build/
+
+# Environment files (often contain secrets)
+.env
+**/.env
 
 
 # PyInstaller

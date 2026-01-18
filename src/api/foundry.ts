@@ -1,6 +1,8 @@
 // Foundry Agent Integration Service
 // Handles communication with Azure Foundry agents
 
+import { API_BASE_URL } from './client';
+
 export interface AgentResponseChunk {
   type: 'text' | 'code' | 'image' | 'reasoning' | 'error';
   content: string;
@@ -39,8 +41,8 @@ class FoundryAgentService {
 
   constructor(config: FoundryAgentConfig) {
     this.config = config;
-    // Get API base URL from environment, default to current origin
-    this.apiBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    // Use the shared API base URL so all API calls are consistent.
+    this.apiBaseUrl = API_BASE_URL;
   }
 
   /**
@@ -49,7 +51,6 @@ class FoundryAgentService {
    */
   private parseAgentResponse(text: string): AgentResponseChunk[] {
     const chunks: AgentResponseChunk[] = [];
-    let remaining = text;
 
     // Pattern for code blocks: ```language\ncode\n```
     const codePattern = /```(\w+)?\n([\s\S]*?)```/g;
@@ -137,7 +138,8 @@ class FoundryAgentService {
   async runAgent(
     userMessage: string,
     threadId?: string,
-    onChunk?: (chunk: AgentResponseChunk) => void
+    onChunk?: (chunk: AgentResponseChunk) => void,
+    stream: boolean = false
   ): Promise<AgentRunResponse> {
     try {
       const finalThreadId = threadId || this.conversationThreadId;
@@ -146,42 +148,109 @@ class FoundryAgentService {
         await this.initializeThread();
       }
 
-      // Call backend to run agent
-      const response = await fetch(`${this.apiBaseUrl}/api/foundry/run`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          agentId: this.config.agentId,
-          threadId: finalThreadId || this.conversationThreadId,
-          userMessage: userMessage,
-          stream: false // Can be true for streaming in future
-        })
-      });
+      if (stream && onChunk) {
+        // Handle streaming response
+        const response = await fetch(`${this.apiBaseUrl}/api/foundry/run`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            agentId: this.config.agentId,
+            threadId: finalThreadId || this.conversationThreadId,
+            userMessage: userMessage,
+            stream: true
+          })
+        });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || `Agent run failed: ${response.statusText}`);
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || `Agent run failed: ${response.statusText}`);
+        }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  if (data.type === 'chunk' && data.content) {
+                    fullText += data.content;
+                    // Parse and emit chunks
+                    const parsedChunks = this.parseAgentResponse(data.content);
+                    parsedChunks.forEach(chunk => onChunk(chunk));
+                  } else if (data.type === 'done') {
+                    // Stream completed
+                    break;
+                  } else if (data.type === 'error') {
+                    throw new Error(data.content);
+                  }
+                } catch (e) {
+                  // Skip malformed lines
+                  continue;
+                }
+              }
+            }
+          }
+        }
+
+        // Parse final response into chunks
+        const chunks = this.parseAgentResponse(fullText);
+
+        return {
+          id: Date.now().toString(),
+          status: 'completed',
+          text: fullText,
+          chunks: chunks
+        };
+      } else {
+        // Non-streaming response (existing logic)
+        const response = await fetch(`${this.apiBaseUrl}/api/foundry/run`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            agentId: this.config.agentId,
+            threadId: finalThreadId || this.conversationThreadId,
+            userMessage: userMessage,
+            stream: false
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || `Agent run failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        // Parse response into chunks
+        const chunks = this.parseAgentResponse(data.text);
+
+        // Notify on each chunk if callback provided
+        if (onChunk) {
+          chunks.forEach(chunk => onChunk(chunk));
+        }
+
+        return {
+          id: data.id || Date.now().toString(),
+          status: 'completed',
+          text: data.text,
+          chunks: chunks,
+          raw: data
+        };
       }
-
-      const data = await response.json();
-
-      // Parse response into chunks
-      const chunks = this.parseAgentResponse(data.text);
-
-      // Notify on each chunk if callback provided
-      if (onChunk) {
-        chunks.forEach(chunk => onChunk(chunk));
-      }
-
-      return {
-        id: data.id || Date.now().toString(),
-        status: 'completed',
-        text: data.text,
-        chunks: chunks,
-        raw: data
-      };
     } catch (error) {
       console.error('Error running agent:', error);
       return {
@@ -233,7 +302,7 @@ class FoundryAgentService {
 // Factory function to create configured service
 export function createFoundryAgentService(): FoundryAgentService {
   const config: FoundryAgentConfig = {
-    agentId: import.meta.env.VITE_AZURE_AGENT_ID || 'blnk:8',
+    agentId: import.meta.env.VITE_AZURE_AGENT_ID || 'blnk',
     projectEndpoint: import.meta.env.VITE_AZURE_AI_PROJECT_ENDPOINT || '',
     subscriptionId: import.meta.env.VITE_AZURE_SUBSCRIPTION_ID || '',
     resourceId: import.meta.env.VITE_AZURE_RESOURCE_ID || ''

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from app.database import get_db
 from app.services.agent_framework import agent_service
 import logging
+import json
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,7 +83,49 @@ async def run_agent(request: RunRequest):
         
         logger.info(f"Running agent on thread {request.thread_id} with message: {request.user_message[:50]}")
         
-        # Stream message from agent
+        # Handle streaming response
+        if request.stream:
+            async def generate_stream():
+                try:
+                    response_text = ""
+                    async for chunk in agent_service.stream_message(request.thread_id, request.user_message):
+                        chunk_str = str(chunk)
+                        response_text += chunk_str
+                        
+                        # Send chunk as SSE
+                        data = {
+                            "type": "chunk",
+                            "content": chunk_str,
+                            "done": False
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                    
+                    # Send completion event
+                    data = {
+                        "type": "done",
+                        "content": response_text,
+                        "done": True
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
+                    
+                except Exception as e:
+                    error_data = {
+                        "type": "error",
+                        "content": str(e),
+                        "done": True
+                    }
+                    yield f"data: {json.dumps(error_data)}\n\n"
+            
+            return StreamingResponse(
+                generate_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                }
+            )
+        
+        # Non-streaming response (existing logic)
         response_text = ""
         async for chunk in agent_service.stream_message(request.thread_id, request.user_message):
             response_text += str(chunk)

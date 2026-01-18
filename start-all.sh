@@ -12,6 +12,18 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 echo -e "${BLUE}Starting BioLink Application...${NC}"
 
+echo -e "${GREEN}Ensuring ports are free...${NC}"
+if lsof -nP -iTCP:3001 -sTCP:LISTEN > /dev/null 2>&1; then
+    echo -e "${YELLOW}Port 3001 in use; stopping existing process(es)${NC}"
+    lsof -t -iTCP:3001 -sTCP:LISTEN | xargs -r kill -TERM 2>/dev/null || true
+    sleep 1
+fi
+if lsof -nP -iTCP:3000 -sTCP:LISTEN > /dev/null 2>&1; then
+    echo -e "${YELLOW}Port 3000 in use; stopping existing process(es)${NC}"
+    lsof -t -iTCP:3000 -sTCP:LISTEN | xargs -r kill -TERM 2>/dev/null || true
+    sleep 1
+fi
+
 # Function to cleanup on exit
 cleanup() {
     echo -e "\n${RED}Shutting down services...${NC}"
@@ -21,19 +33,16 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
-# Check if PostgreSQL is already running
-if mamba run -n gcloud pg_ctl -D "$SCRIPT_DIR/backend/pgdata" status > /dev/null 2>&1; then
-    echo -e "${YELLOW}PostgreSQL is already running${NC}"
-else
-    # Start PostgreSQL using mamba
-    echo -e "${GREEN}Starting PostgreSQL...${NC}"
-    mamba run -n gcloud pg_ctl -D "$SCRIPT_DIR/backend/pgdata" -l "$SCRIPT_DIR/backend/pgdata/logfile" start
-    sleep 3
+echo -e "${GREEN}Checking PostgreSQL connectivity...${NC}"
+if ! mamba run -n gcloud pg_isready -h localhost -p 5432 > /dev/null 2>&1; then
+    echo -e "${RED}PostgreSQL is not accepting connections on localhost:5432${NC}"
+    echo -e "${YELLOW}Start Postgres separately (this repo no longer manages an embedded pgdata directory).${NC}"
+    exit 1
 fi
 
 # Start Backend (Python FastAPI)
 echo -e "${GREEN}Starting Backend Server (Python FastAPI)...${NC}"
-(cd "$SCRIPT_DIR/backend-py" && bash start.sh) &
+(cd "$SCRIPT_DIR/backend-py" && mamba run -n gcloud bash start.sh) &
 BACKEND_PID=$!
 sleep 2
 

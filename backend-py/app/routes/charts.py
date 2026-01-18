@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import text
 from app.database import get_db
 import logging
@@ -6,25 +6,43 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Field mapping for database columns
-FIELD_MAP = {
-    "age": ("patients", "age"),
-    "bmi": ("physical_examinations", "bmi"),
-    "systolic_bp": ("physical_examinations", "systolic_bp"),
-    "diastolic_bp": ("physical_examinations", "diastolic_bp"),
-    "heart_rate": ("physical_examinations", "heart_rate"),
-    "hba1c": ("lab_results", "hba1c"),
-    "ef": ("echo_data", "ef"),
-    "echo_ef": ("echo_data", "ef"),
-    "troponin_i": ("lab_results", "troponin_i"),
-    "lv_ejection_fraction": ("mri_data", "lv_ejection_fraction"),
-    "lv_mass": ("mri_data", "lv_mass"),
-    "lv_edv": ("mri_data", "lv_end_diastolic_volume"),
-    "lv_esv": ("mri_data", "lv_end_systolic_volume"),
-    "rv_ef": ("mri_data", "rv_ejection_fraction"),
-    "weight": ("physical_examinations", "weight_kg"),
-    "height": ("physical_examinations", "height_cm"),
+ALLOWED_FIELDS = {
+    # Demographics
+    "age",
+    "gender",
+    "nationality",
+    # Vitals / physical
+    "bmi",
+    "systolic_bp",
+    "diastolic_bp",
+    "heart_rate",
+    # Labs
+    "hba1c",
+    "troponin_i",
+    # Imaging
+    "echo_ef",
+    "mri_ef",
+    "ef",
+    "lv_ejection_fraction",
+    "lv_mass",
+    "lv_edv",
+    "lv_esv",
+    "rv_ef",
+    # Geographic
+    "current_city_category",
+    "childhood_city_category",
+    "migration_pattern",
+    # Flags
+    "has_echo",
+    "has_mri",
+    "data_completeness",
 }
+
+
+def _validate_field(field: str) -> str:
+    if field not in ALLOWED_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Unsupported field: {field}")
+    return field
 
 @router.get("/correlation")
 async def get_correlation(
@@ -34,39 +52,19 @@ async def get_correlation(
 ):
     """Get correlation data between two numeric fields"""
     try:
-        # Get table and column info for each field
-        f1_info = FIELD_MAP.get(field1, ("patient_summary", field1))
-        f2_info = FIELD_MAP.get(field2, ("patient_summary", field2))
-        
-        # Build a query using patient_summary view which has all joined data
+        f1 = _validate_field(field1)
+        f2 = _validate_field(field2)
+
         stmt = text(f"""
-            SELECT 
-                ps.dna_id,
-                ps.age,
-                ps.gender,
-                pe.bmi,
-                pe.systolic_bp,
-                pe.diastolic_bp,
-                pe.heart_rate,
-                pe.weight_kg as weight,
-                pe.height_cm as height,
-                lr.hba1c,
-                lr.troponin_i,
-                ed.ef,
-                md.lv_ejection_fraction,
-                md.lv_mass,
-                md.lv_end_diastolic_volume as lv_edv,
-                md.lv_end_systolic_volume as lv_esv,
-                md.rv_ejection_fraction as rv_ef
-            FROM patients ps
-            LEFT JOIN physical_examinations pe ON ps.id = pe.patient_id
-            LEFT JOIN lab_results lr ON ps.id = lr.patient_id
-            LEFT JOIN echo_data ed ON ps.id = ed.patient_id
-            LEFT JOIN mri_data md ON ps.id = md.patient_id
-            WHERE ps.age IS NOT NULL
+            SELECT
+                dna_id,
+                {f1} AS {f1},
+                {f2} AS {f2}
+            FROM patient_summary
+            WHERE {f1} IS NOT NULL AND {f2} IS NOT NULL
             LIMIT 500
         """)
-        
+
         result = db.execute(stmt).mappings().fetchall()
         
         return {
@@ -88,6 +86,12 @@ async def get_chart_data(
 ):
     """Get chart data with flexible parameters"""
     try:
+        xAxis = _validate_field(xAxis)
+        if yAxis:
+            yAxis = _validate_field(yAxis)
+        if groupBy:
+            groupBy = _validate_field(groupBy)
+
         # For simple aggregations, use patient_summary view
         if aggregation == "count" and groupBy:
             stmt = text(f"""

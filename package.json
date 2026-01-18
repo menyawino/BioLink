@@ -58,9 +58,8 @@
       "scripts": {
             "dev": "vite",
             "build": "vite build",
-            "start:db": "mamba run -n gcloud pg_ctl -D ./backend/pgdata -l ./backend/pgdata/logfile start",
-            "stop:db": "mamba run -n gcloud pg_ctl -D ./backend/pgdata stop",
-            "start:backend": "cd backend && npm run dev",
+            "start:backend": "cd backend-py && ./start.sh",
+            "import:patients": "cd backend-py && python -m app.scripts.import_patients_csv",
             "start:all": "./start-all.sh"
       }
 }

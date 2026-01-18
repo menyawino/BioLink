@@ -1,6 +1,6 @@
 # BioLink Python Backend
 
-FastAPI-based backend for BioLink with Azure AI Foundry integration.
+FastAPI backend for BioLink (patients registry + analytics + charts + optional Azure AI Foundry integration).
 
 ## Setup
 
@@ -13,14 +13,10 @@ pip install -r requirements.txt
 
 ### 2. Configure Environment
 
-The `.env` file is already configured with your Azure credentials. Verify:
+Create `backend-py/.env` (see `backend-py/.env.example`).
 
-```bash
-# Check that these are set in backend-py/.env
-AZURE_OPENAI_ENDPOINT=https://omar-ahmed-abdelhamiid-resource.cognitiveservices.azure.com
-AZURE_OPENAI_API_KEY=<your-key>
-AZURE_EXISTING_AIPROJECT_ENDPOINT=https://omar-ahmed-abdelhamiid-resource.services.ai.azure.com/api/projects/abdelhamiid-1153
-```
+Important:
+- Do not commit real credentials; keep `.env` files local.
 
 ### 3. Install Python Azure SDKs
 
@@ -77,12 +73,20 @@ Server runs on: `http://localhost:3001`
 
 Uses PostgreSQL. Connection string from `DATABASE_URL` env var.
 
-Tables expected:
-- `patients` - Patient registry
-- `physical_examinations` - Exam data
-- `lab_results` - Lab results
-- `medical_history` - Medical history
-- etc.
+This backend is intentionally streamlined around a single denormalized table:
+- `patients` (single source of truth)
+- `patient_summary` view (list/search/analytics/charts)
+
+Schema is auto-bootstrapped on backend startup.
+
+### Importing the CSV dataset
+
+To load the standardized CSV into Postgres:
+
+```bash
+cd backend-py
+python -m app.scripts.import_patients_csv
+```
 
 ## Environment Variables
 

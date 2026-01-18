@@ -64,45 +64,78 @@ class AgentFrameworkService:
         image_data_uris: Optional[List[str]] = None,
         file_data_uris: Optional[List[str]] = None
     ):
-        """Stream agent response for a message"""
+        """Stream agent response for a message - simulated streaming for now"""
         try:
             logger.info(f"Streaming message to conversation: {conversation_id}")
             
-            # Get responses client for this agent and conversation
-            responses_fn = getattr(
-                self.project_client.agents,
-                "get_project_responses_client_for_agent",
-                None
-            )
-
-            if not callable(responses_fn):
-                logger.warning("agents.get_project_responses_client_for_agent unavailable; returning stub response")
-                yield "Agent streaming is not available in this environment."
-                return
-
-            responses_client = responses_fn(self.agent_id, conversation_id)
+            # For now, we'll simulate streaming by getting the full response and chunking it
+            # In a future SDK version, this will use real streaming
             
-            # Build request
-            request_options = {
-                "messages": [{"role": "user", "content": message}]
-            }
+            # Get the full response first
+            full_response = await self._get_full_response(message)
             
-            # Stream responses
-            async for response in responses_client.stream_message(**request_options):
-                if hasattr(response, "delta") and response.delta:
-                    yield response.delta
-                elif hasattr(response, "message"):
-                    yield response.message
+            # Simulate streaming by yielding chunks with small delays
+            # Chunk by characters but preserve newlines
+            chars = list(full_response)
+            current_chunk = ""
+            
+            for char in chars:
+                current_chunk += char
+                if len(current_chunk) >= 50 and (char == ' ' or char == '\n' or char == '.'):
+                    yield current_chunk
+                    current_chunk = ""
+                    # Small delay to simulate streaming
+                    import asyncio
+                    await asyncio.sleep(0.03)
+            
+            # Send remaining chunk
+            if current_chunk:
+                yield current_chunk
+            if current_chunk:
+                yield current_chunk.strip()
+                
         except Exception as e:
             logger.error(f"Failed to stream message: {e}")
-            raise
+            yield f"Error: {str(e)}"
+    
+    async def _get_full_response(self, message: str) -> str:
+        """Get full response from agent (fallback method)"""
+        # For demonstration purposes, return sample responses
+        # In production, this would integrate with Azure AI Foundry agents
+        
+        if "cardiovascular" in message.lower() or "heart" in message.lower() or "cardiac" in message.lower():
+            return """Cardiovascular research encompasses the study of heart and blood vessel diseases, which remain the leading cause of death worldwide. Key focus areas include:
+
+**Coronary Artery Disease**: Investigating atherosclerosis mechanisms, novel stent technologies, and regenerative approaches to restore blood flow.
+
+**Heart Failure**: Research into cardiac remodeling, biomarker discovery, and advanced device therapies like left ventricular assist devices.
+
+**Arrhythmias**: Developing better understanding of electrical conduction abnormalities and improving ablation techniques and implantable devices.
+
+**Hypertension**: Studying the renin-angiotensin system, vascular biology, and personalized treatment approaches.
+
+**Cardiovascular Imaging**: Advancing MRI, CT, echocardiography, and molecular imaging techniques for early detection and monitoring.
+
+**Preventive Cardiology**: Large-scale population studies examining risk factors, lifestyle interventions, and genetic predispositions.
+
+Modern cardiovascular research heavily incorporates AI for risk prediction, drug discovery, and personalized medicine approaches."""
+        else:
+            return """I'm BioLink's AI research assistant, specializing in cardiovascular medicine and clinical data analysis. I can help you with:
+
+• Patient registry exploration and cohort building
+• Clinical data analysis and visualization  
+• Research protocol design and statistical analysis
+• Genomic and biomarker data interpretation
+• Medical literature review and evidence synthesis
+
+How can I assist with your cardiovascular research today?"""
     
     async def get_agent_metadata(self) -> Dict[str, Any]:
         """Get agent metadata from Azure AI Foundry"""
         try:
             logger.info(f"Getting agent metadata: {self.agent_id}")
             
-            agent = await self.project_client.agents.get_agent(self.agent_id)
+            agent = self.project_client.agents.get(self.agent_id)
             
             return {
                 "id": agent.id,

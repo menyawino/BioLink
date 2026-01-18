@@ -19,6 +19,8 @@ interface Message {
   error?: boolean;
   data?: any;
   chunks?: AgentResponseChunk[];
+  isStreaming?: boolean; // New: indicates if message is currently streaming
+  streamingChunks?: AgentResponseChunk[]; // New: chunks received during streaming
 }
 
 interface WelcomeScreenProps {
@@ -27,8 +29,38 @@ interface WelcomeScreenProps {
 }
 
 // Component to render different content types from Foundry agent
-function ChunkRenderer({ chunk }: { chunk: AgentResponseChunk }) {
+function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChunk; isStreaming?: boolean }) {
+  const [displayedText, setDisplayedText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (chunk.type === 'text' || chunk.type === 'reasoning') {
+      if (isStreaming) {
+        setIsTyping(true);
+        // Split by spaces but preserve newlines by treating them as separate tokens
+        const tokens = chunk.content.split(/(\s+)/).filter(token => token.length > 0);
+        let currentIndex = 0;
+        
+        const typeToken = () => {
+          if (currentIndex < tokens.length) {
+            setDisplayedText(prev => prev + tokens[currentIndex]);
+            currentIndex++;
+            setTimeout(typeToken, tokens[currentIndex - 1].includes('\n') ? 100 : 50); // Slower for lines with newlines
+          } else {
+            setIsTyping(false);
+          }
+        };
+        
+        // Start typing after a brief delay
+        setTimeout(typeToken, 100);
+      } else {
+        setDisplayedText(chunk.content);
+      }
+    } else {
+      setDisplayedText(chunk.content);
+    }
+  }, [chunk.content, chunk.type, isStreaming]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -38,7 +70,12 @@ function ChunkRenderer({ chunk }: { chunk: AgentResponseChunk }) {
 
   switch (chunk.type) {
     case 'text':
-      return <p className="whitespace-pre-wrap">{chunk.content}</p>;
+      return (
+        <p className="whitespace-pre-wrap">
+          {isStreaming ? displayedText : chunk.content}
+          {isStreaming && isTyping && <span className="animate-pulse text-primary">|</span>}
+        </p>
+      );
 
     case 'code':
       return (
@@ -73,7 +110,10 @@ function ChunkRenderer({ chunk }: { chunk: AgentResponseChunk }) {
             <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium text-sm text-blue-900 dark:text-blue-100 mb-1">Reasoning</p>
-              <p className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">{chunk.content}</p>
+              <p className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">
+                {isStreaming ? displayedText : chunk.content}
+                {isStreaming && isTyping && <span className="animate-pulse text-blue-600">|</span>}
+              </p>
             </div>
           </div>
         </div>
@@ -216,22 +256,62 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
       // Try Foundry agent first if enabled
       if (useFoundryAgent && foundryAgentRef.current) {
         try {
-          const agentResponse = await foundryAgentRef.current.runAgent(currentInput);
+          // Create streaming assistant message
+          const streamingMessageId = (Date.now() + 1).toString();
+          const streamingMessage: Message = {
+            id: streamingMessageId,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date(),
+            isStreaming: true,
+            streamingChunks: []
+          };
+          setMessages(prev => [...prev, streamingMessage]);
+
+          const agentResponse = await foundryAgentRef.current.runAgent(
+            currentInput,
+            undefined, // threadId
+            (chunk: AgentResponseChunk) => {
+              // Update streaming message with new chunk
+              setMessages(prev => prev.map(msg => {
+                if (msg.id === streamingMessageId) {
+                  const updatedChunks = [...(msg.streamingChunks || []), chunk];
+                  return {
+                    ...msg,
+                    streamingChunks: updatedChunks,
+                    content: updatedChunks
+                      .filter(c => c.type === 'text')
+                      .map(c => c.content)
+                      .join('')
+                  };
+                }
+                return msg;
+              }));
+            },
+            true // Enable streaming
+          );
 
           if (agentResponse.status === 'completed' && agentResponse.chunks) {
-            assistantMessage = {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: agentResponse.text || 'Response received',
-              timestamp: new Date(),
-              chunks: agentResponse.chunks,
-              data: agentResponse.raw
-            };
+            // Update message with final chunks and mark as not streaming
+            setMessages(prev => prev.map(msg => {
+              if (msg.id === streamingMessageId) {
+                return {
+                  ...msg,
+                  chunks: agentResponse.chunks,
+                  content: agentResponse.text || 'Response received',
+                  isStreaming: false,
+                  streamingChunks: undefined
+                };
+              }
+              return msg;
+            }));
           } else if (agentResponse.status === 'failed') {
             throw new Error(agentResponse.error || 'Agent request failed');
           }
         } catch (error) {
           console.warn('Foundry agent failed, falling back to local API:', error);
+          // Remove the streaming message and fall back
+          setMessages(prev => prev.filter(msg => !msg.isStreaming));
           setUseFoundryAgent(false);
         }
       }
@@ -331,10 +411,34 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
                       : 'bg-muted/50 text-foreground rounded-tl-none'
                   }`}>
                     {/* Render chunks if available (Foundry agent responses) */}
-                    {message.chunks && message.chunks.length > 0 ? (
+                    {message.isStreaming ? (
+                      // Streaming message - show chunks as they arrive
+                      <div className="space-y-2">
+                        {message.streamingChunks && message.streamingChunks.length > 0 ? (
+                          message.streamingChunks.map((chunk, chunkIdx) => (
+                            <ChunkRenderer 
+                              key={chunkIdx} 
+                              chunk={chunk} 
+                              isStreaming={chunkIdx === message.streamingChunks!.length - 1} 
+                            />
+                          ))
+                        ) : (
+                          // Show typing animation while waiting for first chunk
+                          <div className="flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                            <span className="text-sm text-muted-foreground">Thinking...</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : message.chunks && message.chunks.length > 0 ? (
+                      // Completed message - show all chunks
                       <div className="space-y-2">
                         {message.chunks.map((chunk, chunkIdx) => (
-                          <ChunkRenderer key={chunkIdx} chunk={chunk} />
+                          <ChunkRenderer key={chunkIdx} chunk={chunk} isStreaming={false} />
                         ))}
                       </div>
                     ) : (
@@ -369,8 +473,8 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
               </div>
             ))}
 
-            {/* Loading Indicator */}
-            {isLoading && (
+            {/* Loading Indicator - only show when not using Foundry streaming */}
+            {isLoading && !useFoundryAgent && (
               <div className="flex items-start">
                 <Avatar className="h-8 w-8 mr-3 bg-primary/10">
                   <AvatarFallback className="bg-primary/10 text-primary">

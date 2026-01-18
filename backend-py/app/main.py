@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import test_connection
+from app.database import engine
+from app.db_bootstrap import ensure_schema
 from app.routes import foundry, chat, patients, analytics, charts
 import logging
 from datetime import datetime
@@ -18,6 +20,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting BioLink API Server")
+    try:
+        ensure_schema(engine)
+    except Exception as e:
+        logger.error(f"Database schema bootstrap failed: {e}")
     db_connected = test_connection()
     logger.info(f"Database connection: {'✓ connected' if db_connected else '✗ disconnected'}")
     yield

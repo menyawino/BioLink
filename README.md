@@ -44,22 +44,16 @@ MYF BioLink is a sophisticated registry management system that provides:
 - **State Management**: Custom React hooks with API integration
 
 ### Backend
-- **Runtime**: Node.js with Hono framework
+- **Runtime**: Python (FastAPI)
 - **Database**: PostgreSQL
-- **Query Builder**: postgres.js
-- **Development**: tsx with hot reload
+- **ORM/DB**: SQLAlchemy
+- **Development**: Uvicorn with hot reload
 
-### Database Schema
-- `patients`: Core patient demographics and enrollment data
-- `physical_examinations`: Vital signs and physical exam data
-- `lab_results`: Laboratory test results (HbA1c, Troponin, etc.)
-- `ecg_data`: Electrocardiogram data and findings
-- `echo_data`: Echocardiography measurements and assessments
-- `mri_data`: Cardiac MRI measurements and analysis
-- `medical_history`: Patient comorbidities and medical conditions
-- `lifestyle_data`: Smoking, alcohol, medication data
-- `family_history`: Family medical history and genetic factors
-- `geographic_data`: Location and migration pattern data
+### Database Schema (Streamlined)
+- `patients`: Single denormalized source of truth
+- `patient_summary`: View used by list/search/analytics/charts
+
+The backend auto-bootstraps these objects at startup.
 
 ## Getting Started
 
@@ -83,43 +77,39 @@ npm install
 
 3. **Install backend dependencies**
 ```bash
-cd backend
-npm install
+cd backend-py
+pip install -r requirements.txt
 ```
 
-4. **Configure database connection**
-Create a `.env` file in the `backend` directory:
+4. **Configure environment**
+
+Create env files from the examples:
 ```env
+# frontend
+VITE_API_URL=http://localhost:3001
+
+# backend
 DATABASE_URL=postgresql://user:password@localhost:5432/biolink
 PORT=3001
-NODE_ENV=development
-
-# Azure OpenAI Configuration (REQUIRED for AI Agent)
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-AZURE_OPENAI_API_KEY=your-api-key-here
-AZURE_OPENAI_DEPLOYMENT=gpt-4
-AZURE_API_VERSION=2024-02-15-preview
+ENVIRONMENT=development
 ```
 
 📖 **See [AGENT_SYSTEM.md](AGENT_SYSTEM.md) for complete AI agent setup and usage**
 
-5. **Initialize the database**
+5. **Load data (optional)**
+
+If you have the standardized CSV available under `db/`, import it:
+
 ```bash
-# Import your SQL schema and data
-psql -U user -d biolink -f db/schema.sql
-psql -U user -d biolink -f db/data.sql
+cd backend-py
+python -m app.scripts.import_patients_csv
 ```
 
 ### Running the Application
 
 #### Option 1: Standard Node.js
 
-**Start the backend server:**
-```bash
-cd backend
-npm run dev
-```
-Backend runs at: http://localhost:3001
+(Legacy docs removed — backend is Python now.)
 
 **Start the frontend dev server:**
 ```bash
@@ -131,9 +121,9 @@ Frontend runs at: http://localhost:3000
 
 **Backend:**
 ```bash
-cd backend
 mamba activate gcloud
-npm run dev
+cd backend-py
+./start.sh
 ```
 
 **Frontend:**
