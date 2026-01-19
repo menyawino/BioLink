@@ -5,7 +5,7 @@ from app.config import settings
 from app.database import test_connection
 from app.database import engine
 from app.db_bootstrap import ensure_schema
-from app.routes import chat, patients, analytics, charts
+from app.routes import chat, patients, analytics, charts, tools
 import logging
 from datetime import datetime
 
@@ -72,6 +72,7 @@ app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(patients.router, prefix="/api/patients", tags=["patients"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(charts.router, prefix="/api/charts", tags=["charts"])
+app.include_router(tools.router, prefix="/api/tools", tags=["tools"])
 
 # Error handlers
 @app.exception_handler(Exception)

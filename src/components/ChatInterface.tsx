@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Badge } from "./ui/badge";
 import { Send, Loader2, Bot, User, Sparkles, ArrowRight, Activity, Users, BarChart3, Copy, Check } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { chatWithAgent, AgentResponseChunk, ChatMessage } from "../api/agent";
+import { chatWithAgent, callTool, AgentResponseChunk, ChatMessage, ToolCall } from "../api/agent";
 
 interface Message {
   id: string;
@@ -69,11 +69,11 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
 
   switch (chunk.type) {
     case 'text':
+      const textContent = isStreaming ? displayedText : chunk.content;
+      const htmlContent = parseMarkdown(textContent) + (isStreaming && isTyping ? '<span class="animate-pulse text-primary">|</span>' : '');
+      
       return (
-        <p className="whitespace-pre-wrap">
-          {isStreaming ? displayedText : chunk.content}
-          {isStreaming && isTyping && <span className="animate-pulse text-primary">|</span>}
-        </p>
+        <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: htmlContent }} />
       );
 
     case 'code':
@@ -109,10 +109,9 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
             <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium text-sm text-blue-900 dark:text-blue-100 mb-1">Reasoning</p>
-              <p className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">
-                {isStreaming ? displayedText : chunk.content}
-                {isStreaming && isTyping && <span className="animate-pulse text-blue-600">|</span>}
-              </p>
+              <span className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap" dangerouslySetInnerHTML={{ 
+                __html: (isStreaming ? parseMarkdown(displayedText) : parseMarkdown(chunk.content)) + (isStreaming && isTyping ? '<span class="animate-pulse text-blue-600">|</span>' : '')
+              }} />
             </div>
           </div>
         </div>
@@ -141,6 +140,41 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
   }
 }
 
+// Helper function to parse simple markdown
+const parseMarkdown = (text: string) => {
+  // Split by bold markers and process each part
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  
+  return parts.map(part => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      // This is bold text
+      const content = part.slice(2, -2);
+      return `<strong>${content}</strong>`;
+    } else {
+      // This is regular text, apply italic parsing
+      return part.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+    }
+  }).join('');
+};
+
+// Component to render streaming text chunks as a single flowing paragraph
+function StreamingTextRenderer({ chunks, isStreaming }: { chunks: AgentResponseChunk[]; isStreaming: boolean }) {
+  const fullContent = chunks.map(c => c.content).join('');
+  
+  // Add line breaks for better readability
+  const formattedContent = fullContent
+    .replace(/(\*\*.*?\*\*)\s*\*/g, '$1\n') // Add line break after bold items in lists
+    .replace(/([.!?])\s+/g, '$1\n') // Add line breaks after sentences
+    .replace(/\n\s*\n/g, '\n') // Remove extra blank lines
+    .trim();
+  
+  const htmlContent = parseMarkdown(formattedContent) + (isStreaming ? '<span class="animate-pulse text-primary">|</span>' : '');
+  
+  return (
+    <span className="whitespace-pre-line" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+  );
+}
+
 export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
   const appContext = useApp();
   const [messages, setMessages] = useState<Message[]>([
@@ -166,6 +200,8 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  const systemPrompt = `You are BioLink, an AI assistant for cardiovascular research. For general conversation, respond naturally. For data/analysis requests, use available tools (query_sql, search_patients, etc.) and explain methodology.`;
 
   const generateResponse = (text: string): { content: string, actions: { label: string; view?: string }[] } => {
     const lowerInput = text.toLowerCase();
@@ -229,103 +265,167 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
     setIsLoading(true);
 
     try {
-
-      const streamingMessageId = (Date.now() + 1).toString();
-      const streamingMessage: Message = {
-        id: streamingMessageId,
-        role: 'assistant',
-        content: '',
-        timestamp: new Date(),
-        isStreaming: true,
-        streamingChunks: []
-      };
-      setMessages(prev => [...prev, streamingMessage]);
-
-      const systemPrompt = `You are BioLink, the AI assistant for the Magdi Yacoub Heart Foundation's cardiovascular research registry (EHVol). Respond conversationally but call tools when research queries need data.`;
-
-      const history: ChatMessage[] = messages
-        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-        .map(msg => ({ role: msg.role, content: msg.content }));
-
-      const payloadMessages: ChatMessage[] = [
+      let conversationMessages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
-        ...history,
+        ...messages
+          .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+          .map(msg => ({ role: msg.role, content: msg.content })),
         { role: 'user', content: currentInput }
       ];
 
-      const response = await chatWithAgent(payloadMessages);
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama request failed: ${response.status} ${errorText}`);
-      }
+      let continueConversation = true;
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Ollama response stream is unavailable');
-      }
+      while (continueConversation) {
+        continueConversation = false;
 
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullText = '';
+        const streamingMessageId = (Date.now() + Math.random()).toString();
+        const streamingMessage: Message = {
+          id: streamingMessageId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isStreaming: true,
+          streamingChunks: []
+        };
+        setMessages(prev => [...prev, streamingMessage]);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        let response = await chatWithAgent(conversationMessages, { tools: true });
+        if (!response.ok) {
+          const errorText = await response.text();
+          const isToolUnsupported =
+            response.status === 400 &&
+            (errorText.includes("does not support tools") ||
+              errorText.includes("does not support tool"));
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const data = line.trim();
-          if (!data) continue;
-
-          let parsed: any;
-          try {
-            parsed = JSON.parse(data);
-          } catch {
-            continue;
-          }
-
-          const delta = parsed?.message?.content;
-          if (!delta) continue;
-
-          if (parsed?.done) {
-            continue;
-          }
-
-          fullText += delta;
-          const chunk: AgentResponseChunk = { type: 'text', content: delta };
-
-          setMessages(prev => prev.map(msg => {
-            if (msg.id === streamingMessageId) {
-              const updatedChunks = [...(msg.streamingChunks || []), chunk];
-              return {
-                ...msg,
-                streamingChunks: updatedChunks,
-                content: fullText
-              };
+          if (isToolUnsupported) {
+            response = await chatWithAgent(conversationMessages, { tools: false });
+            if (!response.ok) {
+              const retryErrorText = await response.text();
+              throw new Error(`Ollama request failed: ${response.status} ${retryErrorText}`);
             }
-            return msg;
-          }));
+          } else {
+            throw new Error(`Ollama request failed: ${response.status} ${errorText}`);
+          }
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Ollama response stream is unavailable');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+        let toolCalls: ToolCall[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const data = line.trim();
+            if (!data) continue;
+
+            let parsed: any;
+            try {
+              parsed = JSON.parse(data);
+            } catch {
+              continue;
+            }
+
+            const delta = parsed?.message?.content ?? parsed?.content;
+            const toolCallsDelta = parsed?.message?.tool_calls ?? parsed?.tool_calls;
+
+            if (toolCallsDelta) {
+              toolCalls = [...toolCalls, ...toolCallsDelta];
+            }
+
+            if (delta) {
+              fullText += delta;
+              const chunk: AgentResponseChunk = { type: 'text', content: delta };
+
+              setMessages(prev => prev.map(msg => {
+                if (msg.id === streamingMessageId) {
+                  const updatedChunks = [...(msg.streamingChunks || []), chunk];
+                  return {
+                    ...msg,
+                    streamingChunks: updatedChunks,
+                    content: fullText
+                  };
+                }
+                return msg;
+              }));
+            }
+          }
+        }
+
+        // Complete the streaming message
+        setMessages(prev => prev.map(msg => {
+          if (msg.id === streamingMessageId) {
+            return {
+              ...msg,
+              chunks: [{ type: 'text', content: fullText }],
+              content: fullText || 'Response received',
+              isStreaming: false,
+              streamingChunks: undefined
+            };
+          }
+          return msg;
+        }));
+
+        // Handle tool calls
+        if (toolCalls.length > 0) {
+          continueConversation = true;
+
+          // Add assistant message with tool calls to conversation
+          conversationMessages.push({
+            role: 'assistant',
+            content: fullText,
+            tool_calls: toolCalls
+          });
+
+          // Execute tools and add tool result messages
+          for (const toolCall of toolCalls) {
+            try {
+              const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
+              const toolResult = await callTool(toolCall.function.name, toolArgs);
+
+              conversationMessages.push({
+                role: 'tool',
+                content: toolResult,
+                tool_call_id: toolCall.id,
+                name: toolCall.function.name
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Unknown error';
+              console.error('Tool execution failed:', error);
+              conversationMessages.push({
+                role: 'tool',
+                content: `Tool execution failed: ${message}`,
+                tool_call_id: toolCall.id,
+                name: toolCall.function.name
+              });
+            }
+          }
         }
       }
-
-      setMessages(prev => prev.map(msg => {
-        if (msg.id === streamingMessageId) {
-          return {
-            ...msg,
-            chunks: [{ type: 'text', content: fullText }],
-            content: fullText || 'Response received',
-            isStreaming: false,
-            streamingChunks: undefined
-          };
-        }
-        return msg;
-      }));
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
       console.warn('Chat error:', error);
-      setMessages(prev => prev.filter(msg => !msg.isStreaming));
+      setMessages(prev => [
+        ...prev.filter(msg => !msg.isStreaming),
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `Error: ${message}`,
+          timestamp: new Date(),
+          error: true
+        }
+      ]);
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
@@ -372,27 +472,45 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
                   }`}>
                     {/* Render chunks if available (assistant responses) */}
                     {message.isStreaming ? (
-                      // Streaming message - show chunks as they arrive
+                      // Streaming message - accumulate text chunks and render others separately
                       <div className="space-y-2">
-                        {message.streamingChunks && message.streamingChunks.length > 0 ? (
-                          message.streamingChunks.map((chunk, chunkIdx) => (
-                            <ChunkRenderer 
-                              key={chunkIdx} 
-                              chunk={chunk} 
-                              isStreaming={chunkIdx === message.streamingChunks!.length - 1} 
-                            />
-                          ))
-                        ) : (
-                          // Show typing animation while waiting for first chunk
-                          <div className="flex items-center space-x-2">
-                            <div className="flex space-x-1">
-                              <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                              <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                              <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                            </div>
-                            <span className="text-sm text-muted-foreground">Thinking...</span>
-                          </div>
-                        )}
+                        {(() => {
+                          const textChunks = message.streamingChunks?.filter(c => c.type === 'text') || [];
+                          const otherChunks = message.streamingChunks?.filter(c => c.type !== 'text') || [];
+                          
+                          return (
+                            <>
+                              {/* Render accumulated text as single paragraph */}
+                              {textChunks.length > 0 && (
+                                <StreamingTextRenderer 
+                                  chunks={textChunks} 
+                                  isStreaming={true} 
+                                />
+                              )}
+                              
+                              {/* Render other chunk types (code, reasoning, etc.) */}
+                              {otherChunks.map((chunk, chunkIdx) => (
+                                <ChunkRenderer 
+                                  key={`other-${chunkIdx}`} 
+                                  chunk={chunk} 
+                                  isStreaming={false} 
+                                />
+                              ))}
+                              
+                              {/* Show typing animation if no chunks yet */}
+                              {(!message.streamingChunks || message.streamingChunks.length === 0) && (
+                                <div className="flex items-center space-x-2">
+                                  <div className="flex space-x-1">
+                                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                    <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                  </div>
+                                  <span className="text-sm text-muted-foreground">Thinking...</span>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     ) : message.chunks && message.chunks.length > 0 ? (
                       // Completed message - show all chunks
@@ -402,7 +520,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
                         ))}
                       </div>
                     ) : (
-                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
                     )}
                   </div>
 
