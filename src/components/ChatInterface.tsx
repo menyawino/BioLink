@@ -27,7 +27,7 @@ interface WelcomeScreenProps {
   patientData?: any;
 }
 
-// Component to render different content types from Foundry agent
+// Component to render different content types from the assistant
 function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChunk; isStreaming?: boolean }) {
   const [displayedText, setDisplayedText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -147,7 +147,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
     {
       id: '1',
       role: 'assistant',
-      content: 'Welcome to BioLink. I\'m your AI research assistant powered by Azure Foundry Agent. I have access to the entire patient registry, analytics engine, and cohort builder.\n\nHow can I assist you with your research today?',
+      content: 'Welcome to BioLink. I\'m your AI research assistant. I have access to the entire patient registry, analytics engine, and cohort builder.\n\nHow can I assist you with your research today?',
       timestamp: new Date(),
       actions: [
         { label: "View Patient Registry", view: "registry" },
@@ -261,7 +261,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
 
       const reader = response.body?.getReader();
       if (!reader) {
-        throw new Error('Foundry response stream is unavailable');
+        throw new Error('Ollama response stream is unavailable');
       }
 
       const decoder = new TextDecoder();
@@ -370,7 +370,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
                       ? 'bg-primary text-primary-foreground rounded-tr-none'
                       : 'bg-muted/50 text-foreground rounded-tl-none'
                   }`}>
-                    {/* Render chunks if available (Foundry agent responses) */}
+                    {/* Render chunks if available (assistant responses) */}
                     {message.isStreaming ? (
                       // Streaming message - show chunks as they arrive
                       <div className="space-y-2">
@@ -433,7 +433,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
               </div>
             ))}
 
-            {/* Loading Indicator - only show when not using Foundry streaming */}
+            {/* Loading Indicator - only show when not streaming */}
             {isLoading && !messages.some(message => message.isStreaming) && (
               <div className="flex items-start">
                 <Avatar className="h-8 w-8 mr-3 bg-primary/10">

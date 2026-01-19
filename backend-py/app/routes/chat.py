@@ -18,7 +18,7 @@ class ChatRequest(BaseModel):
 
 @router.post("")
 async def chat(request: ChatRequest):
-    """Chat endpoint using Azure OpenAI or Foundry"""
+    """Chat endpoint using Azure OpenAI"""
     try:
         if not openai_service or not openai_service.client:
             raise HTTPException(status_code=500, detail="Azure OpenAI is not configured. Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")

@@ -23,6 +23,9 @@ if lsof -nP -iTCP:3000 -sTCP:LISTEN > /dev/null 2>&1; then
     lsof -t -iTCP:3000 -sTCP:LISTEN | xargs -r kill -TERM 2>/dev/null || true
     sleep 1
 fi
+if lsof -nP -iTCP:11434 -sTCP:LISTEN > /dev/null 2>&1; then
+    echo -e "${YELLOW}Ollama already running on port 11434${NC}"
+fi
 
 # Function to cleanup on exit
 cleanup() {
@@ -45,6 +48,20 @@ echo -e "${GREEN}Starting Backend Server (Python FastAPI)...${NC}"
 BACKEND_PID=$!
 sleep 2
 
+# Start Ollama (if not already running)
+if ! lsof -nP -iTCP:11434 -sTCP:LISTEN > /dev/null 2>&1; then
+    echo -e "${GREEN}Starting Ollama server...${NC}"
+    (ollama serve) &
+    OLLAMA_PID=$!
+    sleep 2
+fi
+
+# Start MCP Server
+echo -e "${GREEN}Starting MCP Server...${NC}"
+mkdir -p "$SCRIPT_DIR/logs"
+(cd "$SCRIPT_DIR" && mamba run -n gcloud npm run mcp:server >> "$SCRIPT_DIR/logs/mcp.log" 2>&1) &
+MCP_PID=$!
+
 # Start Frontend
 echo -e "${GREEN}Starting Frontend Server...${NC}"
 (cd "$SCRIPT_DIR" && mamba run -n gcloud npm run dev) &
@@ -53,6 +70,8 @@ FRONTEND_PID=$!
 echo -e "${BLUE}All services started!${NC}"
 echo -e "${BLUE}Frontend: http://localhost:3000${NC}"
 echo -e "${BLUE}Backend: http://localhost:3001${NC}"
+echo -e "${BLUE}Ollama: http://localhost:11434${NC}"
+echo -e "${BLUE}MCP Server: stdio (mcphost)${NC}"
 echo -e "${BLUE}Press Ctrl+C to stop all services${NC}"
 
 # Wait for all background processes

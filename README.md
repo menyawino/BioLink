@@ -49,6 +49,11 @@ MYF BioLink is a sophisticated registry management system that provides:
 - **ORM/DB**: SQLAlchemy
 - **Development**: Uvicorn with hot reload
 
+### MCP (Local Tooling)
+- **Server**: Node.js MCP server in mcp/server.mjs
+- **Data**: PostgreSQL via DATABASE_URL
+- **Charts**: Vega-Lite specs returned from tools
+
 ### Database Schema (Streamlined)
 - `patients`: Single denormalized source of truth
 - `patient_summary`: View used by list/search/analytics/charts
@@ -131,6 +136,25 @@ cd backend-py
 mamba activate gcloud
 npm run dev
 ```
+
+### MCP Tools (SQL + Charts)
+
+An MCP server is included to let your local model call tools that query SQL and generate chart specs.
+
+Config: .mcphost.json
+
+Tools exposed:
+- query_sql
+- search_patients
+- get_patient_details
+- build_cohort
+- registry_overview
+- demographics
+- enrollment_trends
+- data_intersections
+- chart_from_sql
+
+The MCP server reads DATABASE_URL from backend-py/.env.
 
 ## Features
 

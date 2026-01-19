@@ -1,6 +1,6 @@
 # BioLink Python Backend
 
-FastAPI backend for BioLink (patients registry + analytics + charts + optional Azure AI Foundry integration).
+FastAPI backend for BioLink (patients registry + analytics + charts).
 
 ## Setup
 
@@ -18,14 +18,7 @@ Create `backend-py/.env` (see `backend-py/.env.example`).
 Important:
 - Do not commit real credentials; keep `.env` files local.
 
-### 3. Install Python Azure SDKs
-
-The dependencies include:
-- `azure-ai-projects==0.15.0` - Azure AI Foundry Agents API SDK
-- `azure-identity==1.15.0` - Azure authentication
-- `azure-ai-inference==0.16.0` - Azure AI Inference
-
-### 4. Start the Backend
+### 3. Start the Backend
 
 ```bash
 # Using the start script
@@ -38,13 +31,6 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 3001 --reload
 Server runs on: `http://localhost:3001`
 
 ## API Endpoints
-
-### Foundry Agent Integration
-
-- `POST /api/foundry/thread` - Create conversation thread
-- `POST /api/foundry/run` - Run agent with message
-- `GET /api/foundry/history?thread_id=...` - Get conversation history
-- `GET /api/foundry/health` - Health check
 
 ### Chat (Azure OpenAI fallback)
 
@@ -61,8 +47,6 @@ Server runs on: `http://localhost:3001`
 
 ## Key Features
 
-✅ Azure AI Foundry v2 Agents API integration (using Python SDK)  
-✅ Async/await streaming for agent responses  
 ✅ Azure OpenAI fallback for chat  
 ✅ PostgreSQL database connectivity  
 ✅ CORS enabled for frontend  
@@ -96,19 +80,8 @@ Key variables:
 - `DATABASE_URL` - PostgreSQL connection
 - `AZURE_OPENAI_ENDPOINT` - Azure OpenAI endpoint
 - `AZURE_OPENAI_API_KEY` - Azure OpenAI API key
-- `AZURE_EXISTING_AIPROJECT_ENDPOINT` - Azure AI Foundry project endpoint
-- `AZURE_EXISTING_AGENT_ID` - Agent ID (blnk:8)
 
 ## Troubleshooting
-
-### "Azure Foundry endpoint not configured"
-
-Check that `AZURE_EXISTING_AIPROJECT_ENDPOINT` is set in `.env`:
-
-```bash
-echo $AZURE_EXISTING_AIPROJECT_ENDPOINT
-# Should output: https://omar-ahmed-abdelhamiid-resource.services.ai.azure.com/api/projects/abdelhamiid-1153
-```
 
 ### "Azure OpenAI is not configured"
 
@@ -138,8 +111,7 @@ The old Node.js/TypeScript backend (`backend/`) is still available but supersede
 To fully migrate:
 
 1. ✅ Tested: Frontend proxy points to `:3001` (works with both)
-2. ✅ Updated: Azure Foundry endpoints use correct SDK
-3. ✅ Verified: All endpoints maintain same API contract
+2. ✅ Verified: All endpoints maintain same API contract
 
 To remove the old backend:
 
@@ -153,4 +125,4 @@ rm -rf ../backend
 - Logging to stdout (check terminal for debug info)
 - Hot reload enabled (`--reload` flag)
 - Database debug via raw SQL in routes
-- Use `az login` for Azure credential fallback
+- Use `.env` for local configuration
