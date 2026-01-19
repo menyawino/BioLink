@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     azure_location: str = "swedencentral"
     azure_foundry_api_version: str = "v1"
     model_deployment_name: str = Field(default="", validation_alias=AliasChoices("MODEL_DEPLOYMENT_NAME", "AZURE_OPENAI_DEPLOYMENT"))
+    azure_agent_responses_endpoint: str = Field(
+        default="",
+        validation_alias=AliasChoices("AZURE_AGENT_RESPONSES_ENDPOINT", "AZURE_RESPONSES_ENDPOINT")
+    )
+    azure_agent_responses_api_version: str = Field(
+        default="2025-11-15-preview",
+        validation_alias=AliasChoices("AZURE_AGENT_RESPONSES_API_VERSION", "AZURE_RESPONSES_API_VERSION")
+    )
     azd_allow_non_empty_folder: Optional[str] = None
 
     @field_validator("database_url")

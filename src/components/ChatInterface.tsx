@@ -6,9 +6,8 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Badge } from "./ui/badge";
 import { Send, Loader2, Bot, User, Sparkles, ArrowRight, Activity, Users, BarChart3, Copy, Check } from "lucide-react";
-import { sendChatMessage } from "../api/chat";
 import { useApp } from "../context/AppContext";
-import { createFoundryAgentService, AgentResponseChunk } from "../api/foundry";
+import { chatWithAgent, AgentResponseChunk, ChatMessage } from "../api/agent";
 
 interface Message {
   id: string;
@@ -159,30 +158,9 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [useFoundryAgent, setUseFoundryAgent] = useState(true); // Try Foundry by default
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const foundryAgentRef = useRef(useFoundryAgent ? createFoundryAgentService() : null);
-
-  // Initialize Foundry agent thread on mount
-  useEffect(() => {
-    if (useFoundryAgent && foundryAgentRef.current) {
-      foundryAgentRef.current.initializeThread().catch((error) => {
-        console.warn('Failed to initialize Foundry agent, will fall back to local responses:', error);
-        setUseFoundryAgent(false);
-        // Show notification to user
-        const errorMsg: Message = {
-          id: 'init_error',
-          role: 'system',
-          content: `Note: Foundry Agent unavailable - ${error instanceof Error ? error.message : 'Unknown error'}. Using fallback responses.`,
-          timestamp: new Date(),
-          error: true
-        };
-        setMessages(prev => [...prev, errorMsg]);
-      });
-    }
-  }, []);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -251,121 +229,103 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
     setIsLoading(true);
 
     try {
-      let assistantMessage: Message | null = null;
 
-      // Try Foundry agent first if enabled
-      if (useFoundryAgent && foundryAgentRef.current) {
-        try {
-          // Create streaming assistant message
-          const streamingMessageId = (Date.now() + 1).toString();
-          const streamingMessage: Message = {
-            id: streamingMessageId,
-            role: 'assistant',
-            content: '',
-            timestamp: new Date(),
-            isStreaming: true,
-            streamingChunks: []
-          };
-          setMessages(prev => [...prev, streamingMessage]);
+      const streamingMessageId = (Date.now() + 1).toString();
+      const streamingMessage: Message = {
+        id: streamingMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        isStreaming: true,
+        streamingChunks: []
+      };
+      setMessages(prev => [...prev, streamingMessage]);
 
-          const agentResponse = await foundryAgentRef.current.runAgent(
-            currentInput,
-            undefined, // threadId
-            (chunk: AgentResponseChunk) => {
-              // Update streaming message with new chunk
-              setMessages(prev => prev.map(msg => {
-                if (msg.id === streamingMessageId) {
-                  const updatedChunks = [...(msg.streamingChunks || []), chunk];
-                  return {
-                    ...msg,
-                    streamingChunks: updatedChunks,
-                    content: updatedChunks
-                      .filter(c => c.type === 'text')
-                      .map(c => c.content)
-                      .join('')
-                  };
-                }
-                return msg;
-              }));
-            },
-            true // Enable streaming
-          );
+      const systemPrompt = `You are BioLink, the AI assistant for the Magdi Yacoub Heart Foundation's cardiovascular research registry (EHVol). Respond conversationally but call tools when research queries need data.`;
 
-          if (agentResponse.status === 'completed' && agentResponse.chunks) {
-            // Update message with final chunks and mark as not streaming
-            setMessages(prev => prev.map(msg => {
-              if (msg.id === streamingMessageId) {
-                return {
-                  ...msg,
-                  chunks: agentResponse.chunks,
-                  content: agentResponse.text || 'Response received',
-                  isStreaming: false,
-                  streamingChunks: undefined
-                };
-              }
-              return msg;
-            }));
-          } else if (agentResponse.status === 'failed') {
-            throw new Error(agentResponse.error || 'Agent request failed');
+      const history: ChatMessage[] = messages
+        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+        .map(msg => ({ role: msg.role, content: msg.content }));
+
+      const payloadMessages: ChatMessage[] = [
+        { role: 'system', content: systemPrompt },
+        ...history,
+        { role: 'user', content: currentInput }
+      ];
+
+      const response = await chatWithAgent(payloadMessages);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Ollama request failed: ${response.status} ${errorText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Foundry response stream is unavailable');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const data = line.trim();
+          if (!data) continue;
+
+          let parsed: any;
+          try {
+            parsed = JSON.parse(data);
+          } catch {
+            continue;
           }
-        } catch (error) {
-          console.warn('Foundry agent failed, falling back to local API:', error);
-          // Remove the streaming message and fall back
-          setMessages(prev => prev.filter(msg => !msg.isStreaming));
-          setUseFoundryAgent(false);
+
+          const delta = parsed?.message?.content;
+          if (!delta) continue;
+
+          if (parsed?.done) {
+            continue;
+          }
+
+          fullText += delta;
+          const chunk: AgentResponseChunk = { type: 'text', content: delta };
+
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === streamingMessageId) {
+              const updatedChunks = [...(msg.streamingChunks || []), chunk];
+              return {
+                ...msg,
+                streamingChunks: updatedChunks,
+                content: fullText
+              };
+            }
+            return msg;
+          }));
         }
       }
 
-      // Fallback to traditional API if Foundry is disabled or failed
-      if (!assistantMessage) {
-        const response = await sendChatMessage(
-          currentInput,
-          messages.map(m => ({ role: m.role, content: m.content }))
-        );
-
-        if (response.success && response.data?.content) {
-          assistantMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: response.data.content,
-            timestamp: new Date(),
-            actions: generateResponse(response.data.content).actions,
-            data: response.data
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === streamingMessageId) {
+          return {
+            ...msg,
+            chunks: [{ type: 'text', content: fullText }],
+            content: fullText || 'Response received',
+            isStreaming: false,
+            streamingChunks: undefined
           };
-
-          // Handle navigation if response contains view directive
-          if (response.data.action === 'navigate' && response.data.view) {
-            setTimeout(() => {
-              if (appContext?.navigateToView) {
-                appContext.navigateToView(response.data!.view as any);
-              } else if (response.data?.view) {
-                onNavigate(response.data.view);
-              }
-            }, 1000);
-          }
-        } else {
-          throw new Error(response.error || 'Failed to get response');
         }
-      }
-
-      if (assistantMessage) {
-        setMessages(prev => [...prev, assistantMessage]);
-      }
+        return msg;
+      }));
     } catch (error) {
       console.warn('Chat error:', error);
-      
-      // Fallback to local response generation
-      const fallbackResponse = generateResponse(currentInput);
-      const fallbackMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: fallbackResponse.content,
-        timestamp: new Date(),
-        actions: fallbackResponse.actions,
-        error: true
-      };
-
-      setMessages(prev => [...prev, fallbackMessage]);
+      setMessages(prev => prev.filter(msg => !msg.isStreaming));
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
@@ -474,7 +434,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
             ))}
 
             {/* Loading Indicator - only show when not using Foundry streaming */}
-            {isLoading && !useFoundryAgent && (
+            {isLoading && !messages.some(message => message.isStreaming) && (
               <div className="flex items-start">
                 <Avatar className="h-8 w-8 mr-3 bg-primary/10">
                   <AvatarFallback className="bg-primary/10 text-primary">
