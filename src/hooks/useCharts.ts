@@ -6,9 +6,11 @@ import {
   getAgeDistribution,
   getGenderDistribution,
   getScatterData,
-  getDataCompleteness
+  getDataCompleteness,
+  getChartSeries
 } from '../api/charts';
 import type { ChartConfig, ChartFields } from '../api/types';
+import type { ChartSeriesRequest } from '../api/charts';
 
 // Hook for generating chart data
 export function useChartData() {
@@ -51,6 +53,16 @@ export function useScatterData(xField: string, yField: string) {
     () => getScatterData(xField, yField),
     [xField, yField],
     { enabled: !!xField && !!yField }
+  );
+}
+
+// Hook for chart series data
+export function useChartSeries(params: ChartSeriesRequest, enabled: boolean = true) {
+  const key = JSON.stringify(params);
+  return useQuery<{ label: string; value: number; series?: string }[]>(
+    () => getChartSeries(params),
+    [key],
+    { enabled }
   );
 }
 

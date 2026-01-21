@@ -175,8 +175,10 @@ function StreamingTextRenderer({ chunks, isStreaming }: { chunks: AgentResponseC
   );
 }
 
+
 export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
   const appContext = useApp();
+  const toolModelFallback = import.meta.env.VITE_OLLAMA_TOOL_MODEL_FALLBACK as string | undefined;
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -201,7 +203,12 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const systemPrompt = `You are BioLink, an AI assistant for cardiovascular research. For general conversation, respond naturally. For data/analysis requests, use available tools (query_sql, search_patients, etc.) and explain methodology.`;
+  const systemPrompt = `You are BioLink, an AI assistant for cardiovascular research.
+Rules:
+1) ZERO chit-chat for data requests. Use tools immediately with reasonable defaults (limit 10, age ranges, latest records).
+2) Ask a follow-up only if the request is ambiguous or unsafe.
+3) For non-data chat, respond briefly in 1-2 sentences.
+4) Never stall or ask to confirm obvious parameters.`;
 
   const generateResponse = (text: string): { content: string, actions: { label: string; view?: string }[] } => {
     const lowerInput = text.toLowerCase();
@@ -249,6 +256,165 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
     return { content, actions };
   };
 
+  const requestToolPlan = async (userInput: string): Promise<{ tool: string; args: any } | null> => {
+    const plannerMessages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `You are a tool planner. Choose the best tool and arguments for the user's request.
+Available tools:
+- query_sql(sql, limit)
+- search_patients(search, gender, age_min, age_max, limit)
+- build_cohort(age_min, age_max, gender, has_diabetes, has_hypertension, has_echo, has_mri, limit)
+- chart_from_sql(sql, mark, x, y, color, title)
+- registry_overview()
+Return ONLY valid JSON with this shape:
+{"tool":"tool_name","args":{...}} or {"tool":null}.
+      Always include a reasonable limit when listing records (default 10).
+      If the user asks for above/below ages, set age_min/age_max accordingly.
+      Do not ask clarifying questions.
+      Examples:
+      User: show me 10 patients above 60
+      Output: {"tool":"search_patients","args":{"age_min":60,"limit":10}}
+      User: males above 60
+      Output: {"tool":"search_patients","args":{"age_min":60,"gender":"male","limit":10}}
+      User: registry overview
+      Output: {"tool":"registry_overview","args":{}}
+      User: hi
+      Output: {"tool":null}`
+      },
+      { role: 'user', content: userInput }
+    ];
+
+    const response = await chatWithAgent(plannerMessages, { tools: true, stream: false });
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const raw = (data?.message?.content ?? data?.content ?? '').trim();
+
+    try {
+      const parsed = JSON.parse(raw);
+      const tool = parsed?.tool ?? null;
+      if (!tool) return null;
+      const allowedTools = new Set([
+        'query_sql',
+        'search_patients',
+        'build_cohort',
+        'chart_from_sql',
+        'registry_overview'
+      ]);
+      if (!allowedTools.has(tool)) return null;
+      const args = parsed?.args && typeof parsed.args === 'object' ? parsed.args : {};
+      return { tool, args };
+    } catch {
+      return null;
+    }
+  };
+
+  const streamChatResponse = async (
+    conversationMessages: ChatMessage[],
+    streamingMessageId: string,
+    useTools: boolean
+  ) => {
+    let response = await chatWithAgent(conversationMessages, { tools: useTools });
+    if (!response.ok) {
+      const errorText = await response.text();
+      const isToolUnsupported =
+        useTools &&
+        response.status === 400 &&
+        (errorText.includes("does not support tools") ||
+          errorText.includes("does not support tool"));
+
+      if (isToolUnsupported) {
+        if (toolModelFallback) {
+          response = await chatWithAgent(conversationMessages, {
+            tools: true,
+            toolModelOverride: toolModelFallback
+          });
+        } else {
+          response = await chatWithAgent(conversationMessages, { tools: false });
+        }
+        if (!response.ok) {
+          const retryErrorText = await response.text();
+          throw new Error(`Ollama request failed: ${response.status} ${retryErrorText}`);
+        }
+      } else {
+        throw new Error(`Ollama request failed: ${response.status} ${errorText}`);
+      }
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Ollama response stream is unavailable');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+    let toolCalls: ToolCall[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const data = line.trim();
+        if (!data) continue;
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          continue;
+        }
+
+        const delta = parsed?.message?.content ?? parsed?.content;
+        const toolCallsDelta = parsed?.message?.tool_calls ?? parsed?.tool_calls;
+
+        if (toolCallsDelta) {
+          toolCalls = [...toolCalls, ...toolCallsDelta];
+        }
+
+        if (delta) {
+          fullText += delta;
+          const chunk: AgentResponseChunk = { type: 'text', content: delta };
+
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === streamingMessageId) {
+              const updatedChunks = [...(msg.streamingChunks || []), chunk];
+              return {
+                ...msg,
+                streamingChunks: updatedChunks,
+                content: fullText
+              };
+            }
+            return msg;
+          }));
+        }
+      }
+    }
+
+    setMessages(prev => prev.map(msg => {
+      if (msg.id === streamingMessageId) {
+        return {
+          ...msg,
+          chunks: [{ type: 'text', content: fullText }],
+          content: fullText || 'Response received',
+          isStreaming: false,
+          streamingChunks: undefined
+        };
+      }
+      return msg;
+    }));
+
+    return { fullText, toolCalls };
+  };
+
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -273,6 +439,49 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
         { role: 'user', content: currentInput }
       ];
 
+      const plannedTool = await requestToolPlan(currentInput);
+      if (plannedTool) {
+        const streamingMessageId = (Date.now() + Math.random()).toString();
+        const streamingMessage: Message = {
+          id: streamingMessageId,
+          role: 'assistant',
+          content: 'Running tools...',
+          timestamp: new Date(),
+          isStreaming: true,
+          streamingChunks: [{ type: 'text', content: 'Running tools...' }]
+        };
+        setMessages(prev => [...prev, streamingMessage]);
+
+        try {
+          const toolResult = await callTool(plannedTool.tool, plannedTool.args);
+          conversationMessages = [
+            ...conversationMessages,
+            { role: 'tool', content: toolResult, name: plannedTool.tool }
+          ];
+
+          await streamChatResponse(conversationMessages, streamingMessageId, false);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === streamingMessageId) {
+              return {
+                ...msg,
+                content: `Error: ${message}`,
+                chunks: [{ type: 'error', content: `Error: ${message}` }],
+                isStreaming: false,
+                streamingChunks: undefined,
+                error: true
+              };
+            }
+            return msg;
+          }));
+        } finally {
+          setIsLoading(false);
+          inputRef.current?.focus();
+        }
+        return;
+      }
+
       let continueConversation = true;
 
       while (continueConversation) {
@@ -289,93 +498,7 @@ export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
         };
         setMessages(prev => [...prev, streamingMessage]);
 
-        let response = await chatWithAgent(conversationMessages, { tools: true });
-        if (!response.ok) {
-          const errorText = await response.text();
-          const isToolUnsupported =
-            response.status === 400 &&
-            (errorText.includes("does not support tools") ||
-              errorText.includes("does not support tool"));
-
-          if (isToolUnsupported) {
-            response = await chatWithAgent(conversationMessages, { tools: false });
-            if (!response.ok) {
-              const retryErrorText = await response.text();
-              throw new Error(`Ollama request failed: ${response.status} ${retryErrorText}`);
-            }
-          } else {
-            throw new Error(`Ollama request failed: ${response.status} ${errorText}`);
-          }
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('Ollama response stream is unavailable');
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let fullText = '';
-        let toolCalls: ToolCall[] = [];
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const data = line.trim();
-            if (!data) continue;
-
-            let parsed: any;
-            try {
-              parsed = JSON.parse(data);
-            } catch {
-              continue;
-            }
-
-            const delta = parsed?.message?.content ?? parsed?.content;
-            const toolCallsDelta = parsed?.message?.tool_calls ?? parsed?.tool_calls;
-
-            if (toolCallsDelta) {
-              toolCalls = [...toolCalls, ...toolCallsDelta];
-            }
-
-            if (delta) {
-              fullText += delta;
-              const chunk: AgentResponseChunk = { type: 'text', content: delta };
-
-              setMessages(prev => prev.map(msg => {
-                if (msg.id === streamingMessageId) {
-                  const updatedChunks = [...(msg.streamingChunks || []), chunk];
-                  return {
-                    ...msg,
-                    streamingChunks: updatedChunks,
-                    content: fullText
-                  };
-                }
-                return msg;
-              }));
-            }
-          }
-        }
-
-        // Complete the streaming message
-        setMessages(prev => prev.map(msg => {
-          if (msg.id === streamingMessageId) {
-            return {
-              ...msg,
-              chunks: [{ type: 'text', content: fullText }],
-              content: fullText || 'Response received',
-              isStreaming: false,
-              streamingChunks: undefined
-            };
-          }
-          return msg;
-        }));
+        const { fullText, toolCalls } = await streamChatResponse(conversationMessages, streamingMessageId, true);
 
         // Handle tool calls
         if (toolCalls.length > 0) {

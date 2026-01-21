@@ -9,6 +9,15 @@ export interface ChartDataRequest {
   aggregation?: 'count' | 'avg' | 'sum' | 'min' | 'max';
 }
 
+export interface ChartSeriesRequest {
+  xAxis: string;
+  yAxis?: string;
+  groupBy?: string;
+  aggregation?: 'count' | 'avg' | 'sum' | 'min' | 'max';
+  bins?: number;
+  limit?: number;
+}
+
 // Get chart data with flexible parameters
 export async function getChartData(params: ChartDataRequest) {
   const queryString = new URLSearchParams({
@@ -18,6 +27,19 @@ export async function getChartData(params: ChartDataRequest) {
     ...(params.aggregation && { aggregation: params.aggregation })
   });
   return get<any>(`/api/charts/data?${queryString}`);
+}
+
+// Get chart series for rich visuals
+export async function getChartSeries(params: ChartSeriesRequest) {
+  const queryString = new URLSearchParams({
+    xAxis: params.xAxis,
+    ...(params.yAxis && { yAxis: params.yAxis }),
+    ...(params.groupBy && { groupBy: params.groupBy }),
+    ...(params.aggregation && { aggregation: params.aggregation }),
+    ...(params.bins && { bins: String(params.bins) }),
+    ...(params.limit && { limit: String(params.limit) })
+  });
+  return get<{ label: string; value: number; series?: string }[]>(`/api/charts/series?${queryString}`);
 }
 
 // Generate chart data based on configuration

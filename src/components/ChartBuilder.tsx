@@ -1,3 +1,5 @@
+export { ChartBuilder } from "./ChartBuilderPowerBI";
+
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -72,7 +74,7 @@ const chartTypeRequirements = {
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
-export function ChartBuilder() {
+export function LegacyChartBuilder() {
   const [chartConfig, setChartConfig] = useState<ChartConfig>({
     type: 'bar',
     xAxis: 'age',

@@ -25,12 +25,13 @@ export type AgentResponseChunk = {
 
 export async function chatWithAgent(
   messages: ChatMessage[],
-  options?: { tools?: boolean }
+  options?: { tools?: boolean; stream?: boolean; toolModelOverride?: string }
 ) {
   const baseUrl = import.meta.env.VITE_OLLAMA_BASE_URL || 'http://localhost:11434';
   const defaultModel = import.meta.env.VITE_OLLAMA_MODEL || 'alibayram/medgemma:4b';
-  const toolModel = import.meta.env.VITE_OLLAMA_TOOL_MODEL || defaultModel;
+  const toolModel = options?.toolModelOverride || import.meta.env.VITE_OLLAMA_TOOL_MODEL || defaultModel;
   const model = options?.tools ? toolModel : defaultModel;
+  const stream = options?.stream ?? true;
 
   const url = `${baseUrl.replace(/\/$/, '')}/api/chat`;
 
@@ -42,7 +43,7 @@ export async function chatWithAgent(
     body: JSON.stringify({
       model,
       messages,
-      stream: true,
+      stream,
       ...(options?.tools
         ? {
             tools: [
