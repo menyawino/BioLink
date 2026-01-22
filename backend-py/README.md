@@ -80,6 +80,79 @@ Key variables:
 - `DATABASE_URL` - PostgreSQL connection
 - `AZURE_OPENAI_ENDPOINT` - Azure OpenAI endpoint
 - `AZURE_OPENAI_API_KEY` - Azure OpenAI API key
+- `SQLSERVER_*` - SQL Server connection used for live EHVol registry
+
+## Stage 1: SQL Server Smoke Test (EHVol)
+
+This verifies connectivity, schema, and sample rows from the SQL Server registry.
+
+1) Configure SQL Server credentials in `backend-py/.env` (see `.env.example`).
+2) Run the smoke test script:
+
+```bash
+cd backend-py
+python -m app.scripts.sqlserver_smoke_test
+```
+
+Expected output: column list + 10 sample rows (id, age, gender, ef, hypertension) and
+`Stage 1 OK` message.
+
+## RAG Pipeline (pgvector + Debezium + Ollama)
+
+### Docker services
+
+From repo root:
+
+```bash
+docker compose -f docker-compose.rag.yml up -d
+```
+
+### Stage 2: pgvector setup
+
+```bash
+cd backend-py
+python -m app.scripts.stage2_pgvector_setup
+```
+
+### Stage 3: Embed sample notes
+
+```bash
+cd backend-py
+python -m app.scripts.stage3_embed_sample
+```
+
+### Stage 4: CDC consumer (Debezium)
+
+Register connector:
+
+```bash
+cd backend-py
+./scripts/register_debezium_connector.sh
+```
+
+Run the CDC consumer:
+
+```bash
+python -m app.scripts.stage4_cdc_consumer
+```
+
+### Stage 5: RAG query test
+
+```bash
+cd backend-py
+python -m app.scripts.stage5_rag_query
+```
+
+### Stage 6: End-to-end query
+
+```bash
+cd backend-py
+python -m app.scripts.stage6_e2e
+```
+
+### API
+
+`POST /api/rag` with JSON `{ "question": "..." }`
 
 ## Troubleshooting
 

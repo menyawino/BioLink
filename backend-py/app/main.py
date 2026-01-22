@@ -5,7 +5,7 @@ from app.config import settings
 from app.database import test_connection
 from app.database import engine
 from app.db_bootstrap import ensure_schema
-from app.routes import chat, patients, analytics, charts, tools
+from app.routes import chat, patients, analytics, charts, tools, rag
 import logging
 from datetime import datetime
 
@@ -69,6 +69,7 @@ async def health():
 
 # Include routers
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
 app.include_router(patients.router, prefix="/api/patients", tags=["patients"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(charts.router, prefix="/api/charts", tags=["charts"])

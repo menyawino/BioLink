@@ -156,6 +156,26 @@ Tools exposed:
 
 The MCP server reads DATABASE_URL from backend-py/.env.
 
+---
+
+## RAG Pipeline (SQL Server → pgvector → Ollama)
+
+Live semantic search over EHVol notes/diagnoses, synced from SQL Server into pgvector.
+
+Quick start:
+
+```bash
+docker compose -f docker-compose.rag.yml up -d
+cd backend-py
+python -m app.scripts.sqlserver_smoke_test
+python -m app.scripts.stage2_pgvector_setup
+python -m app.scripts.stage3_embed_sample
+python -m app.scripts.stage5_rag_query
+```
+
+API:
+- `POST /api/rag` → `{ "question": "..." }`
+
 ## Features
 
 ### 1. Patient Registry

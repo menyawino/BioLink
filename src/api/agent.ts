@@ -177,3 +177,25 @@ export async function callTool(toolName: string, args: any): Promise<string> {
   const result = await response.json();
   return JSON.stringify(result, null, 2);
 }
+
+export async function chatWithSqlAgent(
+  message: string,
+  history: ChatMessage[] = []
+) {
+  const response = await fetch('http://localhost:3001/api/chat/sql-agent', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      message,
+      history
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`SQL agent request failed: ${response.status}`);
+  }
+
+  return response.json();
+}

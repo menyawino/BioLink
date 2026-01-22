@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Badge } from "./ui/badge";
 import { Send, Loader2, Bot, User, Sparkles, ArrowRight, Activity, Users, BarChart3, Copy, Check } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { chatWithAgent, callTool, AgentResponseChunk, ChatMessage, ToolCall } from "../api/agent";
+import { chatWithAgent, callTool, chatWithSqlAgent, AgentResponseChunk, ChatMessage, ToolCall } from "../api/agent";
 
 interface Message {
   id: string;
@@ -179,6 +179,7 @@ function StreamingTextRenderer({ chunks, isStreaming }: { chunks: AgentResponseC
 export function WelcomeScreen({ onNavigate, patientData }: WelcomeScreenProps) {
   const appContext = useApp();
   const toolModelFallback = import.meta.env.VITE_OLLAMA_TOOL_MODEL_FALLBACK as string | undefined;
+  const sqlAgentEnabled = (import.meta.env.VITE_SQL_AGENT_ENABLED as string | undefined) === 'true';
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -431,6 +432,30 @@ Return ONLY valid JSON with this shape:
     setIsLoading(true);
 
     try {
+      if (sqlAgentEnabled) {
+        const history = messages
+          .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+          .map(msg => ({ role: msg.role, content: msg.content }));
+
+        const response = await chatWithSqlAgent(currentInput, history);
+        const content = response?.data?.content ?? response?.content ?? 'No response.';
+
+        setMessages(prev => [
+          ...prev,
+          {
+            id: (Date.now() + Math.random()).toString(),
+            role: 'assistant',
+            content,
+            timestamp: new Date(),
+            chunks: [{ type: 'text', content }]
+          }
+        ]);
+
+        setIsLoading(false);
+        inputRef.current?.focus();
+        return;
+      }
+
       let conversationMessages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
         ...messages

@@ -488,6 +488,25 @@ export function ChartBuilder() {
     setChartConfig(prev => ({ ...prev, [field]: value }));
   };
 
+  const stackedTypes = new Set<ChartType>([
+    "stacked_column",
+    "stacked_bar",
+    "percent_stacked_column",
+    "percent_stacked_bar",
+    "stacked_area"
+  ]);
+
+  const handleChartTypeSelect = (type: ChartType) => {
+    const nextConfig: ChartConfig = { ...chartConfig, type };
+    if (stackedTypes.has(type) && !chartConfig.groupBy) {
+      const firstCategorical = availableFields.find(field => field.type === "categorical");
+      if (firstCategorical) {
+        nextConfig.groupBy = firstCategorical.id;
+      }
+    }
+    setChartConfig(nextConfig);
+  };
+
   const normalizedSeriesData = useMemo(() => {
     if (!seriesData) return [];
     return seriesData
@@ -1094,7 +1113,7 @@ export function ChartBuilder() {
                                   key={type}
                                   variant={chartConfig.type === type ? "default" : "outline"}
                                   size="sm"
-                                  onClick={() => updateConfig("type", type)}
+                                  onClick={() => handleChartTypeSelect(type)}
                                   className="justify-start flex-col h-auto py-2 min-h-[68px]"
                                 >
                                   <div className="flex items-center w-full">
@@ -1154,7 +1173,15 @@ export function ChartBuilder() {
                           <Label>Y-Axis / Value</Label>
                           <Select
                             value={chartConfig.yAxis || "none"}
-                            onValueChange={(value: string) => updateConfig("yAxis", value === "none" ? "" : value)}
+                            onValueChange={(value: string) => {
+                              const nextValue = value === "none" ? "" : value;
+                              const shouldShiftAggregation = nextValue && chartConfig.aggregation === "count";
+                              setChartConfig(prev => ({
+                                ...prev,
+                                yAxis: nextValue,
+                                aggregation: shouldShiftAggregation ? "avg" : prev.aggregation
+                              }));
+                            }}
                           >
                             <SelectTrigger className={needsNumericY && !hasValidYAxis ? "border-amber-500" : ""}>
                               <SelectValue placeholder="Select Y-axis variable" />
@@ -1193,6 +1220,11 @@ export function ChartBuilder() {
                               ))}
                             </SelectContent>
                           </Select>
+                          {stackedTypes.has(chartConfig.type) && !chartConfig.groupBy && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              Stacked visuals need a Group By field to split series.
+                            </p>
+                          )}
                         </div>
                       </AccordionContent>
                     </AccordionItem>
