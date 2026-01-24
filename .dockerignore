@@ -1,0 +1,17 @@
+**/.git
+**/.DS_Store
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.mypy_cache
+**/.pytest_cache
+**/logs
+**/notebooks
+**/db/*.csv
+**/db/*.sql
+**/db/*.txt
+**/db/*.log
+backend-py/.env
+backend-py/.env.*

@@ -1,0 +1,131 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: biolink-postgres
+    environment:
+      POSTGRES_USER: biolink
+      POSTGRES_PASSWORD: biolink_secret
+      POSTGRES_DB: biolink
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: biolink-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Strong!Passw0rd"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: biolink-pgvector
+    environment:
+      POSTGRES_USER: biolink
+      POSTGRES_PASSWORD: biolink_secret
+      POSTGRES_DB: biolink_vector
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+
+  zookeeper:
+    image: debezium/zookeeper:2.6
+    container_name: biolink-zookeeper
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: debezium/kafka:2.6
+    container_name: biolink-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://0.0.0.0:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+  connect:
+    image: debezium/connect:2.6
+    container_name: biolink-debezium
+    depends_on:
+      - kafka
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_connect_configs
+      OFFSET_STORAGE_TOPIC: debezium_connect_offsets
+      STATUS_STORAGE_TOPIC: debezium_connect_statuses
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      ENABLE_DEBEZIUM_SCRIPTING: "true"
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: biolink-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  backend:
+    build:
+      context: ./backend-py
+      dockerfile: Dockerfile
+    container_name: biolink-backend
+    env_file:
+      - ./backend-py/.env.docker
+    depends_on:
+      - postgres
+      - sqlserver
+      - pgvector
+      - ollama
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_BACKEND_URL: http://localhost:3001
+        VITE_OLLAMA_BASE_URL: http://localhost:11434
+        VITE_OLLAMA_MODEL: llama3.2:3b
+        VITE_OLLAMA_TOOL_MODEL: llama3.2:3b
+        VITE_OLLAMA_TOOL_MODEL_FALLBACK: llama3.2:3b
+        VITE_SQL_AGENT_ENABLED: "true"
+    container_name: biolink-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+  mcp:
+    image: node:20-alpine
+    container_name: biolink-mcp
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "npm ci && npm run mcp:server"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  pgvector_data:
+  sqlserver_data:
+  ollama_data:

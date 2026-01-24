@@ -159,7 +159,8 @@ export async function chatWithAgent(
 
 export async function callTool(toolName: string, args: any): Promise<string> {
   // Call backend API endpoint for tools
-  const response = await fetch('http://localhost:3001/api/tools/', {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+  const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/tools/`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -182,7 +183,8 @@ export async function chatWithSqlAgent(
   message: string,
   history: ChatMessage[] = []
 ) {
-  const response = await fetch('http://localhost:3001/api/chat/sql-agent', {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+  const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/chat/sql-agent`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'

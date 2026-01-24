@@ -211,6 +211,46 @@ Rules:
 3) For non-data chat, respond briefly in 1-2 sentences.
 4) Never stall or ask to confirm obvious parameters.`;
 
+  const isLikelyToolPayload = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed?.tool_calls || parsed?.tool || parsed?.name || parsed?.parameters) return true;
+      } catch {
+        // ignore
+      }
+    }
+    return /"name"\s*:\s*"[a-zA-Z0-9_]+"\s*,\s*"parameters"/i.test(trimmed);
+  };
+
+  const sanitizeAssistantText = (text: string) => {
+    let cleaned = text;
+    cleaned = cleaned.replace(/\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"parameters"\s*:\s*\{[^}]*\}\s*\}/gi, '').trim();
+    cleaned = cleaned.replace(/\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[^}]*\}\s*\}/gi, '').trim();
+    cleaned = cleaned.replace(/^select\s+.*$/gim, '').trim();
+    return cleaned;
+  };
+
+  const shouldUseTools = (text: string) => {
+    const normalized = text.trim().toLowerCase();
+    if (!normalized) return false;
+    const keywords = [
+      "patient", "patients", "registry", "cohort", "sql", "query", "count", "list",
+      "show", "find", "search", "chart", "plot", "graph", "analytics", "stats",
+      "age", "gender", "ef", "ejection fraction", "hypertension", "diabetes",
+      "echo", "mri", "biomarker", "protein"
+    ];
+    return keywords.some(keyword => normalized.includes(keyword));
+  };
+
+  const isLikelySqlOnly = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    return /^select\s+/i.test(trimmed) && !/[a-z]\s*:\s*/i.test(trimmed);
+  };
+
   const generateResponse = (text: string): { content: string, actions: { label: string; view?: string }[] } => {
     const lowerInput = text.toLowerCase();
     let content = "";
@@ -257,62 +297,6 @@ Rules:
     return { content, actions };
   };
 
-  const requestToolPlan = async (userInput: string): Promise<{ tool: string; args: any } | null> => {
-    const plannerMessages: ChatMessage[] = [
-      {
-        role: 'system',
-        content: `You are a tool planner. Choose the best tool and arguments for the user's request.
-Available tools:
-- query_sql(sql, limit)
-- search_patients(search, gender, age_min, age_max, limit)
-- build_cohort(age_min, age_max, gender, has_diabetes, has_hypertension, has_echo, has_mri, limit)
-- chart_from_sql(sql, mark, x, y, color, title)
-- registry_overview()
-Return ONLY valid JSON with this shape:
-{"tool":"tool_name","args":{...}} or {"tool":null}.
-      Always include a reasonable limit when listing records (default 10).
-      If the user asks for above/below ages, set age_min/age_max accordingly.
-      Do not ask clarifying questions.
-      Examples:
-      User: show me 10 patients above 60
-      Output: {"tool":"search_patients","args":{"age_min":60,"limit":10}}
-      User: males above 60
-      Output: {"tool":"search_patients","args":{"age_min":60,"gender":"male","limit":10}}
-      User: registry overview
-      Output: {"tool":"registry_overview","args":{}}
-      User: hi
-      Output: {"tool":null}`
-      },
-      { role: 'user', content: userInput }
-    ];
-
-    const response = await chatWithAgent(plannerMessages, { tools: true, stream: false });
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    const raw = (data?.message?.content ?? data?.content ?? '').trim();
-
-    try {
-      const parsed = JSON.parse(raw);
-      const tool = parsed?.tool ?? null;
-      if (!tool) return null;
-      const allowedTools = new Set([
-        'query_sql',
-        'search_patients',
-        'build_cohort',
-        'chart_from_sql',
-        'registry_overview'
-      ]);
-      if (!allowedTools.has(tool)) return null;
-      const args = parsed?.args && typeof parsed.args === 'object' ? parsed.args : {};
-      return { tool, args };
-    } catch {
-      return null;
-    }
-  };
-
   const streamChatResponse = async (
     conversationMessages: ChatMessage[],
     streamingMessageId: string,
@@ -354,6 +338,7 @@ Return ONLY valid JSON with this shape:
     let buffer = '';
     let fullText = '';
     let toolCalls: ToolCall[] = [];
+    let suppressText = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -382,6 +367,14 @@ Return ONLY valid JSON with this shape:
         }
 
         if (delta) {
+          const nextText = `${fullText}${delta}`;
+          if (useTools && (toolCallsDelta || isLikelyToolPayload(delta) || isLikelyToolPayload(nextText))) {
+            suppressText = true;
+            continue;
+          }
+          if (suppressText) {
+            continue;
+          }
           fullText += delta;
           const chunk: AgentResponseChunk = { type: 'text', content: delta };
 
@@ -400,12 +393,22 @@ Return ONLY valid JSON with this shape:
       }
     }
 
+    if (useTools && (toolCalls.length > 0 || suppressText)) {
+      fullText = '';
+    }
+
+    if (useTools && toolCalls.length === 0 && isLikelySqlOnly(fullText)) {
+      fullText = '';
+    }
+
+    fullText = sanitizeAssistantText(fullText);
+
     setMessages(prev => prev.map(msg => {
       if (msg.id === streamingMessageId) {
         return {
           ...msg,
           chunks: [{ type: 'text', content: fullText }],
-          content: fullText || 'Response received',
+          content: fullText || (useTools && toolCalls.length > 0 ? 'Running tools...' : 'Response received'),
           isStreaming: false,
           streamingChunks: undefined
         };
@@ -464,50 +467,25 @@ Return ONLY valid JSON with this shape:
         { role: 'user', content: currentInput }
       ];
 
-      const plannedTool = await requestToolPlan(currentInput);
-      if (plannedTool) {
+      if (isGreeting(currentInput)) {
         const streamingMessageId = (Date.now() + Math.random()).toString();
         const streamingMessage: Message = {
           id: streamingMessageId,
           role: 'assistant',
-          content: 'Running tools...',
+          content: '',
           timestamp: new Date(),
           isStreaming: true,
-          streamingChunks: [{ type: 'text', content: 'Running tools...' }]
+          streamingChunks: []
         };
         setMessages(prev => [...prev, streamingMessage]);
-
-        try {
-          const toolResult = await callTool(plannedTool.tool, plannedTool.args);
-          conversationMessages = [
-            ...conversationMessages,
-            { role: 'tool', content: toolResult, name: plannedTool.tool }
-          ];
-
-          await streamChatResponse(conversationMessages, streamingMessageId, false);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Unknown error';
-          setMessages(prev => prev.map(msg => {
-            if (msg.id === streamingMessageId) {
-              return {
-                ...msg,
-                content: `Error: ${message}`,
-                chunks: [{ type: 'error', content: `Error: ${message}` }],
-                isStreaming: false,
-                streamingChunks: undefined,
-                error: true
-              };
-            }
-            return msg;
-          }));
-        } finally {
-          setIsLoading(false);
-          inputRef.current?.focus();
-        }
+        await streamChatResponse(conversationMessages, streamingMessageId, false);
+        setIsLoading(false);
+        inputRef.current?.focus();
         return;
       }
 
       let continueConversation = true;
+      const toolsEnabled = shouldUseTools(currentInput);
 
       while (continueConversation) {
         continueConversation = false;
@@ -523,7 +501,12 @@ Return ONLY valid JSON with this shape:
         };
         setMessages(prev => [...prev, streamingMessage]);
 
-        const { fullText, toolCalls } = await streamChatResponse(conversationMessages, streamingMessageId, true);
+        const { fullText, toolCalls } = await streamChatResponse(conversationMessages, streamingMessageId, toolsEnabled);
+
+        if (!toolsEnabled) {
+          continueConversation = false;
+          break;
+        }
 
         // Handle tool calls
         if (toolCalls.length > 0) {

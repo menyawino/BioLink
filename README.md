@@ -63,9 +63,7 @@ The backend auto-bootstraps these objects at startup.
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
-- PostgreSQL 14+
-- Mamba/Conda (optional, for gcloud environment)
+- Docker + Docker Compose (recommended)
 
 ### Installation
 
@@ -75,23 +73,12 @@ git clone <repository-url>
 cd BioLink/Code
 ```
 
-2. **Install frontend dependencies**
-```bash
-npm install
-```
-
-3. **Install backend dependencies**
-```bash
-cd backend-py
-pip install -r requirements.txt
-```
-
-4. **Configure environment**
+2. **Configure environment**
 
 Create env files from the examples:
 ```env
 # frontend
-VITE_API_URL=http://localhost:3001
+VITE_BACKEND_URL=http://localhost:3001
 
 # backend
 DATABASE_URL=postgresql://user:password@localhost:5432/biolink
@@ -101,7 +88,7 @@ ENVIRONMENT=development
 
 📖 **See [AGENT_SYSTEM.md](AGENT_SYSTEM.md) for complete AI agent setup and usage**
 
-5. **Load data (optional)**
+3. **Load data (optional)**
 
 If you have the standardized CSV available under `db/`, import it:
 
@@ -110,31 +97,20 @@ cd backend-py
 python -m app.scripts.import_patients_csv
 ```
 
-### Running the Application
+### Running the Application (Docker)
 
-#### Option 1: Standard Node.js
-
-(Legacy docs removed — backend is Python now.)
-
-**Start the frontend dev server:**
+**Start the full stack (frontend, backend, SQL Server, pgvector, Kafka, Debezium, Ollama):**
 ```bash
-npm run dev
-```
-Frontend runs at: http://localhost:3000
-
-#### Option 2: With Conda/Mamba Environment
-
-**Backend:**
-```bash
-mamba activate gcloud
-cd backend-py
-./start.sh
+docker compose up -d --build
 ```
 
-**Frontend:**
+Frontend: http://localhost:3000
+Backend: http://localhost:3001
+Ollama: http://localhost:11434
+
+**Stop the stack:**
 ```bash
-mamba activate gcloud
-npm run dev
+docker compose down
 ```
 
 ### MCP Tools (SQL + Charts)
