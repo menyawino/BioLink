@@ -100,7 +100,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: docker/Dockerfile.frontend
       args:
         VITE_BACKEND_URL: http://localhost:3001
         VITE_OLLAMA_BASE_URL: http://localhost:11434

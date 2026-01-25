@@ -18,7 +18,7 @@ export interface ChatRequest {
   history: ChatMessage[];
 }
 
-// Send chat message to Azure OpenAI service
+// Send chat message to backend service
 export async function sendChatMessage(
   message: string, 
   history: ChatMessage[] = []

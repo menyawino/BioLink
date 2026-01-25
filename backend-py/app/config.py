@@ -11,12 +11,6 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://biolink:biolink_secret@localhost:5432/biolink"
     
-    # Azure OpenAI (for fallback chat)
-    azure_openai_endpoint: str = ""
-    azure_openai_api_key: str = ""
-    azure_openai_deployment: str = "gpt-5-nano"
-    azure_api_version: str = "2024-10-21"
-
     # Ollama / LangChain SQL agent
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2:3b"
@@ -38,9 +32,6 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 800
     rag_chunk_overlap: int = 120
     rag_top_k: int = 5
-    
-    model_deployment_name: str = Field(default="", validation_alias=AliasChoices("MODEL_DEPLOYMENT_NAME", "AZURE_OPENAI_DEPLOYMENT"))
-    azd_allow_non_empty_folder: Optional[str] = None
 
     @field_validator("database_url")
     @classmethod

@@ -302,7 +302,7 @@ export interface ToolExecutionResult {
   nextSteps?: string[];
 }
 
-// Tool call from Azure OpenAI
+// Tool call interface
 export interface ToolCall {
   id: string;
   type: 'function';

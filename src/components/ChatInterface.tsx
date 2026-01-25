@@ -27,6 +27,26 @@ interface WelcomeScreenProps {
   patientData?: any;
 }
 
+// Helper function to parse simple markdown
+const parseMarkdown = (text: string) => {
+  // Handle images first: ![alt](url)
+  text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto;" />');
+  
+  // Split by bold markers and process each part
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  
+  return parts.map(part => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      // This is bold text
+      const content = part.slice(2, -2);
+      return `<strong>${content}</strong>`;
+    } else {
+      // This is regular text, apply italic parsing
+      return part.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+    }
+  }).join('');
+};
+
 // Component to render different content types from the assistant
 function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChunk; isStreaming?: boolean }) {
   const [displayedText, setDisplayedText] = useState('');
@@ -96,9 +116,20 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
               )}
             </Button>
           </div>
-          <pre className="overflow-x-auto text-xs">
-            <code className="font-mono">{chunk.content}</code>
+          <pre className="text-sm overflow-x-auto">
+            <code>{chunk.content}</code>
           </pre>
+        </div>
+      );
+
+    case 'image':
+      return (
+        <div className="my-4">
+          <img 
+            src={chunk.content} 
+            alt="Generated visualization" 
+            className="max-w-full h-auto rounded-lg border border-muted/20 shadow-sm"
+          />
         </div>
       );
 
@@ -117,17 +148,6 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
         </div>
       );
 
-    case 'image':
-      return (
-        <div className="my-2 rounded-lg overflow-hidden">
-          <img 
-            src={chunk.content} 
-            alt="Agent response image"
-            className="max-w-full max-h-96 rounded-lg"
-          />
-        </div>
-      );
-
     case 'error':
       return (
         <div className="bg-red-50 dark:bg-red-950/20 rounded-lg p-3 my-2 border border-red-200/50 dark:border-red-900/50">
@@ -139,23 +159,6 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
       return <p className="text-muted-foreground">{chunk.content}</p>;
   }
 }
-
-// Helper function to parse simple markdown
-const parseMarkdown = (text: string) => {
-  // Split by bold markers and process each part
-  const parts = text.split(/(\*\*.*?\*\*)/g);
-  
-  return parts.map(part => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      // This is bold text
-      const content = part.slice(2, -2);
-      return `<strong>${content}</strong>`;
-    } else {
-      // This is regular text, apply italic parsing
-      return part.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
-    }
-  }).join('');
-};
 
 // Component to render streaming text chunks as a single flowing paragraph
 function StreamingTextRenderer({ chunks, isStreaming }: { chunks: AgentResponseChunk[]; isStreaming: boolean }) {
@@ -435,7 +438,10 @@ Rules:
     setIsLoading(true);
 
     try {
-      if (sqlAgentEnabled) {
+      // Check if this is a data query that should use the SQL agent
+      const useSqlAgent = sqlAgentEnabled && shouldUseTools(currentInput);
+
+      if (useSqlAgent) {
         const history = messages
           .filter(msg => msg.role === 'user' || msg.role === 'assistant')
           .map(msg => ({ role: msg.role, content: msg.content }));
@@ -459,6 +465,7 @@ Rules:
         return;
       }
 
+      // Handle non-SQL queries with regular chat
       let conversationMessages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
         ...messages
@@ -484,66 +491,18 @@ Rules:
         return;
       }
 
-      let continueConversation = true;
-      const toolsEnabled = shouldUseTools(currentInput);
-
-      while (continueConversation) {
-        continueConversation = false;
-
-        const streamingMessageId = (Date.now() + Math.random()).toString();
-        const streamingMessage: Message = {
-          id: streamingMessageId,
-          role: 'assistant',
-          content: '',
-          timestamp: new Date(),
-          isStreaming: true,
-          streamingChunks: []
-        };
-        setMessages(prev => [...prev, streamingMessage]);
-
-        const { fullText, toolCalls } = await streamChatResponse(conversationMessages, streamingMessageId, toolsEnabled);
-
-        if (!toolsEnabled) {
-          continueConversation = false;
-          break;
-        }
-
-        // Handle tool calls
-        if (toolCalls.length > 0) {
-          continueConversation = true;
-
-          // Add assistant message with tool calls to conversation
-          conversationMessages.push({
-            role: 'assistant',
-            content: fullText,
-            tool_calls: toolCalls
-          });
-
-          // Execute tools and add tool result messages
-          for (const toolCall of toolCalls) {
-            try {
-              const toolArgs = JSON.parse(toolCall.function.arguments || '{}');
-              const toolResult = await callTool(toolCall.function.name, toolArgs);
-
-              conversationMessages.push({
-                role: 'tool',
-                content: toolResult,
-                tool_call_id: toolCall.id,
-                name: toolCall.function.name
-              });
-            } catch (error) {
-              const message = error instanceof Error ? error.message : 'Unknown error';
-              console.error('Tool execution failed:', error);
-              conversationMessages.push({
-                role: 'tool',
-                content: `Tool execution failed: ${message}`,
-                tool_call_id: toolCall.id,
-                name: toolCall.function.name
-              });
-            }
-          }
-        }
-      }
+      // Regular chat without tools
+      const streamingMessageId = (Date.now() + Math.random()).toString();
+      const streamingMessage: Message = {
+        id: streamingMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        isStreaming: true,
+        streamingChunks: []
+      };
+      setMessages(prev => [...prev, streamingMessage]);
+      await streamChatResponse(conversationMessages, streamingMessageId, false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.warn('Chat error:', error);

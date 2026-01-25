@@ -2,9 +2,8 @@
 
 ## Phase 1: Chat Interface Foundation ✅
 - [x] Create chat UI component for landing page
-- [x] Build backend endpoint for Azure chat service integration
+- [x] Build backend endpoint for chat service integration
 - [x] Implement conversation history management
-- [x] Add configuration for Azure endpoint/URI
 - [x] Connect frontend to backend chat API
 
 ## Phase 2: Agent Tool Integration (PRIORITY)

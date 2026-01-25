@@ -2,11 +2,11 @@
 
 > **🤖 Now with Natural Language AI Agent - Control everything through chat!**
 
-A comprehensive web-based platform for managing and analyzing cardiovascular research data from the Magdi Yacoub Heart Foundation's EHVol Registry. Built with React, TypeScript, PostgreSQL, and Azure OpenAI.
+A comprehensive web-based platform for managing and analyzing cardiovascular research data from the Magdi Yacoub Heart Foundation's EHVol Registry. Built with React, TypeScript, PostgreSQL, and AI-powered chat agents.
 
 ## 🌟 NEW: AI Agent System
 
-BioLink now features a **complete agentic system** powered by Azure OpenAI with function calling. Interact with the entire platform using natural language:
+BioLink now features a **complete agentic system** powered by AI with function calling. Interact with the entire platform using natural language:
 
 ```
 "How many patients have diabetes?"

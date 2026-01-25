@@ -32,7 +32,7 @@ Server runs on: `http://localhost:3001`
 
 ## API Endpoints
 
-### Chat (Azure OpenAI fallback)
+### Chat
 
 - `POST /api/chat` - Send chat message
 
@@ -47,7 +47,7 @@ Server runs on: `http://localhost:3001`
 
 ## Key Features
 
-✅ Azure OpenAI fallback for chat  
+✅ AI-powered chat system  
 ✅ PostgreSQL database connectivity  
 ✅ CORS enabled for frontend  
 ✅ Production-ready error handling  
@@ -78,8 +78,6 @@ All credentials are in `backend-py/.env` and configured from the main `.env` fil
 
 Key variables:
 - `DATABASE_URL` - PostgreSQL connection
-- `AZURE_OPENAI_ENDPOINT` - Azure OpenAI endpoint
-- `AZURE_OPENAI_API_KEY` - Azure OpenAI API key
 - `SQLSERVER_*` - SQL Server connection used for live EHVol registry
 
 ## Stage 1: SQL Server Smoke Test (EHVol)
@@ -155,15 +153,6 @@ python -m app.scripts.stage6_e2e
 `POST /api/rag` with JSON `{ "question": "..." }`
 
 ## Troubleshooting
-
-### "Azure OpenAI is not configured"
-
-Check that both are set:
-
-```bash
-echo $AZURE_OPENAI_ENDPOINT
-echo $AZURE_OPENAI_API_KEY
-```
 
 ### Database connection fails
 

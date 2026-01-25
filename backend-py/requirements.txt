@@ -5,7 +5,6 @@ sqlalchemy>=2.0
 pydantic>=2.5
 pydantic-settings>=2.0
 psycopg2-binary>=2.9
-azure-ai-inference>=1.0.0b7
 langchain>=0.2
 langchain-community>=0.2
 langchain-core>=0.2
@@ -13,6 +12,13 @@ langchain-ollama>=0.1
 pyodbc>=5.1.0
 pgvector>=0.3.6
 kafka-python>=2.0.2
+
+# New dependencies for LangGraph agent
+langgraph>=0.2.0
+pandas>=2.0
+matplotlib>=3.8
+seaborn>=0.13
+plotly>=5.17
 
 # CORS and utilities
 python-multipart==0.0.6

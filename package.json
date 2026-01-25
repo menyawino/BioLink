@@ -68,6 +68,6 @@
             "mcp:server": "nodemon --quiet mcp/server.mjs",
             "start:backend": "cd backend-py && ./start.sh",
             "import:patients": "cd backend-py && python -m app.scripts.import_patients_csv",
-            "start:all": "./start-all.sh"
+            "start:all": "./scripts/start-all.sh"
       }
 }
