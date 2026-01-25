@@ -199,7 +199,8 @@ check_requirements() {
     # Check available memory
     case $OS in
         linux | macos)
-            MEM_GB=$(echo "scale=2; $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024" 2>/dev/null || echo "8")
+            MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}' 2>/dev/null || echo "8192000")
+            MEM_GB=$(echo "scale=2; $MEM_TOTAL / 1024 / 1024" | bc 2>/dev/null || echo "8")
             if awk "BEGIN {exit !($MEM_GB < 8)}"; then
                 log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
             else
@@ -266,7 +267,13 @@ main() {
         log_info "Starting Docker service..."
         case $OS in
             linux)
-                sudo systemctl start docker
+                if command -v systemctl >/dev/null 2>&1; then
+                    sudo systemctl start docker
+                elif command -v service >/dev/null 2>&1; then
+                    sudo service docker start
+                else
+                    log_warning "Could not start Docker automatically. Please start Docker manually."
+                fi
                 ;;
             macos)
                 log_warning "Please start Docker Desktop manually, then re-run this script"
