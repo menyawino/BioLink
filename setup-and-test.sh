@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # BioLink Complete Setup and Testing Script
 # This script sets up the entire BioLink system from scratch
@@ -31,15 +31,20 @@ log_error() {
 
 # Detect OS
 detect_os() {
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        echo "linux"
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        echo "macos"
-    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-        echo "windows"
-    else
-        echo "unknown"
-    fi
+    case "$OSTYPE" in
+        linux-gnu*)
+            echo "linux"
+            ;;
+        darwin*)
+            echo "macos"
+            ;;
+        msys | win32)
+            echo "windows"
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
 }
 
 # Detect GPU availability
@@ -47,29 +52,29 @@ detect_gpu() {
     log_info "Detecting GPU availability..."
 
     # Check for NVIDIA GPU
-    if command -v nvidia-smi &> /dev/null; then
+    if command -v nvidia-smi >/dev/null 2>&1; then
         log_success "NVIDIA GPU detected"
         echo "nvidia"
         return
     fi
 
     # Check for Apple Silicon (M1/M2/M3)
-    if [[ "$OS" == "macos" ]]; then
-        if system_profiler SPHardwareDataType 2>/dev/null | grep -q "Chip.*Apple\|Apple M"; then
-            log_success "Apple Silicon GPU detected"
-            echo "apple"
-            return
-        fi
-    fi
-
-    # Check for AMD GPU on Linux
-    if [[ "$OS" == "linux" ]]; then
-        if lspci | grep -i amd &> /dev/null && command -v rocminfo &> /dev/null; then
-            log_success "AMD GPU detected"
-            echo "amd"
-            return
-        fi
-    fi
+    case "$OS" in
+        macos)
+            if system_profiler SPHardwareDataType 2>/dev/null | grep -q "Chip.*Apple\|Apple M"; then
+                log_success "Apple Silicon GPU detected"
+                echo "apple"
+                return
+            fi
+            ;;
+        linux)
+            if lspci 2>/dev/null | grep -i amd >/dev/null 2>&1 && command -v rocminfo >/dev/null 2>&1; then
+                log_success "AMD GPU detected"
+                echo "amd"
+                return
+            fi
+            ;;
+    esac
 
     log_warning "No GPU detected, will use CPU-only mode"
     echo "none"
@@ -77,11 +82,12 @@ detect_gpu() {
 
 # Configure GPU settings for Ollama
 configure_gpu() {
-    if [[ "$GPU_TYPE" == "nvidia" ]]; then
-        log_info "Configuring NVIDIA GPU support..."
-        # Add GPU configuration to docker-compose.yml
-        if ! grep -q "deploy:" docker-compose.yml; then
-            sed -i.bak '/ollama:/a\
+    case "$GPU_TYPE" in
+        nvidia)
+            log_info "Configuring NVIDIA GPU support..."
+            # Add GPU configuration to docker-compose.yml
+            if ! grep -q "deploy:" docker-compose.yml; then
+                sed -i.bak '/ollama:/a\
     deploy:\
       resources:\
         reservations:\
@@ -89,25 +95,26 @@ configure_gpu() {
             - driver: nvidia\
               count: 1\
               capabilities: [gpu]' docker-compose.yml
-        fi
-        log_success "NVIDIA GPU configured for Ollama"
-
-    elif [[ "$GPU_TYPE" == "apple" ]]; then
-        log_info "Apple Silicon GPU detected - Ollama will use it automatically"
-        log_info "No additional configuration needed for Apple GPU"
-
-    elif [[ "$GPU_TYPE" == "amd" ]]; then
-        log_info "AMD GPU detected - configuring ROCm support..."
-        # Note: AMD GPU support in Docker is limited, Ollama may still use CPU
-
-    else
-        log_info "No GPU detected - Ollama will run on CPU"
-    fi
+            fi
+            log_success "NVIDIA GPU configured for Ollama"
+            ;;
+        apple)
+            log_info "Apple Silicon GPU detected - Ollama will use it automatically"
+            log_info "No additional configuration needed for Apple GPU"
+            ;;
+        amd)
+            log_info "AMD GPU detected - configuring ROCm support..."
+            # Note: AMD GPU support in Docker is limited, Ollama may still use CPU
+            ;;
+        *)
+            log_info "No GPU detected - Ollama will run on CPU"
+            ;;
+    esac
 }
 
 # Check if running as root/sudo (for installations)
 check_sudo() {
-    if [[ $EUID -eq 0 ]]; then
+    if [ "$EUID" -eq 0 ]; then
         echo "root"
     elif sudo -n true 2>/dev/null; then
         echo "sudo"
@@ -123,8 +130,8 @@ install_docker() {
     log_info "Installing Docker..."
 
     case $OS in
-        "linux")
-            if [[ "$SUDO_STATUS" != "root" ]] && [[ "$SUDO_STATUS" != "sudo" ]]; then
+        linux)
+            if [ "$SUDO_STATUS" != "root" ] && [ "$SUDO_STATUS" != "sudo" ]; then
                 log_error "Docker installation requires sudo privileges on Linux"
                 exit 1
             fi
@@ -136,13 +143,13 @@ install_docker() {
             sudo systemctl enable docker
 
             # Add user to docker group if not root
-            if [[ "$SUDO_STATUS" == "sudo" ]]; then
+            if [ "$SUDO_STATUS" = "sudo" ]; then
                 sudo usermod -aG docker $USER
                 log_warning "Please log out and back in for docker group changes to take effect"
             fi
             ;;
 
-        "macos")
+        macos)
             if command -v brew >/dev/null 2>&1; then
                 brew install --cask docker
                 log_info "Docker Desktop installed. Please start Docker Desktop manually."
@@ -166,8 +173,8 @@ install_docker_compose() {
     log_info "Installing Docker Compose..."
 
     case $OS in
-        "linux"|"macos")
-            if [[ "$SUDO_STATUS" != "root" ]] && [[ "$SUDO_STATUS" != "sudo" ]]; then
+        linux | macos)
+            if [ "$SUDO_STATUS" != "root" ] && [ "$SUDO_STATUS" != "sudo" ]; then
                 log_error "Docker Compose installation requires sudo privileges"
                 exit 1
             fi
@@ -193,18 +200,20 @@ check_requirements() {
     log_info "Checking system requirements..."
 
     # Check available memory
-    if [[ "$OS" == "linux" ]] || [[ "$OS" == "macos" ]]; then
-        MEM_GB=$(echo "scale=2; $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024" 2>/dev/null || echo "8")
-        if (( $(echo "$MEM_GB < 8" | bc -l 2>/dev/null || echo "0") )); then
-            log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
-        else
-            log_info "System memory: ${MEM_GB}GB - OK"
-        fi
-    fi
+    case $OS in
+        linux | macos)
+            MEM_GB=$(echo "scale=2; $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024" 2>/dev/null || echo "8")
+            if [ "$(echo "$MEM_GB < 8" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
+                log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
+            else
+                log_info "System memory: ${MEM_GB}GB - OK"
+            fi
+            ;;
+    esac
 
     # Check available disk space
     DISK_GB=$(df -k . | tail -1 | awk '{print int($4 / 1024 / 1024)}')
-    if (( DISK_GB < 10 )); then
+    if [ "$DISK_GB" -lt 10 ]; then
         log_warning "Only ${DISK_GB}GB free disk space. BioLink requires at least 10GB."
     else
         log_info "Available disk space: ${DISK_GB}GB - OK"
@@ -217,7 +226,7 @@ main() {
     log_info "=========================================="
 
     # Check if we're in the right directory
-    if [[ ! -f "docker-compose.yml" ]] || [[ ! -f "package.json" ]]; then
+    if [ ! -f "docker-compose.yml" ] || [ ! -f "package.json" ]; then
         log_error "Please run this script from the BioLink project root directory"
         exit 1
     fi
@@ -254,10 +263,10 @@ main() {
     if ! docker info >/dev/null 2>&1; then
         log_info "Starting Docker service..."
         case $OS in
-            "linux")
+            linux)
                 sudo systemctl start docker
                 ;;
-            "macos")
+            macos)
                 log_warning "Please start Docker Desktop manually, then re-run this script"
                 exit 1
                 ;;
@@ -390,7 +399,7 @@ main() {
 }
 
 # Show usage if help requested
-if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "BioLink Complete Setup Script"
     echo ""
     echo "This script will:"

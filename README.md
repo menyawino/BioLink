@@ -89,7 +89,12 @@ The backend auto-bootstraps these objects at startup.
 ## Getting Started
 
 ### Prerequisites
-- Docker + Docker Compose (recommended)
+
+#### System Requirements
+- **RAM**: 8GB minimum (16GB recommended)
+- **Disk Space**: 10GB free
+- **OS**: macOS, Linux, or Windows with WSL2
+- **Docker**: Will be installed automatically by the setup script
 
 ### Installation
 
