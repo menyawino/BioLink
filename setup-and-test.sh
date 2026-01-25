@@ -280,6 +280,11 @@ main() {
                 exit 1
                 ;;
         esac
+        # Check again after attempting to start
+        if ! docker info >/dev/null 2>&1; then
+            log_error "Docker daemon is not running. Please start Docker manually and re-run this script."
+            exit 1
+        fi
     fi
 
     # Clean up any existing containers
