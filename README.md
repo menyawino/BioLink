@@ -11,7 +11,7 @@ For the fastest setup on any machine with internet access:
 ```bash
 # Clone the repository
 git clone https://github.com/menyawino/BioLink.git
-cd BioLink/biolink-code
+cd BioLink/
 
 # Run the complete setup script
 ./setup-and-test.sh
@@ -29,8 +29,6 @@ This script will:
 **Migration to bigger machines**: Just copy the project and run `./setup-and-test.sh`!
 
 📋 **[Complete Migration Guide →](MIGRATION.md)**
-
-## 🌟 NEW: AI Agent System
 
 ## 🌟 NEW: AI Agent System
 
