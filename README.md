@@ -4,6 +4,34 @@
 
 A comprehensive web-based platform for managing and analyzing cardiovascular research data from the Magdi Yacoub Heart Foundation's EHVol Registry. Built with React, TypeScript, PostgreSQL, and AI-powered chat agents.
 
+## 🚀 Quick Start (Automated Setup)
+
+For the fastest setup on any machine with internet access:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd biolink-code
+
+# Run the complete setup script
+./setup-and-test.sh
+```
+
+This script will:
+- ✅ Check system requirements (8GB RAM, 10GB disk)
+- ✅ Install Docker and Docker Compose if needed
+- ✅ **Automatically detect and configure GPU acceleration** (NVIDIA/Apple Silicon/AMD)
+- ✅ Build and start all services
+- ✅ Load reduced 50-record dataset for testing
+- ✅ Run comprehensive tests
+- ✅ Provide access URLs
+
+**Migration to bigger machines**: Just copy the project and run `./setup-and-test.sh`!
+
+📋 **[Complete Migration Guide →](MIGRATION.md)**
+
+## 🌟 NEW: AI Agent System
+
 ## 🌟 NEW: AI Agent System
 
 BioLink now features a **complete agentic system** powered by AI with function calling. Interact with the entire platform using natural language:

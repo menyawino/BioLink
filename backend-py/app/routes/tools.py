@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import logging
 from app.database import engine
 import sqlalchemy as sa
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,7 @@ router = APIRouter()
 
 class ToolRequest(BaseModel):
     tool: str
-    arguments: dict
+    arguments: Optional[dict] = None
 
 @router.post("/")
 async def call_tool(request: ToolRequest):

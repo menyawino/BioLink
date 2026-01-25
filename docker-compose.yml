@@ -96,6 +96,8 @@ services:
       - ollama
     ports:
       - "3001:3001"
+    volumes:
+      - ./db:/app/db
 
   frontend:
     build:
