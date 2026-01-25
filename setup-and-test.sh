@@ -14,32 +14,29 @@ NC='\033[0m' # No Color
 
 # Logging functions
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    printf "[INFO] %s\n" "$1"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    printf "[SUCCESS] %s\n" "$1"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    printf "[WARNING] %s\n" "$1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    printf "[ERROR] %s\n" "$1"
 }
 
 # Detect OS
 detect_os() {
-    case "$OSTYPE" in
-        linux-gnu*)
+    case "$(uname -s)" in
+        Linux)
             echo "linux"
             ;;
-        darwin*)
+        Darwin)
             echo "macos"
-            ;;
-        msys | win32)
-            echo "windows"
             ;;
         *)
             echo "unknown"
@@ -203,7 +200,7 @@ check_requirements() {
     case $OS in
         linux | macos)
             MEM_GB=$(echo "scale=2; $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024" 2>/dev/null || echo "8")
-            if [ "$(echo "$MEM_GB < 8" | bc -l 2>/dev/null || echo "0")" -eq 1 ]; then
+            if awk "BEGIN {exit !($MEM_GB < 8)}"; then
                 log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
             else
                 log_info "System memory: ${MEM_GB}GB - OK"
@@ -225,6 +222,9 @@ main() {
     log_info "BioLink Complete Setup and Testing Script"
     log_info "=========================================="
 
+    OS=$(detect_os)
+    SUDO_STATUS=$(check_sudo)
+
     # Check if we're in the right directory
     if [ ! -f "docker-compose.yml" ] || [ ! -f "package.json" ]; then
         log_error "Please run this script from the BioLink project root directory"
@@ -232,6 +232,8 @@ main() {
     fi
 
     check_requirements
+
+    GPU_TYPE=$(detect_gpu)
 
     # Check for Docker
     if ! command -v docker >/dev/null 2>&1; then
