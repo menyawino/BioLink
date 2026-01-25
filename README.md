@@ -10,8 +10,8 @@ For the fastest setup on any machine with internet access:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd biolink-code
+git clone [<repository-url>](https://github.com/menyawino/BioLink.git)
+cd BioLink/biolink-code
 
 # Run the complete setup script
 ./setup-and-test.sh
