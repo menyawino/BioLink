@@ -203,7 +203,7 @@ check_requirements() {
     fi
 
     # Check available disk space
-    DISK_GB=$(df -BG . | tail -1 | awk '{print $4}' | sed 's/G//')
+    DISK_GB=$(df -k . | tail -1 | awk '{print int($4 / 1024 / 1024)}')
     if (( DISK_GB < 10 )); then
         log_warning "Only ${DISK_GB}GB free disk space. BioLink requires at least 10GB."
     else

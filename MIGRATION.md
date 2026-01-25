@@ -7,8 +7,11 @@
 # Stop all services
 docker compose down
 
-# Create a compressed archive
-tar -czf biolink-backup.tar.gz .
+# Backup the database
+docker exec biolink-postgres pg_dump -U biolink biolink > biolink-db-backup.sql
+
+# Create a compressed archive of the project (code and backup)
+tar -czf biolink-backup.tar.gz . --exclude='node_modules' --exclude='.git'
 ```
 
 ### Step 2: Transfer to Target Machine
@@ -22,12 +25,59 @@ rsync -avz . user@target-machine:~/biolink-code/
 
 ### Step 3: Setup on Target Machine
 ```bash
-# Extract if using tar
+# Extract the archive
 tar -xzf biolink-backup.tar.gz
 cd biolink-code
 
+# Install Docker if not already installed
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Installing Docker..."
+    
+    # Detect OS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if command -v brew >/dev/null 2>&1; then
+            brew install --cask docker
+            echo "Docker Desktop installed. Please start Docker Desktop manually."
+        else
+            echo "Homebrew not found. Please install Docker Desktop manually from https://docs.docker.com/desktop/install/mac-install/"
+            exit 1
+        fi
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh
+        sudo systemctl start docker
+        sudo systemctl enable docker
+        sudo usermod -aG docker $USER
+        echo "Docker installed. Please log out and back in for group changes to take effect."
+    else
+        echo "Unsupported OS for automatic Docker installation. Please install Docker manually."
+        exit 1
+    fi
+else
+    echo "Docker already installed."
+fi
+
+# Start Docker if not running
+if ! docker info >/dev/null 2>&1; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "Please start Docker Desktop manually, then press Enter to continue."
+        read
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sudo systemctl start docker
+    fi
+fi
+
 # Run the automated setup (GPU will be auto-detected and configured)
 ./setup-and-test.sh
+
+# Wait for services to be ready, then restore the database
+echo "Waiting for database to be ready..."
+sleep 60
+
+# Restore the database
+docker exec -i biolink-postgres psql -U biolink biolink < biolink-db-backup.sql
 ```
 
 ### Step 4: Performance Optimization (Optional)
