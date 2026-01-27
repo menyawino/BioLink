@@ -122,7 +122,7 @@ services:
     working_dir: /app
     volumes:
       - ./:/app
-    command: sh -c "npm ci && npm run mcp:server"
+    command: sh -c "npm install && npm run mcp:server"
     depends_on:
       - backend
 

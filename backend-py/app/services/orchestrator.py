@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
 
+from langchain_ollama import ChatOllama
+
+from app.config import settings
 from app.services.audit import audit_event
 from app.services.intent_router import IntentRouter
 from app.services.tool_registry import ToolRegistry
@@ -88,6 +92,138 @@ class SqlAgentAdapter:
         if count == 1:
             return f"Query executed: {sql}\nResult: {rows[0]}"
         return f"Query executed: {sql}\nReturned {count} rows. Sample: {rows[:5]}"
+
+
+class MedicalAgentAdapter:
+    name = "medical"
+
+    def __init__(self) -> None:
+        self._llm = ChatOllama(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_medical_model,
+            temperature=0.2,
+        )
+
+    async def run(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]],
+        tool_registry: ToolRegistry,
+    ) -> AgentResult:
+        prompt = self._build_prompt(message, history)
+        response = await self._llm.ainvoke(prompt)
+        return AgentResult(content=response.content, agent=self.name)
+
+    @staticmethod
+    def _build_prompt(message: str, history: Optional[List[Dict[str, str]]]) -> str:
+        history_block = ""
+        if history:
+            history_block = "\n".join(
+                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+            )
+        return (
+            "You are a careful medical assistant. Provide evidence-based guidance, "
+            "be explicit about uncertainty, and avoid giving definitive diagnoses. "
+            "If a question requires patient-specific data, ask clarifying questions.\n\n"
+            f"Conversation history:\n{history_block}\n\n"
+            f"User question: {message}\n"
+        )
+
+
+class CodingAgentAdapter:
+    name = "coding"
+
+    def __init__(self) -> None:
+        self._llm = ChatOllama(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_coding_model,
+            temperature=0,
+        )
+
+    async def run(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]],
+        tool_registry: ToolRegistry,
+    ) -> AgentResult:
+        prompt = self._build_prompt(message, history)
+        response = await self._llm.ainvoke(prompt)
+        payload = self._extract_json(response.content)
+        if not payload:
+            return AgentResult(
+                content="I couldn't parse a structured plan. Please rephrase the request with desired chart or SQL details.",
+                agent=self.name,
+            )
+
+        action = payload.get("action", "query_sql")
+        if action == "chart_from_sql":
+            args = {
+                "sql": payload.get("sql"),
+                "mark": payload.get("mark", "bar"),
+                "x": payload.get("x"),
+                "y": payload.get("y"),
+                "color": payload.get("color"),
+                "title": payload.get("title", "Chart"),
+            }
+            if not args.get("sql") or not args.get("x") or not args.get("y"):
+                return AgentResult(
+                    content="Chart requests need sql, x, and y fields. Please clarify.",
+                    agent=self.name,
+                )
+            result = tool_registry.call("chart_from_sql", args)
+            tool_call = ToolCall(name="chart_from_sql", arguments=args)
+            summary = f"Generated chart '{args.get('title')}' with {result.get('count', 0)} rows."
+            return AgentResult(
+                content=summary,
+                agent=self.name,
+                tool_calls=[tool_call],
+                metadata={"chart": result.get("spec")},
+            )
+
+        sql = payload.get("sql") or ""
+        if not sql:
+            return AgentResult(
+                content="Please provide a query intent so I can generate SQL.",
+                agent=self.name,
+            )
+        result = tool_registry.call("query_sql", {"sql": sql, "limit": 200})
+        tool_call = ToolCall(name="query_sql", arguments={"sql": sql, "limit": 200})
+        return AgentResult(
+            content=SqlAgentAdapter._format_result(sql, result),
+            agent=self.name,
+            tool_calls=[tool_call],
+            metadata={"count": result.get("count", 0)},
+        )
+
+    @staticmethod
+    def _build_prompt(message: str, history: Optional[List[Dict[str, str]]]) -> str:
+        history_block = ""
+        if history:
+            history_block = "\n".join(
+                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+            )
+        return (
+            "You are a data assistant. Decide whether to generate SQL or a chart. "
+            "Return ONLY JSON with keys: action (query_sql|chart_from_sql), sql, mark, x, y, color, title. "
+            "Use only tables: patients, patient_summary. Ensure SQL is SELECT-only.\n\n"
+            f"Conversation history:\n{history_block}\n\n"
+            f"User request: {message}\n"
+        )
+
+    @staticmethod
+    def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            match = re.search(r"\{[\s\S]*\}", text)
+            if not match:
+                return None
+            try:
+                return json.loads(match.group(0))
+            except Exception:
+                return None
 
 
 class RagAgentAdapter:
@@ -187,6 +323,8 @@ class ChatOrchestrator:
         self._router = router or IntentRouter()
         self._agents: Dict[str, Agent] = {
             "sql": SqlAgentAdapter(),
+            "medical": MedicalAgentAdapter(),
+            "coding": CodingAgentAdapter(),
             "rag": RagAgentAdapter(),
             "cohort": CohortAgent(),
             "ui": UiAgent(),

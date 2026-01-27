@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # Ollama / LangChain SQL agent
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2:3b"
+    ollama_medical_model: str = "alibayram/medgemma:4b"
+    ollama_coding_model: str = "llama3.2:3b"
     sql_agent_default_limit: int = 200
 
     # SQL Server (EHVol registry)
