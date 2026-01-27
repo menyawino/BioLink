@@ -198,19 +198,28 @@ check_requirements() {
 
     # Check available memory
     case $OS in
-        linux | macos)
+        linux)
             MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}' 2>/dev/null || echo "8192000")
             MEM_GB=$(echo "scale=2; $MEM_TOTAL / 1024 / 1024" | bc 2>/dev/null || echo "8")
-            if awk "BEGIN {exit !($MEM_GB < 8)}"; then
-                log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
-            else
-                log_info "System memory: ${MEM_GB}GB - OK"
-            fi
+            ;;
+        macos)
+            MEM_BYTES=$(sysctl -n hw.memsize 2>/dev/null || echo "8589934592")
+            MEM_GB=$(echo "scale=2; $MEM_BYTES / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "8")
+            ;;
+        *)
+            MEM_GB=8
             ;;
     esac
 
+    if awk "BEGIN {exit !($MEM_GB < 8)}"; then
+        log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
+    else
+        log_info "System memory: ${MEM_GB}GB - OK"
+    fi
+
     # Check available disk space
-    DISK_GB=$(df -k . | tail -1 | awk '{print int($4 / 1024 / 1024)}')
+    DISK_GB=$(df -k . 2>/dev/null | awk 'NR>1 {if ($4 ~ /^[0-9]+$/) print int($4 / 1024 / 1024)}' | head -1 2>/dev/null)
+    if [ -z "$DISK_GB" ]; then DISK_GB=100; fi
     if [ "$DISK_GB" -lt 10 ]; then
         log_warning "Only ${DISK_GB}GB free disk space. BioLink requires at least 10GB."
     else
@@ -262,29 +271,10 @@ main() {
         log_success "Docker Compose found"
     fi
 
-    # Start Docker if not running
+    # Check if Docker is running
     if ! docker info >/dev/null 2>&1; then
-        log_info "Starting Docker service..."
-        case $OS in
-            linux)
-                if command -v systemctl >/dev/null 2>&1; then
-                    sudo systemctl start docker
-                elif command -v service >/dev/null 2>&1; then
-                    sudo service docker start
-                else
-                    log_warning "Could not start Docker automatically. Please start Docker manually."
-                fi
-                ;;
-            macos)
-                log_warning "Please start Docker Desktop manually, then re-run this script"
-                exit 1
-                ;;
-        esac
-        # Check again after attempting to start
-        if ! docker info >/dev/null 2>&1; then
-            log_error "Docker daemon is not running. Please start Docker manually and re-run this script."
-            exit 1
-        fi
+        log_error "Docker daemon is not running. Please start Docker manually and re-run this script."
+        exit 1
     fi
 
     # Clean up any existing containers
