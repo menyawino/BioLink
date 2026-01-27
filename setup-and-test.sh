@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # BioLink Complete Setup and Testing Script
 # This script sets up the entire BioLink system from scratch
@@ -220,7 +220,7 @@ check_requirements() {
             ;;
     esac
 
-    if awk "BEGIN {exit !($MEM_GB < 8)}"; then
+    if (( $(echo "$MEM_GB < 8" | bc -l 2>/dev/null || echo "0") )); then
         log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
     else
         log_info "System memory: ${MEM_GB}GB - OK"
@@ -275,26 +275,25 @@ main() {
         fi
 
         # Start Docker daemon
-        if ! docker info >/dev/null 2>&1; then
+        if ! docker ps >/dev/null 2>&1; then
             log_info "Starting Docker daemon in Colab..."
             service docker start 2>/dev/null || (dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2376 --tls=false &) 
             sleep 10
 
             # Wait for Docker to be ready
-            for i in {1..30}; do
-                if docker info >/dev/null 2>&1; then
+            for i in {1..60}; do
+                if docker ps >/dev/null 2>&1; then
                     break
                 fi
                 sleep 1
             done
         fi
 
-        if ! docker info >/dev/null 2>&1; then
-            log_error "Failed to start Docker in Colab environment"
-            exit 1
+        if ! docker ps >/dev/null 2>&1; then
+            log_warning "Docker may not be fully ready, but proceeding with setup"
+        else
+            log_success "Docker is running in Colab"
         fi
-
-        log_success "Colab Docker setup complete"
     fi
 
     GPU_TYPE=$(detect_gpu)
@@ -326,7 +325,7 @@ main() {
     fi
 
     # Check if Docker is running
-    if ! docker info >/dev/null 2>&1; then
+    if ! docker ps >/dev/null 2>&1; then
         log_error "Docker daemon is not running. Please start Docker manually and re-run this script."
         exit 1
     fi
