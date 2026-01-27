@@ -13,17 +13,21 @@ For the fastest setup on any machine with internet access:
 git clone https://github.com/menyawino/BioLink.git
 cd BioLink/
 
-# Run the complete setup script
+# Run the complete setup script (first time)
 ./setup-and-test.sh
+
+# Or just run if already set up
+./run.sh
 ```
 
-This script will:
+These scripts will:
 - ✅ Check system requirements (8GB RAM, 10GB disk)
 - ✅ Install Docker and Docker Compose if needed
 - ✅ **Automatically detect and configure GPU acceleration** (NVIDIA/Apple Silicon/AMD)
 - ✅ Build and start all services
 - ✅ Load reduced 50-record dataset for testing
 - ✅ Run comprehensive tests
+- ✅ Open frontend in browser
 - ✅ Provide access URLs
 
 **Migration to bigger machines**: Just copy the project and run `./setup-and-test.sh`!
@@ -46,6 +50,13 @@ BioLink now features a **complete agentic system** powered by AI with function c
 
 📖 **[Read the complete AI Agent documentation →](AGENT_SYSTEM.md)**  
 ⚡ **[Quick reference guide →](QUICK_REFERENCE.md)**
+
+## 📋 Available Scripts
+
+- **`./setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
+- **`./run.sh`**: Quick start for machines that already have the environment set up
+- **`./scripts/start-all.sh`**: Start all Docker services (assumes Docker is running)
+- **`./scripts/quick_test.sh`**: Run basic functionality tests against running services
 
 ---
 

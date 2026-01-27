@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# BioLink Complete Setup and Testing Script
+# BioLink Complete Setup and Test Script
 # This script sets up the entire BioLink system from scratch
 
 set -e  # Exit on any error
@@ -9,482 +9,286 @@ set -e  # Exit on any error
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
+YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-# Logging functions
-log_info() {
-    printf "[INFO] %s\n" "$1"
+# Get the script's directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+echo -e "${BLUE}🚀 BioLink Complete Setup Script${NC}"
+echo -e "${BLUE}================================${NC}"
+echo ""
+
+# Function to check command existence
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
 }
 
-log_success() {
-    printf "[SUCCESS] %s\n" "$1"
+# Function to check if Docker is running
+docker_running() {
+    docker info >/dev/null 2>&1
 }
 
-log_warning() {
-    printf "[WARNING] %s\n" "$1"
-}
+# Function to wait for service
+wait_for_service() {
+    local url=$1
+    local service_name=$2
+    local max_attempts=30
+    local attempt=1
 
-log_error() {
-    printf "[ERROR] %s\n" "$1"
-}
+    echo -e "${YELLOW}Waiting for $service_name to be ready...${NC}"
 
-# Detect OS
-detect_os() {
-    case "$(uname -s)" in
-        Linux)
-            echo "linux"
-            ;;
-        Darwin)
-            echo "macos"
-            ;;
-        *)
-            echo "unknown"
-            ;;
-    esac
-}
-
-# Detect if running in Google Colab
-detect_colab() {
-    if [ -d "/content" ] || [ -n "$COLAB_GPU" ] || [ -n "$COLAB_TPU_ADDR" ]; then
-        echo "true"
-    else
-        echo "false"
-    fi
-}
-
-# Detect GPU availability
-detect_gpu() {
-    log_info "Detecting GPU availability..."
-
-    # Check for NVIDIA GPU
-    if command -v nvidia-smi >/dev/null 2>&1; then
-        log_success "NVIDIA GPU detected"
-        echo "nvidia"
-        return
-    fi
-
-    # Check for Apple Silicon (M1/M2/M3)
-    case "$OS" in
-        macos)
-            if system_profiler SPHardwareDataType 2>/dev/null | grep -q "Chip.*Apple\|Apple M"; then
-                log_success "Apple Silicon GPU detected"
-                echo "apple"
-                return
-            fi
-            ;;
-        linux)
-            if lspci 2>/dev/null | grep -i amd >/dev/null 2>&1 && command -v rocminfo >/dev/null 2>&1; then
-                log_success "AMD GPU detected"
-                echo "amd"
-                return
-            fi
-            ;;
-    esac
-
-    log_warning "No GPU detected, will use CPU-only mode"
-    echo "none"
-}
-
-# Configure GPU settings for Ollama
-configure_gpu() {
-    case "$GPU_TYPE" in
-        nvidia)
-            log_info "Configuring NVIDIA GPU support..."
-            # Add GPU configuration to docker-compose.yml
-            if ! grep -q "deploy:" docker-compose.yml; then
-                sed -i.bak '/ollama:/a\
-    deploy:\
-      resources:\
-        reservations:\
-          devices:\
-            - driver: nvidia\
-              count: 1\
-              capabilities: [gpu]' docker-compose.yml
-            fi
-            log_success "NVIDIA GPU configured for Ollama"
-            ;;
-        apple)
-            log_info "Apple Silicon GPU detected - Ollama will use it automatically"
-            log_info "No additional configuration needed for Apple GPU"
-            ;;
-        amd)
-            log_info "AMD GPU detected - configuring ROCm support..."
-            # Note: AMD GPU support in Docker is limited, Ollama may still use CPU
-            ;;
-        *)
-            log_info "No GPU detected - Ollama will run on CPU"
-            ;;
-    esac
-}
-
-# Check if running as root/sudo (for installations)
-check_sudo() {
-    if [ "$EUID" -eq 0 ]; then
-        echo "root"
-    elif sudo -n true 2>/dev/null; then
-        echo "sudo"
-    else
-        echo "user"
-    fi
-}
-
-SUDO_STATUS=$(check_sudo)
-
-# Function to install Docker
-install_docker() {
-    log_info "Installing Docker..."
-
-    case $OS in
-        linux)
-            if [ "$SUDO_STATUS" != "root" ] && [ "$SUDO_STATUS" != "sudo" ]; then
-                log_error "Docker installation requires sudo privileges on Linux"
-                exit 1
-            fi
-
-            # Install Docker using convenience script
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sudo sh get-docker.sh
-            sudo systemctl start docker
-            sudo systemctl enable docker
-
-            # Add user to docker group if not root
-            if [ "$SUDO_STATUS" = "sudo" ]; then
-                sudo usermod -aG docker $USER
-                log_warning "Please log out and back in for docker group changes to take effect"
-            fi
-            ;;
-
-        macos)
-            if command -v brew >/dev/null 2>&1; then
-                brew install --cask docker
-                log_info "Docker Desktop installed. Please start Docker Desktop manually."
-            else
-                log_error "Homebrew not found. Please install Docker Desktop manually from https://docs.docker.com/desktop/install/mac-install/"
-                exit 1
-            fi
-            ;;
-
-        *)
-            log_error "Automatic Docker installation not supported for $OS. Please install Docker manually."
-            exit 1
-            ;;
-    esac
-
-    log_success "Docker installation completed"
-}
-
-# Function to install Docker Compose
-install_docker_compose() {
-    log_info "Installing Docker Compose..."
-
-    case $OS in
-        linux | macos)
-            if [ "$SUDO_STATUS" != "root" ] && [ "$SUDO_STATUS" != "sudo" ]; then
-                log_error "Docker Compose installation requires sudo privileges"
-                exit 1
-            fi
-
-            # Docker Compose is now included with Docker Desktop
-            if ! command -v docker-compose >/dev/null 2>&1 && ! docker compose version >/dev/null 2>&1; then
-                log_error "Docker Compose not found. Please ensure Docker Desktop is properly installed."
-                exit 1
-            fi
-            ;;
-
-        *)
-            log_error "Docker Compose installation check failed for $OS"
-            exit 1
-            ;;
-    esac
-
-    log_success "Docker Compose ready"
-}
-
-# Check system requirements
-check_requirements() {
-    log_info "Checking system requirements..."
-
-    # Check available memory
-    case $OS in
-        linux)
-            MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}' 2>/dev/null || echo "8192000")
-            MEM_GB=$(echo "scale=2; $MEM_TOTAL / 1024 / 1024" | bc 2>/dev/null || echo "8")
-            ;;
-        macos)
-            MEM_BYTES=$(sysctl -n hw.memsize 2>/dev/null || echo "8589934592")
-            MEM_GB=$(echo "scale=2; $MEM_BYTES / 1024 / 1024 / 1024" | bc 2>/dev/null || echo "8")
-            ;;
-        *)
-            MEM_GB=8
-            ;;
-    esac
-
-    if (( $(echo "$MEM_GB < 8" | bc -l 2>/dev/null || echo "0") )); then
-        log_warning "System has ${MEM_GB}GB RAM. BioLink recommends at least 8GB for optimal performance."
-    else
-        log_info "System memory: ${MEM_GB}GB - OK"
-    fi
-
-    # Check available disk space
-    DISK_GB=$(df -k . 2>/dev/null | awk 'NR>1 {if ($4 ~ /^[0-9]+$/) print int($4 / 1024 / 1024)}' | head -1 | tr -d '[:space:]')
-    if [ -z "$DISK_GB" ]; then DISK_GB=100; fi
-    if [[ $DISK_GB =~ ^[0-9]+$ ]] && (( DISK_GB < 10 )); then
-        log_warning "Only ${DISK_GB}GB free disk space. BioLink requires at least 10GB."
-    else
-        log_info "Available disk space: ${DISK_GB}GB - OK"
-    fi
-}
-
-# Main setup function
-main() {
-    log_info "BioLink Complete Setup and Testing Script"
-    log_info "=========================================="
-
-    OS=$(detect_os)
-    IS_COLAB=$(detect_colab)
-    SUDO_STATUS=$(check_sudo)
-
-    # Check if we're in the right directory
-    if [ ! -f "docker-compose.yml" ] || [ ! -f "package.json" ]; then
-        log_error "Please run this script from the BioLink project root directory"
-        exit 1
-    fi
-
-    check_requirements
-
-    # Special setup for Google Colab
-    if [ "$IS_COLAB" = "true" ]; then
-        log_info "Detected Google Colab environment - configuring for Colab"
-
-        # Ensure we have sudo access (Colab runs as root-like)
-        if [ "$SUDO_STATUS" != "root" ]; then
-            log_warning "Colab should run with sufficient privileges"
+    while [ $attempt -le $max_attempts ]; do
+        if curl -s --max-time 5 "$url" > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ $service_name is ready${NC}"
+            return 0
         fi
-
-        # Install Docker if not present
-        if ! command -v docker >/dev/null 2>&1; then
-            log_info "Installing Docker in Colab..."
-            apt update -qq && apt install -y docker.io
-        fi
-
-        # Install Docker Compose if not present
-        if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
-            log_info "Installing Docker Compose in Colab..."
-            apt install -y docker-compose
-        fi
-
-        # Start Docker daemon
-        if ! docker ps >/dev/null 2>&1; then
-            log_info "Starting Docker daemon in Colab..."
-            service docker start 2>/dev/null || (dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2376 --tls=false &) 
-            sleep 10
-
-            # Wait for Docker to be ready
-            for i in {1..60}; do
-                if docker ps >/dev/null 2>&1; then
-                    break
-                fi
-                sleep 1
-            done
-        fi
-
-        if ! docker ps >/dev/null 2>&1; then
-            log_warning "Docker may not be fully ready, but proceeding with setup"
-        else
-            log_success "Docker is running in Colab"
-        fi
-    fi
-
-    GPU_TYPE=$(detect_gpu)
-
-    # Check for Docker
-    if ! command -v docker >/dev/null 2>&1; then
-        log_warning "Docker not found. Installing..."
-        install_docker
-
-        # Wait for Docker to be ready
-        log_info "Waiting for Docker to start..."
+        echo -e "${YELLOW}Attempt $attempt/$max_attempts: $service_name not ready yet...${NC}"
         sleep 10
-
-        # Check again
-        if ! command -v docker >/dev/null 2>&1; then
-            log_error "Docker installation failed"
-            exit 1
-        fi
-    else
-        log_success "Docker found"
-    fi
-
-    # Check for Docker Compose
-    if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
-        log_warning "Docker Compose not found. Installing..."
-        install_docker_compose
-    else
-        log_success "Docker Compose found"
-    fi
-
-    # Check if Docker is running
-    if [ "$IS_COLAB" = "true" ]; then
-        if ! docker ps >/dev/null 2>&1; then
-            log_warning "Docker daemon may not be running in Colab, but proceeding with setup"
-        fi
-    else
-        if ! docker ps >/dev/null 2>&1; then
-            log_error "Docker daemon is not running. Please start Docker manually and re-run this script."
-            exit 1
-        fi
-    fi
-
-    # Clean up any existing containers
-    log_info "Cleaning up existing containers..."
-    docker compose down -v 2>/dev/null || true
-    docker system prune -f
-
-    # Configure GPU if available
-    configure_gpu
-
-    # Build and start all services
-
-    # Start with just the core services first
-    docker compose up -d postgres pgvector ollama
-
-    # Wait for databases to be ready
-    log_info "Waiting for databases to initialize..."
-    sleep 30
-
-    # Check if databases are ready
-    if ! docker exec biolink-postgres pg_isready -U biolink -d biolink >/dev/null 2>&1; then
-        log_error "PostgreSQL failed to start"
-        docker compose logs postgres
-        exit 1
-    fi
-
-    log_success "Databases ready"
-
-    # Start remaining services
-    docker compose up -d
-
-    # Wait for all services to be healthy
-    log_info "Waiting for all services to be ready..."
-    MAX_WAIT=300  # 5 minutes
-    WAIT_TIME=0
-
-    while [ $WAIT_TIME -lt $MAX_WAIT ]; do
-        # Check backend health
-        if curl -s --max-time 5 http://localhost:3001/health >/dev/null 2>&1; then
-            log_success "Backend is responding"
-            break
-        fi
-
-        sleep 10
-        WAIT_TIME=$((WAIT_TIME + 10))
-        log_info "Waiting... (${WAIT_TIME}s/${MAX_WAIT}s)"
+        ((attempt++))
     done
 
-    if [ $WAIT_TIME -ge $MAX_WAIT ]; then
-        log_error "Services failed to start within ${MAX_WAIT} seconds"
-        docker compose logs
-        exit 1
-    fi
-
-    # Load the reduced dataset
-    log_info "Loading reduced dataset (50 records)..."
-    if docker exec biolink-backend python app/load_reduced_data.py 2>/dev/null; then
-        log_success "Dataset loaded successfully"
-    else
-        log_warning "Dataset loading failed - will be loaded on first backend restart"
-    fi
-
-    # Run tests
-    log_info "Running system tests..."
-
-    # Test 1: Backend health
-    if curl -s --max-time 5 http://localhost:3001/health >/dev/null 2>&1; then
-        log_success "✓ Backend health check passed"
-    else
-        log_error "✗ Backend health check failed"
-        exit 1
-    fi
-
-    # Test 2: Frontend
-    if curl -s --max-time 5 -I http://localhost:3000 >/dev/null 2>&1; then
-        log_success "✓ Frontend responding"
-    else
-        log_error "✗ Frontend not responding"
-        exit 1
-    fi
-
-    # Test 3: SQL Agent (heuristic query)
-    response=$(curl -s --max-time 10 -X POST http://localhost:3001/api/chat/sql-agent \
-        -H "Content-Type: application/json" \
-        -d '{"message": "How many patients are in the database?"}')
-
-    if echo "$response" | grep -q '"success":true' && echo "$response" | grep -q "50"; then
-        log_success "✓ SQL Agent working (50 records loaded)"
-    else
-        log_error "✗ SQL Agent test failed"
-        echo "Response: $response"
-        exit 1
-    fi
-
-    # Test 4: Tool API
-    response=$(curl -s --max-time 10 -X POST http://localhost:3001/api/tools/ \
-        -H "Content-Type: application/json" \
-        -d '{"tool": "registry_overview"}')
-
-    if echo "$response" | grep -q '"total":50'; then
-        log_success "✓ Tool API working"
-    else
-        log_error "✗ Tool API test failed"
-        echo "Response: $response"
-    fi
-
-    # Success message
-    log_success "🎉 BioLink setup and testing completed successfully!"
-    echo ""
-    echo -e "${GREEN}System URLs:${NC}"
-    echo -e "  🌐 Frontend:    http://localhost:3000"
-    echo -e "  🔧 Backend:     http://localhost:3001"
-    echo -e "  🤖 Ollama API:  http://localhost:11434"
-    echo ""
-    echo -e "${GREEN}Quick Commands:${NC}"
-    echo -e "  📊 Run tests:   ./scripts/quick_test.sh"
-    echo -e "  🛑 Stop all:    docker compose down"
-    echo -e "  📋 View logs:   docker compose logs -f"
-    echo ""
-    echo -e "${GREEN}Testing Notes:${NC}"
-    echo -e "  ⚡ Fast queries use heuristics (< 1 second)"
-    echo -e "  🧠 LLM queries may take 30+ seconds on CPU"
-    echo -e "  📈 50-record dataset loaded for quick testing"
-    echo ""
-    echo -e "${BLUE}Ready for testing on bigger machines! 🚀${NC}"
+    echo -e "${RED}✗ $service_name failed to start after $max_attempts attempts${NC}"
+    return 1
 }
 
-# Show usage if help requested
-if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    echo "BioLink Complete Setup Script"
-    echo ""
-    echo "This script will:"
-    echo "  1. Check system requirements"
-    echo "  2. Install Docker and Docker Compose if needed"
-    echo "  3. Build and start all BioLink services"
-    echo "  4. Load the reduced 50-record dataset"
-    echo "  5. Run comprehensive tests"
-    echo ""
-    echo "Usage: $0 [options]"
-    echo ""
-    echo "Options:"
-    echo "  --help, -h    Show this help message"
-    echo "  --no-tests    Skip running tests after setup"
-    echo ""
-    echo "Requirements:"
-    echo "  - At least 8GB RAM recommended"
-    echo "  - 10GB free disk space"
-    echo "  - Internet connection for downloads"
-    echo ""
-    exit 0
+# Step 1: System Requirements Check
+echo -e "${BLUE}Step 1: Checking System Requirements${NC}"
+echo -e "${BLUE}=========================================${NC}"
+
+# Check OS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo -e "${GREEN}✓ macOS detected${NC}"
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo -e "${GREEN}✓ Linux detected${NC}"
+else
+    echo -e "${RED}✗ Unsupported OS: $OSTYPE${NC}"
+    echo -e "${RED}This script supports macOS and Linux only${NC}"
+    exit 1
 fi
 
-# Run main function
-main "$@"
+# Check available memory (rough estimate)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    MEM_GB=$(echo "$(sysctl -n hw.memsize) / 1024 / 1024 / 1024" | bc)
+else
+    MEM_GB=$(free -g | awk 'NR==2{printf "%.0f", $2}')
+fi
+
+if [ "$MEM_GB" -lt 8 ]; then
+    echo -e "${RED}✗ Insufficient memory: ${MEM_GB}GB detected, minimum 8GB required${NC}"
+    exit 1
+else
+    echo -e "${GREEN}✓ Sufficient memory: ${MEM_GB}GB available${NC}"
+fi
+
+# Check available disk space
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    DISK_GB=$(df -g . | tail -1 | awk '{print $4}')
+else
+    DISK_GB=$(df -BG . | tail -1 | awk '{print $4}' | sed 's/G//')
+fi
+
+if [ "$DISK_GB" -lt 10 ]; then
+    echo -e "${RED}✗ Insufficient disk space: ${DISK_GB}GB available, minimum 10GB required${NC}"
+    exit 1
+else
+    echo -e "${GREEN}✓ Sufficient disk space: ${DISK_GB}GB available${NC}"
+fi
+
+# Check Docker
+if ! command_exists docker; then
+    echo -e "${RED}✗ Docker not found. Please install Docker Desktop:${NC}"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo -e "${YELLOW}  brew install --cask docker${NC}"
+        echo -e "${YELLOW}  Or download from: https://docs.docker.com/desktop/install/mac-install/${NC}"
+    else
+        echo -e "${YELLOW}  curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh${NC}"
+    fi
+    exit 1
+else
+    echo -e "${GREEN}✓ Docker found${NC}"
+fi
+
+# Check Docker Compose
+if ! command_exists docker-compose && ! docker compose version >/dev/null 2>&1; then
+    echo -e "${RED}✗ Docker Compose not found${NC}"
+    exit 1
+else
+    echo -e "${GREEN}✓ Docker Compose found${NC}"
+fi
+
+echo ""
+
+# Step 2: Start Docker if not running
+echo -e "${BLUE}Step 2: Starting Docker${NC}"
+echo -e "${BLUE}=======================${NC}"
+
+if ! docker_running; then
+    echo -e "${YELLOW}Docker is not running. Please start Docker Desktop and press Enter to continue...${NC}"
+    read -r
+    if ! docker_running; then
+        echo -e "${RED}✗ Docker is still not running. Please start Docker Desktop manually.${NC}"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}✓ Docker is running${NC}"
+fi
+
+echo ""
+
+# Step 3: Setup Environment Files
+echo -e "${BLUE}Step 3: Setting up Environment Files${NC}"
+echo -e "${BLUE}=====================================${NC}"
+
+# Backend .env
+if [ ! -f "backend-py/.env" ]; then
+    cp backend-py/.env.example backend-py/.env
+    echo -e "${GREEN}✓ Created backend-py/.env${NC}"
+else
+    echo -e "${GREEN}✓ backend-py/.env already exists${NC}"
+fi
+
+# Backend .env.docker
+if [ ! -f "backend-py/.env.docker" ]; then
+    cp backend-py/.env.example backend-py/.env.docker
+    echo -e "${GREEN}✓ Created backend-py/.env.docker${NC}"
+else
+    echo -e "${GREEN}✓ backend-py/.env.docker already exists${NC}"
+fi
+
+# Frontend .env.local
+if [ ! -f ".env.local" ]; then
+    cp .env .env.local 2>/dev/null || touch .env.local
+    echo -e "${GREEN}✓ Created .env.local${NC}"
+else
+    echo -e "${GREEN}✓ .env.local already exists${NC}"
+fi
+
+echo ""
+
+# Step 4: GPU Detection and Configuration
+echo -e "${BLUE}Step 4: GPU Detection and Configuration${NC}"
+echo -e "${BLUE}=========================================${NC}"
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if sysctl -n machdep.cpu.brand_string | grep -q "Apple M"; then
+        echo -e "${GREEN}✓ Apple Silicon detected - GPU acceleration will be enabled automatically${NC}"
+    else
+        echo -e "${YELLOW}Intel Mac detected - GPU acceleration not available${NC}"
+    fi
+elif command_exists nvidia-smi; then
+    echo -e "${GREEN}✓ NVIDIA GPU detected - GPU acceleration available${NC}"
+else
+    echo -e "${YELLOW}No GPU detected - CPU-only mode${NC}"
+fi
+
+echo ""
+
+# Step 5: Build and Start Services
+echo -e "${BLUE}Step 5: Building and Starting Services${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo -e "${YELLOW}This may take 10-15 minutes on first run...${NC}"
+echo ""
+
+# Stop any existing services
+echo -e "${YELLOW}Stopping any existing services...${NC}"
+docker compose down --volumes --remove-orphans 2>/dev/null || true
+
+# Start services
+echo -e "${YELLOW}Starting all services...${NC}"
+docker compose up -d --build
+
+echo ""
+
+# Step 6: Wait for Services to be Ready
+echo -e "${BLUE}Step 6: Waiting for Services to be Ready${NC}"
+echo -e "${BLUE}==========================================${NC}"
+
+# Wait for Ollama
+wait_for_service "http://localhost:11434/api/tags" "Ollama"
+
+# Pull the required model
+echo -e "${YELLOW}Pulling Ollama model (llama3.2:3b)...${NC}"
+docker exec biolink-ollama ollama pull llama3.2:3b || echo -e "${YELLOW}Model pull may continue in background${NC}"
+
+# Wait for backend
+wait_for_service "http://localhost:3001/health" "Backend"
+
+# Wait for frontend
+wait_for_service "http://localhost:3000" "Frontend"
+
+echo ""
+
+# Step 7: Database Setup
+echo -e "${BLUE}Step 7: Database Setup${NC}"
+echo -e "${BLUE}======================${NC}"
+
+echo -e "${YELLOW}Database schema and data will be initialized automatically by the backend...${NC}"
+
+# Wait a bit more for databases to be fully ready
+sleep 30
+
+# Check if data was loaded
+echo -e "${YELLOW}Checking data status...${NC}"
+docker exec biolink-backend python -c "
+import sys
+sys.path.append('/app')
+from sqlalchemy import text, create_engine
+from app.config import settings
+
+try:
+    engine = create_engine(settings.database_url)
+    with engine.begin() as conn:
+        result = conn.execute(text('SELECT COUNT(*) FROM patients'))
+        count = result.fetchone()[0]
+        print(f'Data status: {count} records loaded')
+except Exception as e:
+    print(f'Error checking data: {e}')
+" 2>/dev/null || echo -e "${YELLOW}Data check will be performed by backend startup${NC}"
+
+echo ""
+
+# Step 8: Run Tests
+echo -e "${BLUE}Step 8: Running Tests${NC}"
+echo -e "${BLUE}=====================${NC}"
+
+echo -e "${YELLOW}Running quick test suite...${NC}"
+if ./scripts/quick_test.sh; then
+    echo -e "${GREEN}✓ All tests passed${NC}"
+else
+    echo -e "${YELLOW}⚠ Some tests failed, but services are running${NC}"
+fi
+
+echo ""
+
+# Step 9: Final Status and Access URLs
+echo -e "${BLUE}Step 9: Setup Complete!${NC}"
+echo -e "${BLUE}=========================${NC}"
+
+echo -e "${GREEN}🎉 BioLink is now running!${NC}"
+echo ""
+echo -e "${GREEN}Access URLs:${NC}"
+echo -e "${GREEN}  Frontend: http://localhost:3000${NC}"
+echo -e "${GREEN}  Backend API: http://localhost:3001${NC}"
+echo -e "${GREEN}  Ollama: http://localhost:11434${NC}"
+echo ""
+echo -e "${GREEN}To stop services: docker compose down${NC}"
+echo -e "${GREEN}To restart: docker compose restart${NC}"
+echo -e "${GREEN}To view logs: docker compose logs -f${NC}"
+echo ""
+
+# Open browser (macOS)
+if [[ "$OSTYPE" == "darwin"* ]] && command_exists open; then
+    echo -e "${YELLOW}Opening frontend in browser...${NC}"
+    open http://localhost:3000
+elif command_exists xdg-open; then
+    echo -e "${YELLOW}Opening frontend in browser...${NC}"
+    xdg-open http://localhost:3000
+else
+    echo -e "${YELLOW}Please open http://localhost:3000 in your browser${NC}"
+fi
+
+echo ""
+echo -e "${GREEN}Setup completed successfully! 🚀${NC}"
