@@ -44,6 +44,15 @@ detect_os() {
     esac
 }
 
+# Detect if running in Google Colab
+detect_colab() {
+    if [ -d "/content" ] || [ -n "$COLAB_GPU" ] || [ -n "$COLAB_TPU_ADDR" ]; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
 # Detect GPU availability
 detect_gpu() {
     log_info "Detecting GPU availability..."
@@ -233,6 +242,7 @@ main() {
     log_info "=========================================="
 
     OS=$(detect_os)
+    IS_COLAB=$(detect_colab)
     SUDO_STATUS=$(check_sudo)
 
     # Check if we're in the right directory
@@ -242,6 +252,50 @@ main() {
     fi
 
     check_requirements
+
+    # Special setup for Google Colab
+    if [ "$IS_COLAB" = "true" ]; then
+        log_info "Detected Google Colab environment - configuring for Colab"
+
+        # Ensure we have sudo access (Colab runs as root-like)
+        if [ "$SUDO_STATUS" != "root" ]; then
+            log_warning "Colab should run with sufficient privileges"
+        fi
+
+        # Install Docker if not present
+        if ! command -v docker >/dev/null 2>&1; then
+            log_info "Installing Docker in Colab..."
+            apt update -qq && apt install -y docker.io
+        fi
+
+        # Install Docker Compose if not present
+        if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
+            log_info "Installing Docker Compose in Colab..."
+            apt install -y docker-compose
+        fi
+
+        # Start Docker daemon
+        if ! docker info >/dev/null 2>&1; then
+            log_info "Starting Docker daemon in Colab..."
+            service docker start 2>/dev/null || (dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2376 --tls=false &) 
+            sleep 10
+
+            # Wait for Docker to be ready
+            for i in {1..30}; do
+                if docker info >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+        fi
+
+        if ! docker info >/dev/null 2>&1; then
+            log_error "Failed to start Docker in Colab environment"
+            exit 1
+        fi
+
+        log_success "Colab Docker setup complete"
+    fi
 
     GPU_TYPE=$(detect_gpu)
 
