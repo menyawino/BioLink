@@ -325,9 +325,15 @@ main() {
     fi
 
     # Check if Docker is running
-    if ! docker ps >/dev/null 2>&1; then
-        log_error "Docker daemon is not running. Please start Docker manually and re-run this script."
-        exit 1
+    if [ "$IS_COLAB" = "true" ]; then
+        if ! docker ps >/dev/null 2>&1; then
+            log_warning "Docker daemon may not be running in Colab, but proceeding with setup"
+        fi
+    else
+        if ! docker ps >/dev/null 2>&1; then
+            log_error "Docker daemon is not running. Please start Docker manually and re-run this script."
+            exit 1
+        fi
     fi
 
     # Clean up any existing containers
