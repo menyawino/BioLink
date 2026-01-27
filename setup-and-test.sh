@@ -218,9 +218,9 @@ check_requirements() {
     fi
 
     # Check available disk space
-    DISK_GB=$(df -k . 2>/dev/null | awk 'NR>1 {if ($4 ~ /^[0-9]+$/) print int($4 / 1024 / 1024)}' | head -1 2>/dev/null)
+    DISK_GB=$(df -k . 2>/dev/null | awk 'NR>1 {if ($4 ~ /^[0-9]+$/) print int($4 / 1024 / 1024)}' | head -1 | tr -d '[:space:]')
     if [ -z "$DISK_GB" ]; then DISK_GB=100; fi
-    if [ "$DISK_GB" -lt 10 ]; then
+    if [[ $DISK_GB =~ ^[0-9]+$ ]] && (( DISK_GB < 10 )); then
         log_warning "Only ${DISK_GB}GB free disk space. BioLink requires at least 10GB."
     else
         log_info "Available disk space: ${DISK_GB}GB - OK"
