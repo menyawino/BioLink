@@ -188,3 +188,11 @@ rm -rf ../backend
 - Hot reload enabled (`--reload` flag)
 - Database debug via raw SQL in routes
 - Use `.env` for local configuration
+
+## Agent Orchestrator Tests
+
+Run unit tests (routing, tool registry safety, orchestrator flow):
+
+```bash
+python -m unittest discover -s backend-py/tests
+```

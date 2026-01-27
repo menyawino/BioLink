@@ -119,6 +119,30 @@ ENVIRONMENT=development
 
 📖 **See [AGENT_SYSTEM.md](AGENT_SYSTEM.md) for complete AI agent setup and usage**
 
+### Fast Docker-First Install (Recommended)
+
+Use this order to ensure Docker components are ready before tests:
+
+1. **Install and verify Docker components**
+```bash
+./setup-and-test.sh
+```
+
+If Docker is already installed, you can skip the full script and do:
+
+2. **Start the full stack**
+```bash
+docker compose up -d --build
+```
+
+3. **Run tests after services are healthy**
+```bash
+./scripts/quick_test.sh
+python -m unittest discover -s backend-py/tests
+```
+
+If you prefer a single command, run the full setup script from Quick Start.
+
 3. **Load data (optional)**
 
 If you have the standardized CSV available under `db/`, import it:

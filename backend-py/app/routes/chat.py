@@ -1,9 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
-from app.database import get_db
-from app.services.langgraph_agent import SQLAgentService
-from app.config import settings
+from app.services.orchestrator import get_default_orchestrator
 import logging
 
 router = APIRouter()
@@ -17,27 +15,19 @@ class ChatRequest(BaseModel):
     message: str
     history: Optional[List[ChatMessage]] = None
 
-# Initialize LangGraph agent
-sql_agent_service = SQLAgentService(
-    db_url=settings.database_url,
-    ollama_base_url=settings.ollama_base_url,
-    model=settings.ollama_model
-)
-
-# Validate database connection
-if not sql_agent_service.validate_database():
-    logger.warning("Database validation failed - agent may not work properly")
-else:
-    logger.info("Database validation successful")
+orchestrator = get_default_orchestrator()
 
 async def _run_chat(request: ChatRequest):
     try:
+        from uuid import uuid4
+        request_id = str(uuid4())
         history = []
         if request.history:
             for msg in request.history:
                 history.append({"role": msg.role, "content": msg.content})
 
-        response_text = await sql_agent_service.run(request.message, history)
+        result = await orchestrator.run(request.message, history, request_id=request_id)
+        response_text = result.content
 
         logger.info(f"Chat response: {response_text[:100]}")
 
@@ -47,7 +37,8 @@ async def _run_chat(request: ChatRequest):
             "data": {
                 "content": response_text,
                 "role": "assistant",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "request_id": request_id
             }
         }
     except Exception as e:
@@ -57,11 +48,11 @@ async def _run_chat(request: ChatRequest):
 
 @router.post("")
 async def chat(request: ChatRequest):
-    """Chat endpoint using LangGraph SQL agent"""
+    """Chat endpoint using orchestrated agents."""
     return await _run_chat(request)
 
 
 @router.post("/sql-agent")
 async def chat_sql_agent(request: ChatRequest):
-    """Alias endpoint for SQL agent chat (backwards compatibility)"""
+    """Alias endpoint for chat (backwards compatibility)."""
     return await _run_chat(request)

@@ -157,6 +157,29 @@ export async function chatWithAgent(
   });
 }
 
+export async function chatWithOrchestrator(
+  message: string,
+  history: ChatMessage[] = []
+) {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+  const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      message,
+      history
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Chat request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function callTool(toolName: string, args: any): Promise<string> {
   // Call backend API endpoint for tools
   const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
@@ -183,21 +206,5 @@ export async function chatWithSqlAgent(
   message: string,
   history: ChatMessage[] = []
 ) {
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-  const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/chat/sql-agent`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      message,
-      history
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`SQL agent request failed: ${response.status}`);
-  }
-
-  return response.json();
+  return chatWithOrchestrator(message, history);
 }
