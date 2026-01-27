@@ -47,6 +47,27 @@ const parseMarkdown = (text: string) => {
   }).join('');
 };
 
+const isGreeting = (text: string) => {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const greetings = [
+    'hi',
+    'hello',
+    'hey',
+    'hiya',
+    'howdy',
+    'greetings',
+    'good morning',
+    'good afternoon',
+    'good evening'
+  ];
+
+  return greetings.some(greeting => normalized === greeting || normalized.startsWith(`${greeting} `));
+};
+
 // Component to render different content types from the assistant
 function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChunk; isStreaming?: boolean }) {
   const [displayedText, setDisplayedText] = useState('');

@@ -26,6 +26,7 @@ class ToolRegistry:
         self._allowed_tables = {"patients", "patient_summary"}
         self._max_limit = 500
         self._engine = engine_override
+        self._patient_columns = None
 
     def list_tools(self) -> Dict[str, Any]:
         return {"tools": sorted(self._handlers.keys())}
@@ -65,12 +66,21 @@ class ToolRegistry:
         engine = self._engine or _get_engine()
         sql = args.get("sql", "")
         limit = int(args.get("limit", self._max_limit))
-        safe_sql = self._sanitize_select_sql(sql, limit)
+        safe_sql = self._sanitize_select_sql(self._rewrite_sql_columns(sql, engine), limit)
 
-        with engine.connect() as conn:
-            result = conn.execute(sa.text(safe_sql))
-            rows = result.fetchall()
-            columns = result.keys()
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(sa.text(safe_sql))
+                rows = result.fetchall()
+                columns = result.keys()
+        except Exception as exc:
+            logger.warning("SQL execution failed", exc_info=exc)
+            return {
+                "rows": [],
+                "count": 0,
+                "error": str(exc),
+                "sql": safe_sql,
+            }
 
         return {
             "rows": [dict(zip(columns, row)) for row in rows],
@@ -182,12 +192,22 @@ class ToolRegistry:
         engine = self._engine or _get_engine()
         sql = args.get("sql", "")
         limit = int(args.get("limit", self._max_limit))
-        safe_sql = self._sanitize_select_sql(sql, limit)
+        safe_sql = self._sanitize_select_sql(self._rewrite_sql_columns(sql, engine), limit)
 
-        with engine.connect() as conn:
-            result = conn.execute(sa.text(safe_sql))
-            rows = result.fetchall()
-            columns = result.keys()
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(sa.text(safe_sql))
+                rows = result.fetchall()
+                columns = result.keys()
+        except Exception as exc:
+            logger.warning("Chart SQL execution failed", exc_info=exc)
+            return {
+                "spec": None,
+                "rows": [],
+                "count": 0,
+                "error": str(exc),
+                "sql": safe_sql,
+            }
 
         data = [dict(zip(columns, row)) for row in rows]
 
@@ -236,6 +256,42 @@ class ToolRegistry:
         if "LIMIT" not in normalized:
             sql = f"{sql} LIMIT {limit}"
         return sql
+
+    def _rewrite_sql_columns(self, sql: str, engine) -> str:
+        if not sql:
+            return sql
+
+        columns = self._get_patient_columns(engine)
+        if not columns:
+            return sql
+
+        rewritten = sql
+        if "current_city" in columns and re.search(r"\bcity\b", rewritten, flags=re.IGNORECASE):
+            rewritten = re.sub(r"\bcity\b", "current_city", rewritten, flags=re.IGNORECASE)
+
+        if "current_city_category" in columns and re.search(r"\bcity_category\b", rewritten, flags=re.IGNORECASE):
+            rewritten = re.sub(r"\bcity_category\b", "current_city_category", rewritten, flags=re.IGNORECASE)
+
+        return rewritten
+
+    def _get_patient_columns(self, engine) -> set:
+        if self._patient_columns is not None:
+            return self._patient_columns
+
+        query = """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'patients'
+        """
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(sa.text(query))
+                self._patient_columns = {row[0] for row in result.fetchall()}
+        except Exception as exc:
+            logger.warning("Failed to load patient columns", exc_info=exc)
+            self._patient_columns = set()
+
+        return self._patient_columns
 
     @staticmethod
     def _extract_tables(sql: str) -> set:

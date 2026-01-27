@@ -44,7 +44,6 @@ class IntentRouter:
             "group",
         ]
         self._coding_keywords = [
-            "sql",
             "join",
             "group by",
             "chart",
@@ -96,10 +95,10 @@ class IntentRouter:
             return "cohort"
         if self._contains_any(text, self._ui_keywords):
             return "ui"
-        if self._contains_any(text, self._coding_keywords):
-            return "coding"
         if self._contains_any(text, self._sql_keywords):
             return "sql"
+        if self._contains_any(text, self._coding_keywords):
+            return "coding"
         if self._contains_any(text, self._medical_keywords):
             return "medical"
 

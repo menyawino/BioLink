@@ -69,6 +69,12 @@ class SqlAgentAdapter:
         text = (message or "").lower()
         if "select " in text:
             return text
+        city = self._extract_city(text)
+        if city and ("count" in text or "how many" in text):
+            return (
+                "SELECT COUNT(*) AS count FROM patients "
+                f"WHERE LOWER(current_city) = LOWER('{city}')"
+            )
         if "how many" in text or ("count" in text and "patient" in text):
             return "SELECT COUNT(*) AS count FROM patient_summary"
         if "average age" in text:
@@ -82,6 +88,23 @@ class SqlAgentAdapter:
         if "registry overview" in text or "overview" in text:
             return "SELECT COUNT(*) AS total FROM patient_summary"
         return None
+
+    @staticmethod
+    def _extract_city(text: str) -> Optional[str]:
+        if not text:
+            return None
+
+        match = re.search(r"count\s+of\s+([a-z\s-]+?)\s+people", text)
+        if not match:
+            match = re.search(r"people\s+(?:in|from)\s+([a-z\s-]+)", text)
+        if not match:
+            match = re.search(r"count\s+of\s+([a-z\s-]+?)\s+in\s+the\s+dataset", text)
+        if not match:
+            return None
+
+        raw_city = match.group(1).strip()
+        safe_city = re.sub(r"[^a-z\s-]", "", raw_city).strip()
+        return safe_city or None
 
     @staticmethod
     def _format_result(sql: str, result: Dict[str, Any]) -> str:

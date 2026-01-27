@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import List, Optional
 
 from langchain_core.tools import tool
@@ -71,6 +72,7 @@ class SqlAgentService:
         )
         response = await self.llm.ainvoke(prompt)
         sql = response.content.strip()
+        sql = self._rewrite_sql_columns(sql, table_info)
         if not sql.upper().startswith("SELECT"):
             return "Generated query is not a SELECT statement."
         
@@ -83,6 +85,20 @@ class SqlAgentService:
             return self.db.run(sql)
         except Exception as e:
             return f"SQL Error: {e}"
+
+    @staticmethod
+    def _rewrite_sql_columns(sql: str, table_info: str) -> str:
+        if not sql or not table_info:
+            return sql
+
+        rewritten = sql
+        if "current_city" in table_info and re.search(r"\bcity\b", rewritten, flags=re.IGNORECASE):
+            rewritten = re.sub(r"\bcity\b", "current_city", rewritten, flags=re.IGNORECASE)
+
+        if "current_city_category" in table_info and re.search(r"\bcity_category\b", rewritten, flags=re.IGNORECASE):
+            rewritten = re.sub(r"\bcity_category\b", "current_city_category", rewritten, flags=re.IGNORECASE)
+
+        return rewritten
 
 
 try:
