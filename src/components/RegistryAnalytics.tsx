@@ -72,10 +72,10 @@ export function RegistryAnalytics() {
 
   // Create real intersection data based on data availability
   const realIntersectionData = stats ? [
-    { combination: 'Echo Only', count: Math.max((stats.withEcho || 0) - (stats.withMri || 0), 0), types: ['Echo'] },
-    { combination: 'MRI Only', count: Math.max((stats.withMri || 0) - (stats.withEcho || 0), 0), types: ['MRI'] },
-    { combination: 'Echo + MRI', count: Math.min(stats.withEcho || 0, stats.withMri || 0), types: ['Echo', 'MRI'] }
-  ] : undefined;
+    { combination: 'Echo Only', count: (stats.withEcho || 0) - (stats.withBothEchoMri || 0), types: ['Echo'] },
+    { combination: 'MRI Only', count: (stats.withMri || 0) - (stats.withBothEchoMri || 0), types: ['MRI'] },
+    { combination: 'Echo + MRI', count: stats.withBothEchoMri || 0, types: ['Echo', 'MRI'] }
+  ].filter(item => item.count > 0) : undefined;
 
   return (
     <div className="space-y-6">
@@ -429,9 +429,9 @@ export function RegistryAnalytics() {
                       <Database className="h-6 w-6 text-green-500" />
                     </div>
                     <p className="text-sm">Echo + MRI</p>
-                    <p className="text-2xl">{Math.min(stats.withEcho || 0, stats.withMri || 0)}</p>
+                    <p className="text-2xl">{stats.withBothEchoMri || 0}</p>
                     <p className="text-xs text-muted-foreground">
-                      {stats.totalPatients ? Math.round((Math.min(stats.withEcho || 0, stats.withMri || 0) / stats.totalPatients) * 100) : 0}% of patients
+                      {stats.totalPatients ? Math.round((stats.withBothEchoMri / stats.totalPatients) * 100) : 0}% of patients
                     </p>
                   </div>
                 </div>

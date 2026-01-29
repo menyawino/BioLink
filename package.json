@@ -65,11 +65,11 @@
             "vite": "6.3.5"
       },
       "scripts": {
-            "dev": "vite",
+            "dev": "echo 'Use docker-compose for development. Run: docker-compose up -d'",
             "build": "vite build",
-            "mcp:server": "nodemon --quiet mcp/server.mjs",
-            "start:backend": "cd backend-py && ./start.sh",
-            "import:patients": "cd backend-py && python -m app.scripts.import_patients_csv",
+            "mcp:server": "echo 'MCP server runs in container. Use: docker-compose up -d mcp'",
+            "start:backend": "echo 'Backend runs in container. Use: docker-compose up -d backend'",
+            "import:patients": "echo 'Data import runs in container. Use: docker-compose exec backend python -m app.scripts.import_patients_csv'",
             "start:all": "./scripts/start-all.sh"
       }
 }

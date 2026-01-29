@@ -25,6 +25,7 @@ async def registry_overview(db=Depends(get_db)):
         # Imaging availability (denormalized columns)
         with_echo = db.execute(text("SELECT COUNT(*) FROM patients WHERE echo_ef IS NOT NULL")).scalar() or 0
         with_mri = db.execute(text("SELECT COUNT(*) FROM patients WHERE mri_ef IS NOT NULL")).scalar() or 0
+        with_both_echo_mri = db.execute(text("SELECT COUNT(*) FROM patients WHERE echo_ef IS NOT NULL AND mri_ef IS NOT NULL")).scalar() or 0
         # ECG isn't modeled in the denormalized schema yet
         with_ecg = 0
 
@@ -53,6 +54,7 @@ async def registry_overview(db=Depends(get_db)):
             "dataCompleteness": f"{avg_completeness:.1f}",
             "withMri": with_mri,
             "withEcho": with_echo,
+            "withBothEchoMri": with_both_echo_mri,
             "withEcg": with_ecg,
         }
         return {"success": True, "data": data}

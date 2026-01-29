@@ -191,6 +191,7 @@ export interface RegistryOverview {
   dataCompleteness: string;
   withMri: number;
   withEcho: number;
+  withBothEchoMri: number;
   withEcg: number;
 }
 
