@@ -40,6 +40,11 @@ export async function getGeographicStats() {
   return get<GeographicStats>('/api/analytics/geographic');
 }
 
+// Get governorate-level geographic data
+export async function getGovernorateGeographicStats() {
+  return get<MapData[]>('/api/analytics/geographic-governorates');
+}
+
 // Get enrollment trends
 export async function getEnrollmentTrends() {
   return get<EnrollmentTrend[]>('/api/analytics/enrollment-trends');

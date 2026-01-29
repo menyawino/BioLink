@@ -22,7 +22,7 @@ fi
 
 # Start services
 echo -e "${YELLOW}Starting all services...${NC}"
-docker compose up -d
+docker compose up -d --pull never
 
 echo -e "${GREEN}✓ Services started!${NC}"
 echo ""

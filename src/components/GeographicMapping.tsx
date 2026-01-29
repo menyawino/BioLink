@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -9,24 +9,9 @@ import { Label } from "./ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Map, MapPin, Layers, Users, TrendingUp, Download, Filter, Info } from "lucide-react";
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-
-interface MapData {
-  region: string;
-  coordinates: [number, number];
-  patientCount: number;
-  prevalence: number;
-  demographics: {
-    averageAge: number;
-    genderRatio: number;
-    ethnicityMix: Record<string, number>;
-  };
-  riskFactors: Record<string, number>;
-  outcomes: {
-    mortality: number;
-    readmission: number;
-    complications: number;
-  };
-}
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as LeafletTooltip } from "react-leaflet";
+import { getGovernorateGeographicStats, getEnrollmentTrends } from '../api/analytics';
+import type { MapData, EnrollmentTrend } from '../api/types';
 
 export function GeographicMapping() {
   const [selectedLayer, setSelectedLayer] = useState("prevalence");
@@ -34,70 +19,74 @@ export function GeographicMapping() {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [opacity, setOpacity] = useState([75]);
+  const [regionData, setRegionData] = useState<MapData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [enrollmentTrends, setEnrollmentTrends] = useState<EnrollmentTrend[]>([]);
+  const [trendsLoading, setTrendsLoading] = useState(true);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
 
-  // Mock geographic data
-  const regionData: MapData[] = [
-    {
-      region: "Northeast",
-      coordinates: [-74.0, 40.7],
-      patientCount: 324,
-      prevalence: 8.5,
-      demographics: { averageAge: 65.2, genderRatio: 0.52, ethnicityMix: { white: 45, black: 22, hispanic: 18, asian: 12, other: 3 } },
-      riskFactors: { hypertension: 78, diabetes: 45, smoking: 23, obesity: 56 },
-      outcomes: { mortality: 4.2, readmission: 12.8, complications: 18.5 }
-    },
-    {
-      region: "Southeast",
-      coordinates: [-84.5, 33.7],
-      patientCount: 489,
-      prevalence: 12.1,
-      demographics: { averageAge: 62.8, genderRatio: 0.48, ethnicityMix: { white: 38, black: 35, hispanic: 15, asian: 8, other: 4 } },
-      riskFactors: { hypertension: 82, diabetes: 52, smoking: 31, obesity: 64 },
-      outcomes: { mortality: 5.8, readmission: 15.2, complications: 22.1 }
-    },
-    {
-      region: "Midwest",
-      coordinates: [-87.6, 41.9],
-      patientCount: 267,
-      prevalence: 7.8,
-      demographics: { averageAge: 63.4, genderRatio: 0.51, ethnicityMix: { white: 62, black: 18, hispanic: 12, asian: 6, other: 2 } },
-      riskFactors: { hypertension: 75, diabetes: 41, smoking: 28, obesity: 58 },
-      outcomes: { mortality: 3.9, readmission: 11.4, complications: 16.8 }
-    },
-    {
-      region: "Southwest",
-      coordinates: [-118.2, 34.1],
-      patientCount: 167,
-      prevalence: 6.2,
-      demographics: { averageAge: 59.1, genderRatio: 0.49, ethnicityMix: { white: 28, black: 8, hispanic: 52, asian: 10, other: 2 } },
-      riskFactors: { hypertension: 71, diabetes: 38, smoking: 19, obesity: 51 },
-      outcomes: { mortality: 3.2, readmission: 9.8, complications: 14.3 }
-    }
-  ];
+  // Fetch geographic data from API
+  useEffect(() => {
+    const fetchGeographicData = async () => {
+      try {
+        setLoading(true);
+        const response = await getGovernorateGeographicStats();
+        if (response.success && response.data) {
+          setRegionData(response.data);
+        } else {
+          setError('Failed to load geographic data');
+        }
+      } catch (err) {
+        setError('Error fetching geographic data');
+        console.error('Geographic data fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const recruitmentData = [
-    { month: "Jan", enrolled: 45, target: 50, cumulative: 45 },
-    { month: "Feb", enrolled: 38, target: 50, cumulative: 83 },
-    { month: "Mar", enrolled: 52, target: 50, cumulative: 135 },
-    { month: "Apr", enrolled: 41, target: 50, cumulative: 176 },
-    { month: "May", enrolled: 47, target: 50, cumulative: 223 },
-    { month: "Jun", enrolled: 54, target: 50, cumulative: 277 }
-  ];
+    fetchGeographicData();
+  }, []);
+
+  // Fetch enrollment trends for the recruitment chart
+  useEffect(() => {
+    const fetchEnrollmentTrends = async () => {
+      try {
+        setTrendsLoading(true);
+        const response = await getEnrollmentTrends();
+        if (response.success && response.data) {
+          setEnrollmentTrends(response.data);
+        } else {
+          setTrendsError('Failed to load enrollment trends');
+        }
+      } catch (err) {
+        setTrendsError('Error fetching enrollment trends');
+        console.error('Enrollment trends fetch error:', err);
+      } finally {
+        setTrendsLoading(false);
+      }
+    };
+
+    fetchEnrollmentTrends();
+  }, []);
 
   const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6'];
 
-  const getColorForValue = (value: number, type: string) => {
-    if (type === "prevalence") {
-      if (value < 7) return "#22c55e";
-      if (value < 10) return "#f59e0b";
-      return "#ef4444";
+  const getLayerValue = (region: MapData) => {
+    switch (selectedLayer) {
+      case "prevalence":
+        return region.prevalence;
+      case "patientCount":
+        return region.patientCount;
+      case "mortality":
+        return region.outcomes.mortality;
+      case "demographics":
+        return region.demographics.averageAge;
+      case "riskFactors":
+        return region.riskFactors.hypertension;
+      default:
+        return region.prevalence;
     }
-    if (type === "patientCount") {
-      if (value < 200) return "#dbeafe";
-      if (value < 400) return "#3b82f6";
-      return "#1e40af";
-    }
-    return "#6b7280";
   };
 
   const layerOptions = [
@@ -107,6 +96,41 @@ export function GeographicMapping() {
     { value: "demographics", label: "Demographics", description: "Age and gender distribution" },
     { value: "riskFactors", label: "Risk Factors", description: "Regional risk factor prevalence" }
   ];
+
+  const getColorForValue = (value: number, layer: string) => {
+    // Define color scales for different layers
+    if (layer === "prevalence") {
+      if (value >= 12) return '#dc2626';
+      if (value >= 9) return '#ea580c';
+      if (value >= 6) return '#ca8a04';
+      return '#16a34a';
+    }
+    if (layer === "patientCount") {
+      if (value >= 400) return '#dc2626';
+      if (value >= 250) return '#ea580c';
+      if (value >= 150) return '#ca8a04';
+      return '#16a34a';
+    }
+    if (layer === "mortality") {
+      if (value >= 5) return '#dc2626';
+      if (value >= 3) return '#ea580c';
+      if (value >= 1.5) return '#ca8a04';
+      return '#16a34a';
+    }
+    if (layer === "demographics") {
+      if (value >= 55) return '#dc2626';
+      if (value >= 45) return '#ea580c';
+      if (value >= 35) return '#ca8a04';
+      return '#16a34a';
+    }
+    if (layer === "riskFactors") {
+      if (value >= 25) return '#dc2626';
+      if (value >= 15) return '#ea580c';
+      if (value >= 8) return '#ca8a04';
+      return '#16a34a';
+    }
+    return '#e5e7eb';
+  };
 
   return (
     <div className="space-y-6">
@@ -187,48 +211,85 @@ export function GeographicMapping() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Interactive Map Placeholder */}
+        {/* Interactive Map */}
         <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Interactive Map View</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="relative h-96 bg-gray-100 rounded-lg flex items-center justify-center">
-              {/* Map visualization would integrate with a mapping library like Leaflet or Mapbox */}
-              <div className="text-center space-y-4">
-                <Map className="h-16 w-16 mx-auto text-gray-400" />
-                <div>
-                  <p className="text-lg font-medium">Interactive Map</p>
-                  <p className="text-sm text-muted-foreground">
-                    Showing {selectedLayer} data across {regionData.length} regions
-                  </p>
-                </div>
-              </div>
-
-              {/* Mock region markers */}
-              {regionData.map((region, index) => (
-                <div
-                  key={region.region}
-                  className="absolute cursor-pointer"
-                  style={{
-                    left: `${20 + index * 20}%`,
-                    top: `${30 + index * 15}%`,
-                  }}
-                  onClick={() => setSelectedRegion(region.region)}
-                >
-                  <div 
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs"
-                    style={{ 
-                      backgroundColor: getColorForValue(
-                        selectedLayer === "prevalence" ? region.prevalence : region.patientCount, 
-                        selectedLayer
-                      )
-                    }}
-                  >
-                    {region.patientCount}
+            <div className="relative h-96 bg-gray-100 rounded-lg overflow-hidden">
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p>Loading geographic data...</p>
                   </div>
                 </div>
-              ))}
+              ) : error ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-red-600">
+                    <p className="mb-2">Error loading map data</p>
+                    <p className="text-sm">{error}</p>
+                  </div>
+                </div>
+              ) : (
+                <MapContainer
+                  center={[26.8206, 30.8025]}
+                  zoom={6}
+                  minZoom={5}
+                  maxZoom={10}
+                  scrollWheelZoom
+                  className="w-full h-full"
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {regionData.map((region) => {
+                    const [lng, lat] = region.coordinates;
+                    const value = getLayerValue(region);
+                    const color = getColorForValue(value, selectedLayer);
+                    const isSelected = selectedRegion === region.region;
+                    return (
+                      <CircleMarker
+                        key={region.region}
+                        center={[lat, lng]}
+                        radius={isSelected ? 10 : 8}
+                        pathOptions={{ color, fillColor: color, fillOpacity: 0.7, weight: 1 }}
+                        eventHandlers={{
+                          click: () => setSelectedRegion(region.region)
+                        }}
+                      >
+                        <LeafletTooltip direction="top" offset={[0, -8]} opacity={0.9}>
+                          <div className="text-xs">
+                            <div className="font-semibold">{region.region}</div>
+                            <div>Patients: {region.patientCount}</div>
+                            <div>Prevalence: {region.prevalence}%</div>
+                          </div>
+                        </LeafletTooltip>
+                        <Popup>
+                          <div className="space-y-1 text-sm">
+                            <div className="font-semibold">{region.region}</div>
+                            <div>Patients: {region.patientCount}</div>
+                            <div>Prevalence: {region.prevalence}%</div>
+                            <div>Avg Age: {region.demographics.averageAge}</div>
+                            <div>Mortality: {region.outcomes.mortality}%</div>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    );
+                  })}
+                </MapContainer>
+              )}
+              
+              {selectedRegion && !loading && !error && (
+                <div className="absolute top-2 left-2 bg-white p-2 rounded shadow">
+                  <div className="text-sm font-medium">{selectedRegion}</div>
+                  <div className="text-xs text-muted-foreground">
+                    Click markers to explore data
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Legend */}
@@ -249,7 +310,7 @@ export function GeographicMapping() {
                 </div>
               </div>
               <Badge variant="outline">
-                {regionData.reduce((sum, r) => sum + r.patientCount, 0).toLocaleString()} Total Patients
+                {loading ? "Loading..." : regionData.reduce((sum, r) => sum + r.patientCount, 0).toLocaleString() + " Total Patients"}
               </Badge>
             </div>
           </CardContent>
@@ -263,11 +324,26 @@ export function GeographicMapping() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {selectedRegion ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p className="text-sm text-muted-foreground">Loading regional data...</p>
+                </div>
+              </div>
+            ) : error ? (
+              <div className="text-center py-8 text-red-600">
+                <p>Failed to load regional data</p>
+              </div>
+            ) : selectedRegion ? (
               <div className="space-y-4">
                 {(() => {
                   const region = regionData.find(r => r.region === selectedRegion);
-                  if (!region) return null;
+                  if (!region) return (
+                    <div className="text-center py-4 text-muted-foreground">
+                      <p>No data available for {selectedRegion}</p>
+                    </div>
+                  );
                   
                   return (
                     <>
@@ -356,64 +432,91 @@ export function GeographicMapping() {
           <CardTitle className="text-base">Patient Recruitment Progress</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={recruitmentData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis yAxisId="left" />
-              <YAxis yAxisId="right" orientation="right" />
-              <Tooltip />
-              <Bar yAxisId="left" dataKey="enrolled" fill="#3b82f6" name="Monthly Enrolled" />
-              <Line yAxisId="left" type="monotone" dataKey="target" stroke="#ef4444" strokeDasharray="5 5" name="Target" />
-              <Line yAxisId="right" type="monotone" dataKey="cumulative" stroke="#22c55e" strokeWidth={2} name="Cumulative" />
-            </ComposedChart>
-          </ResponsiveContainer>
+          {trendsLoading ? (
+            <div className="flex items-center justify-center h-[300px]">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : trendsError ? (
+            <div className="text-sm text-red-600">{trendsError}</div>
+          ) : enrollmentTrends.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={enrollmentTrends}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
+                <Tooltip />
+                <Bar yAxisId="left" dataKey="enrolled" fill="#3b82f6" name="Monthly Enrolled" />
+                <Line yAxisId="right" type="monotone" dataKey="cumulative" stroke="#22c55e" strokeWidth={2} name="Cumulative" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-sm text-muted-foreground">Enrollment trends data is not available</div>
+          )}
         </CardContent>
       </Card>
 
       {/* Ethnicity Distribution */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Regional Ethnicity Distribution</CardTitle>
+          <CardTitle className="text-base">
+            {selectedRegion ? `${selectedRegion} Ethnicity Distribution` : 'Regional Ethnicity Distribution'}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={Object.entries(regionData[0].demographics.ethnicityMix).map(([name, value]) => ({
-                    name: name.charAt(0).toUpperCase() + name.slice(1),
-                    value
-                  }))}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  dataKey="value"
-                >
-                  {Object.entries(regionData[0].demographics.ethnicityMix).map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `${value}%`} />
-              </PieChart>
-            </ResponsiveContainer>
+          {(() => {
+            const region = selectedRegion
+              ? regionData.find(r => r.region === selectedRegion)
+              : regionData[0]; // Default to first region if none selected
 
-            <div className="space-y-3">
-              <h4 className="font-medium">Northeast Region Breakdown</h4>
-              {Object.entries(regionData[0].demographics.ethnicityMix).map(([ethnicity, percentage], index) => (
-                <div key={ethnicity} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div 
-                      className="w-3 h-3 rounded" 
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                    />
-                    <span className="text-sm capitalize">{ethnicity}</span>
-                  </div>
-                  <span className="text-sm">{percentage}%</span>
+            if (!region || !region.demographics?.ethnicityMix) {
+              return (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No ethnicity data available</p>
                 </div>
-              ))}
-            </div>
-          </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie
+                      data={Object.entries(region.demographics.ethnicityMix).map(([name, value]) => ({
+                        name: name.charAt(0).toUpperCase() + name.slice(1),
+                        value
+                      }))}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      dataKey="value"
+                    >
+                      {Object.entries(region.demographics.ethnicityMix).map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => `${value}%`} />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="space-y-3">
+                  <h4 className="font-medium">{region.region} Breakdown</h4>
+                  {Object.entries(region.demographics.ethnicityMix).map(([ethnicity, percentage], index) => (
+                    <div key={ethnicity} className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className="w-3 h-3 rounded"
+                          style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                        />
+                        <span className="text-sm capitalize">{ethnicity}</span>
+                      </div>
+                      <span className="text-sm">{percentage}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
     </div>

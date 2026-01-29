@@ -278,6 +278,168 @@ async def geographic(db=Depends(get_db)):
         return {"success": False, "error": str(e)}
 
 
+@router.get("/geographic-governorates")
+async def geographic_governorates(db=Depends(get_db)):
+    """Get geographic statistics aggregated by Egyptian governorates."""
+    try:
+        # City to governorate mapping
+        city_to_governorate = {
+            'Cairo': 'Cairo',
+            'Alexandria': 'Alexandria',
+            'Giza': 'Giza',
+            'Qalyubia': 'Qalyubia',
+            'Sharqia': 'Sharqia',
+            'Gharbya': 'Gharbia',
+            'Menoufya': 'Monufia',
+            'Behaira': 'Beheira',
+            'Kafr El Sheikh': 'Kafr El-Sheikh',
+            'Damietta': 'Damietta',
+            'Port Said': 'Port Said',
+            'Ismailia': 'Ismailia',
+            'Suez': 'Suez',
+            'Faiyum': 'Faiyum',
+            'Beni Suef': 'Beni Suef',
+            'Minya': 'Minya',
+            'Asyut': 'Asyut',
+            'Sohag': 'Sohag',
+            'Qena': 'Qena',
+            'Luxor': 'Luxor',
+            'Aswan': 'Aswan',
+            'Red Sea': 'Red Sea',
+            'New Valley': 'New Valley',
+            'Matruh': 'Matruh',
+            'North Sinai': 'North Sinai',
+            'South Sinai': 'South Sinai'
+        }
+
+        # Governorate coordinates (approximate centers)
+        governorate_coords = {
+            'Cairo': [31.2357, 30.0444],
+            'Alexandria': [29.9187, 31.2001],
+            'Giza': [31.2089, 30.0131],
+            'Qalyubia': [31.2057, 30.4286],
+            'Sharqia': [31.5994, 30.5877],
+            'Gharbia': [30.9876, 30.8753],
+            'Monufia': [30.9704, 30.5972],
+            'Beheira': [30.3667, 30.5833],
+            'Kafr El-Sheikh': [30.9876, 31.1111],
+            'Damietta': [31.8133, 31.4167],
+            'Port Said': [32.3019, 31.2653],
+            'Ismailia': [32.2744, 30.6043],
+            'Suez': [32.5263, 29.9737],
+            'Faiyum': [30.8418, 29.3084],
+            'Beni Suef': [31.0979, 29.0661],
+            'Minya': [30.7503, 28.1099],
+            'Asyut': [31.1656, 27.1801],
+            'Sohag': [31.6948, 26.5591],
+            'Qena': [32.7267, 26.1642],
+            'Luxor': [32.6396, 25.6872],
+            'Aswan': [32.8994, 24.0889],
+            'Red Sea': [33.8387, 27.1783],
+            'New Valley': [28.9167, 27.0667],
+            'Matruh': [27.2373, 31.3525],
+            'North Sinai': [33.6176, 30.8503],
+            'South Sinai': [33.6176, 28.9667]
+        }
+
+        # Aggregate data by governorate
+        governorate_query = text("""
+            SELECT
+                CASE
+                    WHEN LOWER(current_city) LIKE '%cairo%' THEN 'Cairo'
+                    WHEN LOWER(current_city) LIKE '%alexandria%' THEN 'Alexandria'
+                    WHEN LOWER(current_city) LIKE '%giza%' THEN 'Giza'
+                    WHEN LOWER(current_city) LIKE '%sohag%' THEN 'Sohag'
+                    WHEN LOWER(current_city) LIKE '%aswan%' THEN 'Aswan'
+                    WHEN LOWER(current_city) LIKE '%gharbya%' OR LOWER(current_city) LIKE '%tanta%' THEN 'Gharbia'
+                    WHEN LOWER(current_city) LIKE '%behaira%' OR LOWER(current_city) LIKE '%damanhur%' THEN 'Beheira'
+                    WHEN LOWER(current_city) LIKE '%menoufya%' OR LOWER(current_city) LIKE '%shibin el kom%' THEN 'Monufia'
+                    WHEN LOWER(current_city) LIKE '%sharkia%' OR LOWER(current_city) LIKE '%zagazig%' THEN 'Sharqia'
+                    ELSE current_city
+                END as governorate,
+                COUNT(*) as patient_count,
+                AVG(age) as avg_age,
+                COUNT(CASE WHEN gender = 'Male' OR gender = 'M' THEN 1 END) as male_count,
+                COUNT(CASE WHEN gender = 'Female' OR gender = 'F' THEN 1 END) as female_count,
+                COUNT(CASE WHEN high_blood_pressure = true THEN 1 END) as hypertension_count,
+                COUNT(CASE WHEN diabetes_mellitus = true THEN 1 END) as diabetes_count,
+                COUNT(CASE WHEN ever_smoked = true THEN 1 END) as smoking_count,
+                AVG(bmi) as avg_bmi,
+                AVG(systolic_bp) as avg_systolic_bp,
+                AVG(hba1c) as avg_hba1c
+            FROM patients
+            WHERE current_city IS NOT NULL AND current_city != ''
+            GROUP BY
+                CASE
+                    WHEN LOWER(current_city) LIKE '%cairo%' THEN 'Cairo'
+                    WHEN LOWER(current_city) LIKE '%alexandria%' THEN 'Alexandria'
+                    WHEN LOWER(current_city) LIKE '%giza%' THEN 'Giza'
+                    WHEN LOWER(current_city) LIKE '%sohag%' THEN 'Sohag'
+                    WHEN LOWER(current_city) LIKE '%aswan%' THEN 'Aswan'
+                    WHEN LOWER(current_city) LIKE '%gharbya%' OR LOWER(current_city) LIKE '%tanta%' THEN 'Gharbia'
+                    WHEN LOWER(current_city) LIKE '%behaira%' OR LOWER(current_city) LIKE '%damanhur%' THEN 'Beheira'
+                    WHEN LOWER(current_city) LIKE '%menoufya%' OR LOWER(current_city) LIKE '%shibin el kom%' THEN 'Monufia'
+                    WHEN LOWER(current_city) LIKE '%sharkia%' OR LOWER(current_city) LIKE '%zagazig%' THEN 'Sharqia'
+                    ELSE current_city
+                END
+            ORDER BY patient_count DESC
+        """)
+
+        results = db.execute(governorate_query).fetchall()
+
+        governorate_data = []
+        for row in results:
+            governorate = row[0]
+            if governorate in governorate_coords:
+                coords = governorate_coords[governorate]
+                patient_count = row[1] or 0
+                avg_age = float(row[2]) if row[2] else 0
+                male_count = row[3] or 0
+                female_count = row[4] or 0
+                total_gender = male_count + female_count
+                gender_ratio = male_count / total_gender if total_gender > 0 else 0
+
+                # Calculate prevalence estimates (simplified)
+                hypertension_rate = (row[5] or 0) / patient_count * 100 if patient_count > 0 else 0
+                diabetes_rate = (row[6] or 0) / patient_count * 100 if patient_count > 0 else 0
+                smoking_rate = (row[7] or 0) / patient_count * 100 if patient_count > 0 else 0
+
+                # Estimate CVD prevalence based on risk factors
+                prevalence = min(25, hypertension_rate * 0.3 + diabetes_rate * 0.4 + smoking_rate * 0.2 + (avg_age - 40) * 0.1)
+
+                governorate_data.append({
+                    "region": governorate,
+                    "coordinates": coords,
+                    "patientCount": patient_count,
+                    "prevalence": round(prevalence, 1),
+                    "demographics": {
+                        "averageAge": round(avg_age, 1),
+                        "genderRatio": round(gender_ratio, 2),
+                        "ethnicityMix": {"arab": 95, "other": 5}  # Default assumption
+                    },
+                    "riskFactors": {
+                        "hypertension": round(hypertension_rate, 1),
+                        "diabetes": round(diabetes_rate, 1),
+                        "smoking": round(smoking_rate, 1),
+                        "obesity": round((row[8] or 25) - 20, 1) if row[8] else 25  # Rough estimate
+                    },
+                    "outcomes": {
+                        "mortality": round(prevalence * 0.05, 1),  # Estimated
+                        "readmission": round(prevalence * 1.2, 1),  # Estimated
+                        "complications": round(prevalence * 2.0, 1)  # Estimated
+                    }
+                })
+
+        return {
+            "success": True,
+            "data": governorate_data
+        }
+
+    except Exception as e:
+        logger.error(f"Governorate geographic analytics failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/enrollment-trends")
 async def enrollment_trends(db=Depends(get_db)):
     try:

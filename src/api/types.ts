@@ -246,6 +246,24 @@ export interface GeographicStats {
   cityDistribution: Array<{ current_city: string; count: number; avg_age: number }>;
 }
 
+export interface MapData {
+  region: string;
+  coordinates: [number, number];
+  patientCount: number;
+  prevalence: number;
+  demographics: {
+    averageAge: number;
+    genderRatio: number;
+    ethnicityMix: Record<string, number>;
+  };
+  riskFactors: Record<string, number>;
+  outcomes: {
+    mortality: number;
+    readmission: number;
+    complications: number;
+  };
+}
+
 export interface EnrollmentTrend {
   month: string;
   enrolled: number;

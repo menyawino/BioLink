@@ -2,24 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ScatterChart, Scatter, ComposedChart, Area, AreaChart } from 'recharts';
-import { TrendingUp, Users, Database, Activity, Heart, Dna, TestTube, Map, Loader2 } from "lucide-react";
+import { TrendingUp, Users, Database, Activity, Heart, Map, Loader2 } from "lucide-react";
 import { GeographicMapping } from "./GeographicMapping";
 import { DataNotAvailable } from "./DataNotAvailable";
-import { useRegistryStats, useDemographics, useDataCompleteness, useGeographicData, useComorbidities, useEnrollmentTrends } from "../hooks/useAnalytics";
+import { useRegistryStats, useDemographics, useDataCompleteness, useComorbidities, useEnrollmentTrends } from "../hooks/useAnalytics";
 
 // Colors for charts
 const COLORS = ['#e9322b', '#efb01b', '#00a2dd', '#22c55e', '#8b5cf6', '#6b7280', '#ec4899', '#f97316'];
-
-// UpSet-style intersection data based on real comorbidity data
-const intersectionData = [
-  { combination: 'Genomics', count: 95, types: ['Genomics'] },
-  { combination: 'Biomarkers', count: 78, types: ['Biomarkers'] },
-  { combination: 'Imaging', count: 62, types: ['Imaging'] },
-  { combination: 'G + B', count: 156, types: ['Genomics', 'Biomarkers'] },
-  { combination: 'G + I', count: 134, types: ['Genomics', 'Imaging'] },
-  { combination: 'B + I', count: 189, types: ['Biomarkers', 'Imaging'] },
-  { combination: 'G + B + I', count: 623, types: ['Genomics', 'Biomarkers', 'Imaging'] }
-];
 
 export function RegistryAnalytics() {
   // Fetch enrollment trends data
@@ -63,13 +52,13 @@ export function RegistryAnalytics() {
 
   // Transform completeness data (use correct field names from API)
   const dataAvailabilityData = completeness ? [
-    { category: 'Demographics', availability: 100 },
+    { category: 'Overall', availability: completeness.byCategory?.overall },
     { category: 'Physical Exam', availability: completeness.byCategory?.physical_exam },
     { category: 'Lab Results', availability: completeness.byCategory?.lab_results },
     { category: 'Echo Data', availability: completeness.byCategory?.echo },
     { category: 'MRI Data', availability: completeness.byCategory?.mri },
     { category: 'ECG Data', availability: completeness.byCategory?.ecg }
-  ] : undefined;
+  ].filter(item => typeof item.availability === 'number' && Number.isFinite(item.availability)) : undefined;
 
   // Transform data completeness for sample processing chart
   const realSampleCompletenessData = completeness && stats?.totalPatients ? [
@@ -83,10 +72,10 @@ export function RegistryAnalytics() {
 
   // Create real intersection data based on data availability
   const realIntersectionData = stats ? [
-    { combination: 'Echo Only', count: (stats.withEcho || 0) - (stats.withMri || 0), types: ['Echo'] },
-    { combination: 'MRI Only', count: (stats.withMri || 0) - (stats.withEcho || 0), types: ['MRI'] },
+    { combination: 'Echo Only', count: Math.max((stats.withEcho || 0) - (stats.withMri || 0), 0), types: ['Echo'] },
+    { combination: 'MRI Only', count: Math.max((stats.withMri || 0) - (stats.withEcho || 0), 0), types: ['MRI'] },
     { combination: 'Echo + MRI', count: Math.min(stats.withEcho || 0, stats.withMri || 0), types: ['Echo', 'MRI'] }
-  ] : intersectionData;
+  ] : undefined;
 
   return (
     <div className="space-y-6">
@@ -413,31 +402,44 @@ export function RegistryAnalytics() {
                 <DataNotAvailable title="Data Type Intersections" message="Data intersection data is not available" />
               )}
               
-              <div className="grid grid-cols-3 gap-4 mt-6">
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-2">
-                    <Dna className="h-6 w-6 text-blue-500" />
+              {stats ? (
+                <div className="grid grid-cols-3 gap-4 mt-6">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <Activity className="h-6 w-6 text-blue-500" />
+                    </div>
+                    <p className="text-sm">Echo Data</p>
+                    <p className="text-2xl">{stats.withEcho || 0}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {stats.totalPatients ? Math.round((stats.withEcho / stats.totalPatients) * 100) : 0}% of patients
+                    </p>
                   </div>
-                  <p className="text-sm">Genomics Data</p>
-                  <p className="text-2xl">1,108</p>
-                  <p className="text-xs text-muted-foreground">74% of patients</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-2">
-                    <TestTube className="h-6 w-6 text-green-500" />
+                  <div className="text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <Heart className="h-6 w-6 text-red-500" />
+                    </div>
+                    <p className="text-sm">MRI Data</p>
+                    <p className="text-2xl">{stats.withMri || 0}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {stats.totalPatients ? Math.round((stats.withMri / stats.totalPatients) * 100) : 0}% of patients
+                    </p>
                   </div>
-                  <p className="text-sm">Protein Biomarker Data</p>
-                  <p className="text-2xl">1,156</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-2">
-                    <Heart className="h-6 w-6 text-red-500" />
+                  <div className="text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <Database className="h-6 w-6 text-green-500" />
+                    </div>
+                    <p className="text-sm">Echo + MRI</p>
+                    <p className="text-2xl">{Math.min(stats.withEcho || 0, stats.withMri || 0)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {stats.totalPatients ? Math.round((Math.min(stats.withEcho || 0, stats.withMri || 0) / stats.totalPatients) * 100) : 0}% of patients
+                    </p>
                   </div>
-                  <p className="text-sm">Imaging Data</p>
-                  <p className="text-2xl">1,298</p>
-                  <p className="text-xs text-muted-foreground">87% of patients</p>
                 </div>
-              </div>
+              ) : (
+                <div className="mt-6">
+                  <DataNotAvailable title="Intersection Summary" message="Intersection summary data is not available" />
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -452,7 +454,7 @@ export function RegistryAnalytics() {
                 <div className="flex items-center justify-center h-[300px]">
                   <Loader2 className="h-8 w-8 animate-spin" />
                 </div>
-              ) : dataAvailabilityData ? (
+              ) : dataAvailabilityData && dataAvailabilityData.length > 0 ? (
                 <>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={dataAvailabilityData}>
