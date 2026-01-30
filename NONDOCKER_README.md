@@ -73,10 +73,21 @@ This script provides an alternative installation method for BioLink that doesn't
 ## Services Started
 
 - PostgreSQL databases: `biolink` and `biolink_vector`
-- Kafka broker on port 9092
+- Kafka broker on port 9092 (with Zookeeper)
 - Ollama server on port 11434
 - Backend API on port 3001
 - Frontend dev server on port 5173
+
+## Linux Installation Details
+
+On Linux systems, the script:
+- Downloads Apache Kafka directly from official Apache mirrors
+- Creates dedicated `kafka` user and proper directory structure
+- Sets up systemd services for Zookeeper and Kafka
+- Configures Kafka for single-node operation
+- Enables services to start automatically on boot
+
+This provides a more robust and production-ready Kafka installation compared to manual background processes.
 
 ## Configuration
 

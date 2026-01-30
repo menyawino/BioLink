@@ -120,10 +120,82 @@ install_packages() {
 
         # Install Kafka
         if ! command_exists kafka-server-start; then
-            sudo apt install -y openjdk-11-jdk wget
-            wget -qO- https://downloads.apache.org/kafka/3.6.1/kafka_2.13-3.6.1.tgz | sudo tar -xz -C /opt/
-            sudo ln -sf /opt/kafka_2.13-3.6.1 /opt/kafka
-            sudo mkdir -p /opt/kafka/logs
+            echo -e "${YELLOW}Installing Kafka...${NC}"
+            sudo apt install -y openjdk-11-jdk wget curl
+            
+            # Create kafka user and directories
+            sudo useradd kafka --shell /bin/bash --home /opt/kafka --create-home 2>/dev/null || true
+            sudo mkdir -p /opt/kafka
+            sudo chown kafka:kafka /opt/kafka
+            
+            # Download and extract Kafka as kafka user
+            cd /tmp
+            KAFKA_VERSION="3.7.0"
+            KAFKA_FILE="kafka_2.13-${KAFKA_VERSION}.tgz"
+            KAFKA_URL="https://downloads.apache.org/kafka/${KAFKA_VERSION}/${KAFKA_FILE}"
+            
+            echo -e "${YELLOW}Downloading Kafka from ${KAFKA_URL}...${NC}"
+            if curl -L -o "${KAFKA_FILE}" "${KAFKA_URL}"; then
+                echo -e "${YELLOW}Extracting Kafka...${NC}"
+                sudo tar -xzf "${KAFKA_FILE}" -C /opt/
+                sudo ln -sf "/opt/kafka_2.13-${KAFKA_VERSION}" /opt/kafka
+                sudo chown -R kafka:kafka "/opt/kafka_2.13-${KAFKA_VERSION}"
+                sudo chown -R kafka:kafka /opt/kafka
+                sudo mkdir -p /opt/kafka/logs
+                sudo chown kafka:kafka /opt/kafka/logs
+                rm "${KAFKA_FILE}"
+                cd "$SCRIPT_DIR"
+                
+                # Create systemd service files
+                echo -e "${YELLOW}Creating systemd services for Kafka...${NC}"
+                
+                # Zookeeper service
+                sudo tee /etc/systemd/system/zookeeper.service > /dev/null <<EOF
+[Unit]
+Requires=network.target remote-fs.target
+After=network.target remote-fs.target
+
+[Service]
+Type=simple
+User=kafka
+ExecStart=/opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties
+ExecStop=/opt/kafka/bin/zookeeper-server-stop.sh
+Restart=on-abnormal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+                # Kafka service
+                sudo tee /etc/systemd/system/kafka.service > /dev/null <<EOF
+[Unit]
+Requires=zookeeper.service
+After=zookeeper.service
+
+[Service]
+Type=simple
+User=kafka
+ExecStart=/bin/sh -c '/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /opt/kafka/logs/kafka.log 2>&1'
+ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+Restart=on-abnormal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+                sudo systemctl daemon-reload
+                sudo systemctl enable zookeeper
+                sudo systemctl enable kafka
+                
+                # Configure Kafka for single-node setup
+                sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
+                sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
+                sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
+                
+            else
+                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                sudo apt install -y kafka
+            fi
         else
             echo -e "${GREEN}✓ Kafka already installed${NC}"
         fi
@@ -248,16 +320,10 @@ start_services() {
         # Linux using systemctl and manual services
         sudo systemctl start postgresql
 
-        # Start Zookeeper manually (background)
-        if [ -d "/opt/kafka" ]; then
-            /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties > /tmp/zookeeper.log 2>&1 &
-            echo $! > /tmp/zookeeper.pid
-            sleep 5
-
-            # Start Kafka manually (background)
-            /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /tmp/kafka.log 2>&1 &
-            echo $! > /tmp/kafka.pid
-            sleep 5
+        # Start Kafka services using systemd
+        if command -v kafka-server-start >/dev/null 2>&1 && [ -f "/etc/systemd/system/kafka.service" ]; then
+            sudo systemctl start zookeeper
+            sudo systemctl start kafka
         fi
 
         # Start Ollama
@@ -340,18 +406,14 @@ stop_application() {
 
     # Stop manually started services on Linux
     if [[ "$OSTYPE" == linux* ]]; then
-        if [ -f "/tmp/kafka.pid" ]; then
-            kill $(cat /tmp/kafka.pid) 2>/dev/null || true
-            rm /tmp/kafka.pid
-        fi
-
-        if [ -f "/tmp/zookeeper.pid" ]; then
-            kill $(cat /tmp/zookeeper.pid) 2>/dev/null || true
-            rm /tmp/zookeeper.pid
+        # Stop Kafka services using systemd
+        if [ -f "/etc/systemd/system/kafka.service" ]; then
+            sudo systemctl stop kafka 2>/dev/null || true
+            sudo systemctl stop zookeeper 2>/dev/null || true
         fi
 
         # Stop Ollama if running
-        pkill -f "ollama serve" 2>/dev/null || true
+        sudo systemctl stop ollama 2>/dev/null || pkill -f "ollama serve" 2>/dev/null || true
     fi
 
     echo -e "${GREEN}✓ Application and services stopped${NC}"
