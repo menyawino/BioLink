@@ -130,54 +130,103 @@ install_packages() {
             
             # Download and extract Kafka as kafka user
             cd /tmp
-            KAFKA_VERSION="3.9.1"
+            KAFKA_VERSION="3.8.0"
             KAFKA_FILE="kafka_2.13-${KAFKA_VERSION}.tgz"
             KAFKA_URL="https://downloads.apache.org/kafka/${KAFKA_VERSION}/${KAFKA_FILE}"
             
             echo -e "${YELLOW}Downloading Kafka from ${KAFKA_URL}...${NC}"
-            if curl -L -o "${KAFKA_FILE}" "${KAFKA_URL}"; then
-                # Verify download
-                if [ -f "${KAFKA_FILE}" ] && [ -s "${KAFKA_FILE}" ]; then
-                    echo -e "${YELLOW}Verifying download...${NC}"
-                    file "${KAFKA_FILE}" | grep -q "gzip compressed data" || {
-                        echo -e "${RED}Downloaded file is not a valid gzip archive${NC}"
+            if ! curl -L -o "${KAFKA_FILE}" "${KAFKA_URL}"; then
+                echo -e "${YELLOW}Primary download failed, trying archive.apache.org...${NC}"
+                ARCHIVE_URL="https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/${KAFKA_FILE}"
+                if ! curl -L -o "${KAFKA_FILE}" "${ARCHIVE_URL}"; then
+                    echo -e "${RED}All download attempts failed${NC}"
+                    echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                    sudo apt install -y kafka
+                    return
+                fi
+            fi
+            
+            # Check if download was successful
+            if [ ! -f "${KAFKA_FILE}" ] || [ ! -s "${KAFKA_FILE}" ]; then
+                echo -e "${RED}Download failed - file not found or empty${NC}"
+                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                sudo apt install -y kafka
+                return
+            fi
+            
+            # Check file size (should be at least 100MB for Kafka)
+            FILE_SIZE=$(stat -c%s "${KAFKA_FILE}" 2>/dev/null || stat -f%z "${KAFKA_FILE}" 2>/dev/null || echo "0")
+            if [ "$FILE_SIZE" -lt 100000000 ]; then
+                echo -e "${RED}Downloaded file is too small (${FILE_SIZE} bytes) - likely not the full Kafka archive${NC}"
+                rm "${KAFKA_FILE}"
+                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                sudo apt install -y kafka
+                return
+            fi
+            
+            # Verify download
+            if [ -f "${KAFKA_FILE}" ] && [ -s "${KAFKA_FILE}" ]; then
+                echo -e "${YELLOW}Verifying download...${NC}"
+                file "${KAFKA_FILE}" | grep -q "gzip compressed data" || {
+                    echo -e "${RED}Downloaded file is not a valid gzip archive${NC}"
+                    rm "${KAFKA_FILE}"
+                    echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                    sudo apt install -y kafka
+                    return
+                }
+                echo -e "${YELLOW}Extracting Kafka...${NC}"
+                if sudo tar -xzf "${KAFKA_FILE}" -C /opt/; then
+                    # Check what was actually extracted
+                    echo -e "${YELLOW}Checking extracted contents...${NC}"
+                    ls -la /opt/ | grep kafka || echo "No kafka directories found in /opt/"
+                    
+                    # Try to find the actual kafka directory
+                    KAFKA_DIR=$(find /opt -maxdepth 1 -name "*kafka*" -type d | head -1)
+                    if [ -z "$KAFKA_DIR" ]; then
+                        echo -e "${RED}No Kafka directory found in /opt/${NC}"
+                        echo -e "${YELLOW}Contents of /opt/:${NC}"
+                        ls -la /opt/
                         rm "${KAFKA_FILE}"
-                        echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                        echo -e "${RED}Failed to extract Kafka. Installing via apt as fallback...${NC}"
                         sudo apt install -y kafka
                         return
-                    }
-                    echo -e "${YELLOW}Extracting Kafka...${NC}"
-                    if sudo tar -xzf "${KAFKA_FILE}" -C /opt/; then
-                        sudo ln -sf "/opt/kafka_2.13-${KAFKA_VERSION}" /opt/kafka
-                        sudo chown -R kafka:kafka "/opt/kafka_2.13-${KAFKA_VERSION}"
-                        sudo chown -R kafka:kafka /opt/kafka
-                        sudo mkdir -p /opt/kafka/logs
-                        sudo chown kafka:kafka /opt/kafka/logs
-                        rm "${KAFKA_FILE}"
-                        cd "$SCRIPT_DIR"
-                        
+                    fi
+                    
+                    echo -e "${YELLOW}Found Kafka directory: $KAFKA_DIR${NC}"
+                    sudo ln -sf "$KAFKA_DIR" /opt/kafka
+                    sudo chown -R kafka:kafka "$KAFKA_DIR"
+                    sudo chown -R kafka:kafka /opt/kafka
+                    sudo mkdir -p /opt/kafka/logs
+                    sudo chown kafka:kafka /opt/kafka/logs
+                    rm "${KAFKA_FILE}"
+                    cd "$SCRIPT_DIR"
+                    
+                    # Verify the config file exists before configuring
+                    if [ -f "/opt/kafka/config/server.properties" ]; then
                         # Configure Kafka for single-node setup
                         sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
                         sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
                         sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
                         
-                        echo -e "${GREEN}✓ Kafka installed successfully${NC}"
-                        
+                        echo -e "${GREEN}✓ Kafka installed and configured successfully${NC}"
                     else
-                        echo -e "${RED}Failed to extract Kafka archive${NC}"
-                        rm "${KAFKA_FILE}"
-                        echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                        echo -e "${RED}Kafka config file not found at /opt/kafka/config/server.properties${NC}"
+                        echo -e "${YELLOW}Checking Kafka directory structure...${NC}"
+                        find /opt/kafka -name "server.properties" 2>/dev/null || echo "server.properties not found"
+                        echo -e "${RED}Failed to configure Kafka. Installing via apt as fallback...${NC}"
                         sudo apt install -y kafka
                         return
                     fi
                 else
-                    echo -e "${RED}Downloaded file is empty or missing${NC}"
-                    rm -f "${KAFKA_FILE}"
+                    echo -e "${RED}Failed to extract Kafka archive${NC}"
+                    rm "${KAFKA_FILE}"
                     echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
                     sudo apt install -y kafka
                     return
                 fi
             else
+                echo -e "${RED}Downloaded file is empty or missing${NC}"
+                rm -f "${KAFKA_FILE}"
                 echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
                 sudo apt install -y kafka
                 return
