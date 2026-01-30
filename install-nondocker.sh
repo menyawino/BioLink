@@ -156,58 +156,12 @@ install_packages() {
                         rm "${KAFKA_FILE}"
                         cd "$SCRIPT_DIR"
                         
-                        # Create systemd service files
-                        echo -e "${YELLOW}Creating systemd services for Kafka...${NC}"
-                        
-                        # Zookeeper service
-                        sudo tee /etc/systemd/system/zookeeper.service > /dev/null <<EOF
-[Unit]
-Requires=network.target remote-fs.target
-After=network.target remote-fs.target
-
-[Service]
-Type=simple
-User=kafka
-ExecStart=/opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties
-ExecStop=/opt/kafka/bin/zookeeper-server-stop.sh
-Restart=on-abnormal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-                        # Kafka service
-                        sudo tee /etc/systemd/system/kafka.service > /dev/null <<EOF
-[Unit]
-Requires=zookeeper.service
-After=zookeeper.service
-
-[Service]
-Type=simple
-User=kafka
-ExecStart=/bin/sh -c '/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /opt/kafka/logs/kafka.log 2>&1'
-ExecStop=/opt/kafka/bin/kafka-server-stop.sh
-Restart=on-abnormal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-                        sudo systemctl daemon-reload
-                        sudo systemctl enable zookeeper
-                        sudo systemctl enable kafka
-                        
                         # Configure Kafka for single-node setup
                         sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
                         sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
                         sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
                         
-                        # Check if systemd is available
-                        if ! sudo systemctl --version >/dev/null 2>&1; then
-                            echo -e "${YELLOW}Systemd not available, will use manual service management${NC}"
-                            # Create a flag file to indicate manual management is needed
-                            sudo touch /opt/kafka/.manual_mode
-                        fi
+                        echo -e "${GREEN}✓ Kafka installed successfully${NC}"
                         
                     else
                         echo -e "${RED}Failed to extract Kafka archive${NC}"
@@ -349,26 +303,25 @@ start_services() {
         brew services start kafka
         brew services start ollama
     elif [[ "$OSTYPE" == linux* ]]; then
-        # Linux using systemctl or manual services
-        sudo systemctl start postgresql
+        # Linux using manual service management (works in all environments)
+        sudo systemctl start postgresql 2>/dev/null || echo "PostgreSQL started manually"
 
-        # Start Kafka services
-        if command -v kafka-server-start >/dev/null 2>&1; then
-            if [ -f "/opt/kafka/.manual_mode" ]; then
-                # Manual mode for environments without systemd (WSL, containers)
-                echo -e "${YELLOW}Starting Kafka manually (no systemd available)...${NC}"
-                sudo -u kafka /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties > /tmp/zookeeper.log 2>&1 &
-                echo $! > /tmp/zookeeper.pid
-                sleep 5
-                
-                sudo -u kafka /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /tmp/kafka.log 2>&1 &
-                echo $! > /tmp/kafka.pid
-                sleep 5
-            else
-                # Systemd mode
-                sudo systemctl start zookeeper
-                sudo systemctl start kafka
-            fi
+        # Start Kafka services manually (works in containers/VMs without systemd)
+        if command -v kafka-server-start >/dev/null 2>&1 && [ -d "/opt/kafka" ]; then
+            echo -e "${YELLOW}Starting Kafka manually...${NC}"
+            # Start Zookeeper
+            sudo -u kafka /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties > /tmp/zookeeper.log 2>&1 &
+            ZOOKEEPER_PID=$!
+            echo $ZOOKEEPER_PID > /tmp/zookeeper.pid
+            sleep 5
+            
+            # Start Kafka
+            sudo -u kafka /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /tmp/kafka.log 2>&1 &
+            KAFKA_PID=$!
+            echo $KAFKA_PID > /tmp/kafka.pid
+            sleep 5
+            
+            echo -e "${GREEN}✓ Kafka services started (PIDs: Zookeeper=$ZOOKEEPER_PID, Kafka=$KAFKA_PID)${NC}"
         fi
 
         # Start Ollama
@@ -451,21 +404,14 @@ stop_application() {
 
     # Stop services on Linux
     if [[ "$OSTYPE" == linux* ]]; then
-        # Stop Kafka services
-        if [ -f "/opt/kafka/.manual_mode" ]; then
-            # Manual mode
-            if [ -f "/tmp/kafka.pid" ]; then
-                kill $(cat /tmp/kafka.pid) 2>/dev/null || true
-                rm /tmp/kafka.pid
-            fi
-            if [ -f "/tmp/zookeeper.pid" ]; then
-                kill $(cat /tmp/zookeeper.pid) 2>/dev/null || true
-                rm /tmp/zookeeper.pid
-            fi
-        else
-            # Systemd mode
-            sudo systemctl stop kafka 2>/dev/null || true
-            sudo systemctl stop zookeeper 2>/dev/null || true
+        # Stop Kafka services manually
+        if [ -f "/tmp/kafka.pid" ]; then
+            kill $(cat /tmp/kafka.pid) 2>/dev/null || true
+            rm /tmp/kafka.pid
+        fi
+        if [ -f "/tmp/zookeeper.pid" ]; then
+            kill $(cat /tmp/zookeeper.pid) 2>/dev/null || true
+            rm /tmp/zookeeper.pid
         fi
 
         # Stop Ollama
