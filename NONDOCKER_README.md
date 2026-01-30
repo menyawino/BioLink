@@ -1,10 +1,10 @@
 # BioLink Non-Docker Installation
 
-This script provides an alternative installation method for BioLink that doesn't require Docker. It installs all dependencies natively on macOS using Homebrew.
+This script provides an alternative installation method for BioLink that doesn't require Docker. It installs all dependencies natively on macOS using Homebrew and on Linux using apt.
 
 ## Prerequisites
 
-- macOS (this script is macOS-specific)
+- macOS or Linux (Ubuntu/Debian recommended)
 - At least 8GB RAM recommended
 - At least 10GB free disk space
 - Internet connection for downloading dependencies

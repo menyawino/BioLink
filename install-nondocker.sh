@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # BioLink Non-Docker Install Script
-# This script sets up BioLink without Docker on macOS
+# This script sets up BioLink without Docker on macOS and Linux
 
 set -e  # Exit on any error
 
@@ -38,8 +38,14 @@ install_homebrew() {
     if ! command_exists brew; then
         echo -e "${YELLOW}Installing Homebrew...${NC}"
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
-        eval "$(/opt/homebrew/bin/brew shellenv)"
+
+        if [[ "$OSTYPE" == darwin* ]]; then
+            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        elif [[ "$OSTYPE" == linux* ]]; then
+            echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
+            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        fi
     else
         echo -e "${GREEN}✓ Homebrew already installed${NC}"
     fi
@@ -239,11 +245,23 @@ start_services() {
         brew services start kafka
         brew services start ollama
     elif [[ "$OSTYPE" == linux* ]]; then
-        # Linux using systemctl
+        # Linux using systemctl and manual services
         sudo systemctl start postgresql
-        sudo systemctl start zookeeper
-        sudo systemctl start kafka
-        sudo systemctl start ollama
+
+        # Start Zookeeper manually (background)
+        if [ -d "/opt/kafka" ]; then
+            /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties > /tmp/zookeeper.log 2>&1 &
+            echo $! > /tmp/zookeeper.pid
+            sleep 5
+
+            # Start Kafka manually (background)
+            /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /tmp/kafka.log 2>&1 &
+            echo $! > /tmp/kafka.pid
+            sleep 5
+        fi
+
+        # Start Ollama
+        sudo systemctl start ollama 2>/dev/null || ollama serve > /tmp/ollama.log 2>&1 &
     fi
 
     echo -e "${GREEN}✓ Services started${NC}"
@@ -307,8 +325,9 @@ start_application() {
 
 # Function to stop application
 stop_application() {
-    echo -e "${YELLOW}Stopping application...${NC}"
+    echo -e "${YELLOW}Stopping application and services...${NC}"
 
+    # Stop BioLink application processes
     if [ -f "backend.pid" ]; then
         kill $(cat backend.pid) 2>/dev/null || true
         rm backend.pid
@@ -319,7 +338,23 @@ stop_application() {
         rm frontend.pid
     fi
 
-    echo -e "${GREEN}✓ Application stopped${NC}"
+    # Stop manually started services on Linux
+    if [[ "$OSTYPE" == linux* ]]; then
+        if [ -f "/tmp/kafka.pid" ]; then
+            kill $(cat /tmp/kafka.pid) 2>/dev/null || true
+            rm /tmp/kafka.pid
+        fi
+
+        if [ -f "/tmp/zookeeper.pid" ]; then
+            kill $(cat /tmp/zookeeper.pid) 2>/dev/null || true
+            rm /tmp/zookeeper.pid
+        fi
+
+        # Stop Ollama if running
+        pkill -f "ollama serve" 2>/dev/null || true
+    fi
+
+    echo -e "${GREEN}✓ Application and services stopped${NC}"
 }
 
 # Function to show status
@@ -363,7 +398,9 @@ show_status() {
 case "${1:-install}" in
     "install")
         check_os
-        install_homebrew
+        if [[ "$OSTYPE" == darwin* ]]; then
+            install_homebrew
+        fi
         install_packages
         setup_databases
         setup_python

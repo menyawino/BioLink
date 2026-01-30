@@ -179,9 +179,9 @@ Ollama: http://localhost:11434
 docker compose down
 ```
 
-### Alternative: Non-Docker Installation (macOS)
+### Alternative: Non-Docker Installation (macOS & Linux)
 
-For users who prefer not to use Docker, there's a native macOS installation script:
+For users who prefer not to use Docker, there's a native installation script for macOS and Linux:
 
 1. **Run the non-docker installation**:
 ```bash
