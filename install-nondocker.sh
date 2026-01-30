@@ -332,5 +332,4 @@ case "${1:-install}" in
         echo "  restart  - Restart all services and application"
         exit 1
         ;;
-esac</content>
-<parameter name="filePath">/Users/menyawino/Playground/BioLink/Code/install-nondocker.sh
+esac
