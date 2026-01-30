@@ -179,6 +179,33 @@ Ollama: http://localhost:11434
 docker compose down
 ```
 
+### Alternative: Non-Docker Installation (macOS)
+
+For users who prefer not to use Docker, there's a native macOS installation script:
+
+1. **Run the non-docker installation**:
+```bash
+./install-nondocker.sh install
+```
+
+2. **Start the application**:
+```bash
+./install-nondocker.sh start
+```
+
+3. **Access the application**:
+- Frontend: http://localhost:5173
+- Backend: http://localhost:3001
+
+**Management commands**:
+```bash
+./install-nondocker.sh stop      # Stop application
+./install-nondocker.sh status    # Check service status
+./install-nondocker.sh restart   # Restart everything
+```
+
+📖 **[Complete non-Docker installation guide →](NONDOCKER_README.md)**
+
 ### MCP Tools (SQL + Charts)
 
 An MCP server is included to let your local model call tools that query SQL and generate chart specs.
