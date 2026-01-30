@@ -27,8 +27,8 @@ command_exists() {
 
 # Function to check OS
 check_os() {
-    if [[ "$OSTYPE" != "darwin"* ]]; then
-        echo -e "${RED}❌ This script is designed for macOS only${NC}"
+    if [[ "$OSTYPE" != darwin* && "$OSTYPE" != linux* ]]; then
+        echo -e "${RED}❌ This script is designed for macOS and Linux only${NC}"
         exit 1
     fi
 }
@@ -49,50 +49,102 @@ install_homebrew() {
 install_packages() {
     echo -e "${YELLOW}Installing required packages...${NC}"
 
-    # Update Homebrew
-    brew update
+    if [[ "$OSTYPE" == darwin* ]]; then
+        # macOS with Homebrew
+        # Update Homebrew
+        brew update
 
-    # Install PostgreSQL
-    if ! command_exists psql; then
-        brew install postgresql@16
-        brew services start postgresql@16
-        sleep 2
-        /opt/homebrew/opt/postgresql@16/bin/createuser -s postgres 2>/dev/null || true
-    else
-        echo -e "${GREEN}✓ PostgreSQL already installed${NC}"
+        # Install PostgreSQL
+        if ! command_exists psql; then
+            brew install postgresql@16
+            brew services start postgresql@16
+            sleep 2
+            /opt/homebrew/opt/postgresql@16/bin/createuser -s postgres 2>/dev/null || true
+        else
+            echo -e "${GREEN}✓ PostgreSQL already installed${NC}"
+        fi
+
+        # Install Kafka
+        if ! command_exists kafka-server-start; then
+            brew install kafka
+        else
+            echo -e "${GREEN}✓ Kafka already installed${NC}"
+        fi
+
+        # Install Ollama
+        if ! command_exists ollama; then
+            brew install ollama
+            brew services start ollama
+        else
+            echo -e "${GREEN}✓ Ollama already installed${NC}"
+        fi
+
+        # Install Python 3.11+
+        if ! command_exists python3.11; then
+            brew install python@3.11
+        else
+            echo -e "${GREEN}✓ Python 3.11 already installed${NC}"
+        fi
+
+        # Install Node.js
+        if ! command_exists node; then
+            brew install node
+        else
+            echo -e "${GREEN}✓ Node.js already installed${NC}"
+        fi
+
+        # Install pgvector extension dependencies
+        brew install postgresql@16  # Ensure we have the right version
+
+    elif [[ "$OSTYPE" == linux* ]]; then
+        # Linux (assuming Ubuntu/Debian with apt)
+        echo -e "${YELLOW}Updating package lists...${NC}"
+        sudo apt update
+
+        # Install PostgreSQL
+        if ! command_exists psql; then
+            sudo apt install -y postgresql postgresql-contrib
+            sudo systemctl start postgresql
+            sudo systemctl enable postgresql
+            sleep 2
+            sudo -u postgres createuser -s $USER 2>/dev/null || true
+        else
+            echo -e "${GREEN}✓ PostgreSQL already installed${NC}"
+        fi
+
+        # Install Kafka
+        if ! command_exists kafka-server-start; then
+            sudo apt install -y openjdk-11-jdk wget
+            wget -qO- https://downloads.apache.org/kafka/3.6.1/kafka_2.13-3.6.1.tgz | sudo tar -xz -C /opt/
+            sudo ln -sf /opt/kafka_2.13-3.6.1 /opt/kafka
+            sudo mkdir -p /opt/kafka/logs
+        else
+            echo -e "${GREEN}✓ Kafka already installed${NC}"
+        fi
+
+        # Install Ollama
+        if ! command_exists ollama; then
+            echo -e "${YELLOW}Installing Ollama...${NC}"
+            curl -fsSL https://ollama.ai/install.sh | sh
+        else
+            echo -e "${GREEN}✓ Ollama already installed${NC}"
+        fi
+
+        # Install Python 3.11+
+        if ! command_exists python3.11; then
+            sudo apt install -y python3.11 python3.11-venv python3.11-pip
+        else
+            echo -e "${GREEN}✓ Python 3.11 already installed${NC}"
+        fi
+
+        # Install Node.js
+        if ! command_exists node; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt install -y nodejs
+        else
+            echo -e "${GREEN}✓ Node.js already installed${NC}"
+        fi
     fi
-
-    # Install Kafka
-    if ! command_exists kafka-server-start; then
-        brew install kafka
-    else
-        echo -e "${GREEN}✓ Kafka already installed${NC}"
-    fi
-
-    # Install Ollama
-    if ! command_exists ollama; then
-        brew install ollama
-        brew services start ollama
-    else
-        echo -e "${GREEN}✓ Ollama already installed${NC}"
-    fi
-
-    # Install Python 3.11+
-    if ! command_exists python3.11; then
-        brew install python@3.11
-    else
-        echo -e "${GREEN}✓ Python 3.11 already installed${NC}"
-    fi
-
-    # Install Node.js
-    if ! command_exists node; then
-        brew install node
-    else
-        echo -e "${GREEN}✓ Node.js already installed${NC}"
-    fi
-
-    # Install pgvector extension dependencies
-    brew install postgresql@16  # Ensure we have the right version
 
     echo -e "${GREEN}✓ All packages installed${NC}"
 }
@@ -101,18 +153,30 @@ install_packages() {
 setup_databases() {
     echo -e "${YELLOW}Setting up databases...${NC}"
 
-    # Start PostgreSQL if not running
-    brew services start postgresql@16
+    if [[ "$OSTYPE" == darwin* ]]; then
+        # macOS
+        brew services start postgresql@16
+        sleep 5
 
-    # Wait for PostgreSQL to start
-    sleep 5
+        # Create databases as current user
+        psql -h localhost -c "CREATE DATABASE biolink;" 2>/dev/null || echo "Database biolink already exists"
+        psql -h localhost -c "CREATE DATABASE biolink_vector;" 2>/dev/null || echo "Database biolink_vector already exists"
 
-    # Create databases
-    psql -h localhost -U postgres -c "CREATE DATABASE biolink;" 2>/dev/null || echo "Database biolink already exists"
-    psql -h localhost -U postgres -c "CREATE DATABASE biolink_vector;" 2>/dev/null || echo "Database biolink_vector already exists"
+        # Install pgvector extension
+        psql -h localhost -d biolink_vector -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || echo "pgvector extension already installed"
 
-    # Install pgvector extension
-    psql -h localhost -U postgres -d biolink_vector -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || echo "pgvector extension already installed"
+    elif [[ "$OSTYPE" == linux* ]]; then
+        # Linux
+        sudo systemctl start postgresql
+        sleep 5
+
+        # Create databases as postgres user
+        sudo -u postgres psql -c "CREATE DATABASE biolink;" 2>/dev/null || echo "Database biolink already exists"
+        sudo -u postgres psql -c "CREATE DATABASE biolink_vector;" 2>/dev/null || echo "Database biolink_vector already exists"
+
+        # Install pgvector extension (if available)
+        sudo -u postgres psql -d biolink_vector -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || echo "pgvector extension not available or already installed"
+    fi
 
     echo -e "${GREEN}✓ Databases setup complete${NC}"
 }
@@ -168,15 +232,19 @@ setup_ollama() {
 start_services() {
     echo -e "${YELLOW}Starting services...${NC}"
 
-    # Start PostgreSQL
-    brew services start postgresql@16
-
-    # Start Kafka (Zookeeper + Kafka)
-    brew services start zookeeper
-    brew services start kafka
-
-    # Start Ollama
-    brew services start ollama
+    if [[ "$OSTYPE" == darwin* ]]; then
+        # macOS using brew services
+        brew services start postgresql@16
+        brew services start zookeeper
+        brew services start kafka
+        brew services start ollama
+    elif [[ "$OSTYPE" == linux* ]]; then
+        # Linux using systemctl
+        sudo systemctl start postgresql
+        sudo systemctl start zookeeper
+        sudo systemctl start kafka
+        sudo systemctl start ollama
+    fi
 
     echo -e "${GREEN}✓ Services started${NC}"
 }
