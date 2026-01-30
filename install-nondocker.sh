@@ -136,18 +136,47 @@ install_packages() {
             
             echo -e "${YELLOW}Downloading Kafka from ${KAFKA_URL}...${NC}"
             if curl -L -o "${KAFKA_FILE}" "${KAFKA_URL}"; then
-                echo -e "${YELLOW}Extracting Kafka...${NC}"
-                sudo tar -xzf "${KAFKA_FILE}" -C /opt/
-                sudo ln -sf "/opt/kafka_2.13-${KAFKA_VERSION}" /opt/kafka
-                sudo chown -R kafka:kafka "/opt/kafka_2.13-${KAFKA_VERSION}"
-                sudo chown -R kafka:kafka /opt/kafka
-                sudo mkdir -p /opt/kafka/logs
-                sudo chown kafka:kafka /opt/kafka/logs
-                rm "${KAFKA_FILE}"
-                cd "$SCRIPT_DIR"
-                
-                # Create systemd service files
-                echo -e "${YELLOW}Creating systemd services for Kafka...${NC}"
+                # Verify download
+                if [ -f "${KAFKA_FILE}" ] && [ -s "${KAFKA_FILE}" ]; then
+                    echo -e "${YELLOW}Verifying download...${NC}"
+                    file "${KAFKA_FILE}" | grep -q "gzip compressed data" || {
+                        echo -e "${RED}Downloaded file is not a valid gzip archive${NC}"
+                        rm "${KAFKA_FILE}"
+                        echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                        sudo apt install -y kafka
+                        return
+                    }
+                    echo -e "${YELLOW}Extracting Kafka...${NC}"
+                    if sudo tar -xzf "${KAFKA_FILE}" -C /opt/; then
+                        sudo ln -sf "/opt/kafka_2.13-${KAFKA_VERSION}" /opt/kafka
+                        sudo chown -R kafka:kafka "/opt/kafka_2.13-${KAFKA_VERSION}"
+                        sudo chown -R kafka:kafka /opt/kafka
+                        sudo mkdir -p /opt/kafka/logs
+                        sudo chown kafka:kafka /opt/kafka/logs
+                        rm "${KAFKA_FILE}"
+                        cd "$SCRIPT_DIR"
+                        
+                        # Create systemd service files
+                        echo -e "${YELLOW}Creating systemd services for Kafka...${NC}"
+                    else
+                        echo -e "${RED}Failed to extract Kafka archive${NC}"
+                        rm "${KAFKA_FILE}"
+                        echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                        sudo apt install -y kafka
+                        return
+                    fi
+                else
+                    echo -e "${RED}Downloaded file is empty or missing${NC}"
+                    rm -f "${KAFKA_FILE}"
+                    echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                    sudo apt install -y kafka
+                    return
+                fi
+            else
+                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
+                sudo apt install -y kafka
+                return
+            fi
                 
                 # Zookeeper service
                 sudo tee /etc/systemd/system/zookeeper.service > /dev/null <<EOF
@@ -191,6 +220,13 @@ EOF
                 sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
                 sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
                 sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
+                
+                # Check if systemd is available
+                if ! sudo systemctl --version >/dev/null 2>&1; then
+                    echo -e "${YELLOW}Systemd not available, will use manual service management${NC}"
+                    # Create a flag file to indicate manual management is needed
+                    sudo touch /opt/kafka/.manual_mode
+                fi
                 
             else
                 echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
@@ -317,13 +353,26 @@ start_services() {
         brew services start kafka
         brew services start ollama
     elif [[ "$OSTYPE" == linux* ]]; then
-        # Linux using systemctl and manual services
+        # Linux using systemctl or manual services
         sudo systemctl start postgresql
 
-        # Start Kafka services using systemd
-        if command -v kafka-server-start >/dev/null 2>&1 && [ -f "/etc/systemd/system/kafka.service" ]; then
-            sudo systemctl start zookeeper
-            sudo systemctl start kafka
+        # Start Kafka services
+        if command -v kafka-server-start >/dev/null 2>&1; then
+            if [ -f "/opt/kafka/.manual_mode" ]; then
+                # Manual mode for environments without systemd (WSL, containers)
+                echo -e "${YELLOW}Starting Kafka manually (no systemd available)...${NC}"
+                sudo -u kafka /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties > /tmp/zookeeper.log 2>&1 &
+                echo $! > /tmp/zookeeper.pid
+                sleep 5
+                
+                sudo -u kafka /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /tmp/kafka.log 2>&1 &
+                echo $! > /tmp/kafka.pid
+                sleep 5
+            else
+                # Systemd mode
+                sudo systemctl start zookeeper
+                sudo systemctl start kafka
+            fi
         fi
 
         # Start Ollama
@@ -404,15 +453,26 @@ stop_application() {
         rm frontend.pid
     fi
 
-    # Stop manually started services on Linux
+    # Stop services on Linux
     if [[ "$OSTYPE" == linux* ]]; then
-        # Stop Kafka services using systemd
-        if [ -f "/etc/systemd/system/kafka.service" ]; then
+        # Stop Kafka services
+        if [ -f "/opt/kafka/.manual_mode" ]; then
+            # Manual mode
+            if [ -f "/tmp/kafka.pid" ]; then
+                kill $(cat /tmp/kafka.pid) 2>/dev/null || true
+                rm /tmp/kafka.pid
+            fi
+            if [ -f "/tmp/zookeeper.pid" ]; then
+                kill $(cat /tmp/zookeeper.pid) 2>/dev/null || true
+                rm /tmp/zookeeper.pid
+            fi
+        else
+            # Systemd mode
             sudo systemctl stop kafka 2>/dev/null || true
             sudo systemctl stop zookeeper 2>/dev/null || true
         fi
 
-        # Stop Ollama if running
+        # Stop Ollama
         sudo systemctl stop ollama 2>/dev/null || pkill -f "ollama serve" 2>/dev/null || true
     fi
 

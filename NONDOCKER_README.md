@@ -83,11 +83,12 @@ This script provides an alternative installation method for BioLink that doesn't
 On Linux systems, the script:
 - Downloads Apache Kafka directly from official Apache mirrors
 - Creates dedicated `kafka` user and proper directory structure
-- Sets up systemd services for Zookeeper and Kafka
+- Sets up systemd services for Zookeeper and Kafka (when available)
+- Falls back to manual process management in environments without systemd (WSL, containers)
 - Configures Kafka for single-node operation
-- Enables services to start automatically on boot
+- Enables services to start automatically on boot (when systemd is available)
 
-This provides a more robust and production-ready Kafka installation compared to manual background processes.
+This provides a robust Kafka installation that works in various Linux environments including native installations, WSL, and containers.
 
 ## Configuration
 
