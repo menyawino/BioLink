@@ -130,7 +130,7 @@ install_packages() {
             
             # Download and extract Kafka as kafka user
             cd /tmp
-            KAFKA_VERSION="3.7.0"
+            KAFKA_VERSION="3.9.1"
             KAFKA_FILE="kafka_2.13-${KAFKA_VERSION}.tgz"
             KAFKA_URL="https://downloads.apache.org/kafka/${KAFKA_VERSION}/${KAFKA_FILE}"
             
