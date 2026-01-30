@@ -110,15 +110,12 @@ install_packages() {
         # Install PostgreSQL
         if ! command_exists psql; then
             sudo apt install -y postgresql postgresql-contrib
-            sudo systemctl start postgresql
-            sudo systemctl enable postgresql
-            sleep 2
-            sudo -u postgres createuser -s $USER 2>/dev/null || true
+            # Manual start will be done later
         else
             echo -e "${GREEN}✓ PostgreSQL already installed${NC}"
         fi
 
-        # Install Kafka
+        # Install Kafka manually
         if ! command_exists kafka-server-start; then
             echo -e "${YELLOW}Installing Kafka...${NC}"
             sudo apt install -y openjdk-11-jdk wget curl
@@ -140,18 +137,14 @@ install_packages() {
                 ARCHIVE_URL="https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/${KAFKA_FILE}"
                 if ! curl -L -o "${KAFKA_FILE}" "${ARCHIVE_URL}"; then
                     echo -e "${RED}All download attempts failed${NC}"
-                    echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
-                    sudo apt install -y kafka
-                    return
+                    return 1
                 fi
             fi
             
             # Check if download was successful
             if [ ! -f "${KAFKA_FILE}" ] || [ ! -s "${KAFKA_FILE}" ]; then
                 echo -e "${RED}Download failed - file not found or empty${NC}"
-                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
-                sudo apt install -y kafka
-                return
+                return 1
             fi
             
             # Check file size (should be at least 100MB for Kafka)
@@ -159,9 +152,7 @@ install_packages() {
             if [ "$FILE_SIZE" -lt 100000000 ]; then
                 echo -e "${RED}Downloaded file is too small (${FILE_SIZE} bytes) - likely not the full Kafka archive${NC}"
                 rm "${KAFKA_FILE}"
-                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
-                sudo apt install -y kafka
-                return
+                return 1
             fi
             
             # Verify download
@@ -170,9 +161,7 @@ install_packages() {
                 file "${KAFKA_FILE}" | grep -q "gzip compressed data" || {
                     echo -e "${RED}Downloaded file is not a valid gzip archive${NC}"
                     rm "${KAFKA_FILE}"
-                    echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
-                    sudo apt install -y kafka
-                    return
+                    return 1
                 }
                 echo -e "${YELLOW}Extracting Kafka...${NC}"
                 if sudo tar -xzf "${KAFKA_FILE}" -C /opt/; then
@@ -187,9 +176,7 @@ install_packages() {
                         echo -e "${YELLOW}Contents of /opt/:${NC}"
                         ls -la /opt/
                         rm "${KAFKA_FILE}"
-                        echo -e "${RED}Failed to extract Kafka. Installing via apt as fallback...${NC}"
-                        sudo apt install -y kafka
-                        return
+                        return 1
                     fi
                     
                     echo -e "${YELLOW}Found Kafka directory: $KAFKA_DIR${NC}"
@@ -198,12 +185,9 @@ install_packages() {
                     sudo chown -R kafka:kafka /opt/kafka
                     sudo mkdir -p /opt/kafka/logs
                     sudo chown kafka:kafka /opt/kafka/logs
-                    rm "${KAFKA_FILE}"
-                    cd "$SCRIPT_DIR"
                     
-                    # Verify the config file exists before configuring
+                    # Configure Kafka for single-node setup
                     if [ -f "/opt/kafka/config/server.properties" ]; then
-                        # Configure Kafka for single-node setup
                         sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
                         sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
                         sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
@@ -213,23 +197,17 @@ install_packages() {
                         echo -e "${RED}Kafka config file not found at /opt/kafka/config/server.properties${NC}"
                         echo -e "${YELLOW}Checking Kafka directory structure...${NC}"
                         find /opt/kafka -name "server.properties" 2>/dev/null || echo "server.properties not found"
-                        echo -e "${RED}Failed to configure Kafka. Installing via apt as fallback...${NC}"
-                        sudo apt install -y kafka
-                        return
+                        return 1
                     fi
                 else
                     echo -e "${RED}Failed to extract Kafka archive${NC}"
                     rm "${KAFKA_FILE}"
-                    echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
-                    sudo apt install -y kafka
-                    return
+                    return 1
                 fi
             else
                 echo -e "${RED}Downloaded file is empty or missing${NC}"
                 rm -f "${KAFKA_FILE}"
-                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
-                sudo apt install -y kafka
-                return
+                return 1
             fi
         else
             echo -e "${GREEN}✓ Kafka already installed${NC}"
@@ -279,8 +257,11 @@ setup_databases() {
         psql -h localhost -d biolink_vector -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || echo "pgvector extension already installed"
 
     elif [[ "$OSTYPE" == linux* ]]; then
-        # Linux
-        sudo systemctl start postgresql
+        # Linux - manual PostgreSQL start
+        # Start PostgreSQL manually
+        sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main -l /tmp/postgres.log start &
+        POSTGRES_PID=$!
+        echo $POSTGRES_PID > /tmp/postgres.pid
         sleep 5
 
         # Create databases as postgres user
@@ -353,7 +334,13 @@ start_services() {
         brew services start ollama
     elif [[ "$OSTYPE" == linux* ]]; then
         # Linux using manual service management (works in all environments)
-        sudo systemctl start postgresql 2>/dev/null || echo "PostgreSQL started manually"
+        # Start PostgreSQL manually if not running
+        if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+            sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main -l /tmp/postgres.log start &
+            POSTGRES_PID=$!
+            echo $POSTGRES_PID > /tmp/postgres.pid
+            sleep 5
+        fi
 
         # Start Kafka services manually (works in containers/VMs without systemd)
         if command -v kafka-server-start >/dev/null 2>&1 && [ -d "/opt/kafka" ]; then
@@ -373,8 +360,13 @@ start_services() {
             echo -e "${GREEN}✓ Kafka services started (PIDs: Zookeeper=$ZOOKEEPER_PID, Kafka=$KAFKA_PID)${NC}"
         fi
 
-        # Start Ollama
-        sudo systemctl start ollama 2>/dev/null || ollama serve > /tmp/ollama.log 2>&1 &
+        # Start Ollama manually
+        if ! curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+            ollama serve > /tmp/ollama.log 2>&1 &
+            OLLAMA_PID=$!
+            echo $OLLAMA_PID > /tmp/ollama.pid
+            sleep 5
+        fi
     fi
 
     echo -e "${GREEN}✓ Services started${NC}"
@@ -453,6 +445,12 @@ stop_application() {
 
     # Stop services on Linux
     if [[ "$OSTYPE" == linux* ]]; then
+        # Stop PostgreSQL
+        if [ -f "/tmp/postgres.pid" ]; then
+            sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main stop &
+            rm /tmp/postgres.pid
+        fi
+
         # Stop Kafka services manually
         if [ -f "/tmp/kafka.pid" ]; then
             kill $(cat /tmp/kafka.pid) 2>/dev/null || true
@@ -464,7 +462,10 @@ stop_application() {
         fi
 
         # Stop Ollama
-        sudo systemctl stop ollama 2>/dev/null || pkill -f "ollama serve" 2>/dev/null || true
+        if [ -f "/tmp/ollama.pid" ]; then
+            kill $(cat /tmp/ollama.pid) 2>/dev/null || true
+            rm /tmp/ollama.pid
+        fi
     fi
 
     echo -e "${GREEN}✓ Application and services stopped${NC}"
