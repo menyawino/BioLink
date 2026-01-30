@@ -158,6 +158,57 @@ install_packages() {
                         
                         # Create systemd service files
                         echo -e "${YELLOW}Creating systemd services for Kafka...${NC}"
+                        
+                        # Zookeeper service
+                        sudo tee /etc/systemd/system/zookeeper.service > /dev/null <<EOF
+[Unit]
+Requires=network.target remote-fs.target
+After=network.target remote-fs.target
+
+[Service]
+Type=simple
+User=kafka
+ExecStart=/opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties
+ExecStop=/opt/kafka/bin/zookeeper-server-stop.sh
+Restart=on-abnormal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+                        # Kafka service
+                        sudo tee /etc/systemd/system/kafka.service > /dev/null <<EOF
+[Unit]
+Requires=zookeeper.service
+After=zookeeper.service
+
+[Service]
+Type=simple
+User=kafka
+ExecStart=/bin/sh -c '/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /opt/kafka/logs/kafka.log 2>&1'
+ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+Restart=on-abnormal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+                        sudo systemctl daemon-reload
+                        sudo systemctl enable zookeeper
+                        sudo systemctl enable kafka
+                        
+                        # Configure Kafka for single-node setup
+                        sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
+                        sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
+                        sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
+                        
+                        # Check if systemd is available
+                        if ! sudo systemctl --version >/dev/null 2>&1; then
+                            echo -e "${YELLOW}Systemd not available, will use manual service management${NC}"
+                            # Create a flag file to indicate manual management is needed
+                            sudo touch /opt/kafka/.manual_mode
+                        fi
+                        
                     else
                         echo -e "${RED}Failed to extract Kafka archive${NC}"
                         rm "${KAFKA_FILE}"
@@ -176,61 +227,6 @@ install_packages() {
                 echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
                 sudo apt install -y kafka
                 return
-            fi
-                
-                # Zookeeper service
-                sudo tee /etc/systemd/system/zookeeper.service > /dev/null <<EOF
-[Unit]
-Requires=network.target remote-fs.target
-After=network.target remote-fs.target
-
-[Service]
-Type=simple
-User=kafka
-ExecStart=/opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties
-ExecStop=/opt/kafka/bin/zookeeper-server-stop.sh
-Restart=on-abnormal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-                # Kafka service
-                sudo tee /etc/systemd/system/kafka.service > /dev/null <<EOF
-[Unit]
-Requires=zookeeper.service
-After=zookeeper.service
-
-[Service]
-Type=simple
-User=kafka
-ExecStart=/bin/sh -c '/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties > /opt/kafka/logs/kafka.log 2>&1'
-ExecStop=/opt/kafka/bin/kafka-server-stop.sh
-Restart=on-abnormal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-                sudo systemctl daemon-reload
-                sudo systemctl enable zookeeper
-                sudo systemctl enable kafka
-                
-                # Configure Kafka for single-node setup
-                sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
-                sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
-                sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
-                
-                # Check if systemd is available
-                if ! sudo systemctl --version >/dev/null 2>&1; then
-                    echo -e "${YELLOW}Systemd not available, will use manual service management${NC}"
-                    # Create a flag file to indicate manual management is needed
-                    sudo touch /opt/kafka/.manual_mode
-                fi
-                
-            else
-                echo -e "${RED}Failed to download Kafka. Installing via apt as fallback...${NC}"
-                sudo apt install -y kafka
             fi
         else
             echo -e "${GREEN}✓ Kafka already installed${NC}"
