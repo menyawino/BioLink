@@ -304,7 +304,14 @@ setup_databases() {
             echo -e "${YELLOW}Starting PostgreSQL manually...${NC}"
             sudo touch /tmp/postgres.log
             sudo chown postgres:postgres /tmp/postgres.log
-            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -w -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
+            PG_CONFIG_FILE="/etc/postgresql/14/main/postgresql.conf"
+            PG_HBA_FILE="/etc/postgresql/14/main/pg_hba.conf"
+            PG_IDENT_FILE="/etc/postgresql/14/main/pg_ident.conf"
+            PG_OPTS=""
+            if [ -f "$PG_CONFIG_FILE" ]; then
+                PG_OPTS="-o \"-c config_file=$PG_CONFIG_FILE -c hba_file=$PG_HBA_FILE -c ident_file=$PG_IDENT_FILE\""
+            fi
+            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -w -D /var/lib/postgresql/14/main -l /tmp/postgres.log $PG_OPTS start)
             sleep 5
         fi
 
@@ -433,7 +440,14 @@ load_data() {
             echo -e "${YELLOW}Starting PostgreSQL for data load...${NC}"
             sudo touch /tmp/postgres.log
             sudo chown postgres:postgres /tmp/postgres.log
-            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -w -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
+            PG_CONFIG_FILE="/etc/postgresql/14/main/postgresql.conf"
+            PG_HBA_FILE="/etc/postgresql/14/main/pg_hba.conf"
+            PG_IDENT_FILE="/etc/postgresql/14/main/pg_ident.conf"
+            PG_OPTS=""
+            if [ -f "$PG_CONFIG_FILE" ]; then
+                PG_OPTS="-o \"-c config_file=$PG_CONFIG_FILE -c hba_file=$PG_HBA_FILE -c ident_file=$PG_IDENT_FILE\""
+            fi
+            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -w -D /var/lib/postgresql/14/main -l /tmp/postgres.log $PG_OPTS start)
             sleep 5
         fi
     fi
