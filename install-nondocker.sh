@@ -55,8 +55,14 @@ install_homebrew() {
 install_packages() {
     echo -e "${YELLOW}Installing required packages...${NC}"
 
-    # Set BIOLINK_REQUIRE_KAFKA=1 to make Kafka installation mandatory
+    # Kafka controls:
+    # - Set BIOLINK_SKIP_KAFKA=1 to skip Kafka installation (default).
+    # - Set BIOLINK_REQUIRE_KAFKA=1 to make Kafka installation mandatory.
     BIOLINK_REQUIRE_KAFKA=${BIOLINK_REQUIRE_KAFKA:-0}
+    BIOLINK_SKIP_KAFKA=${BIOLINK_SKIP_KAFKA:-1}
+    if [ "$BIOLINK_REQUIRE_KAFKA" -eq 1 ]; then
+        BIOLINK_SKIP_KAFKA=0
+    fi
 
     if [[ "$OSTYPE" == darwin* ]]; then
         # macOS with Homebrew
@@ -118,8 +124,10 @@ install_packages() {
             echo -e "${GREEN}✓ PostgreSQL already installed${NC}"
         fi
 
-        # Install Kafka manually (optional by default)
-        if ! command_exists kafka-server-start; then
+        # Install Kafka manually (skipped by default)
+        if [ "$BIOLINK_SKIP_KAFKA" -eq 1 ]; then
+            echo -e "${YELLOW}⏭️  Skipping Kafka installation (BIOLINK_SKIP_KAFKA=1).${NC}"
+        elif ! command_exists kafka-server-start; then
             echo -e "${YELLOW}Installing Kafka...${NC}"
             set +e
             KAFKA_OK=1
@@ -241,6 +249,7 @@ install_packages() {
         # Install Ollama
         if ! command_exists ollama; then
             echo -e "${YELLOW}Installing Ollama...${NC}"
+            sudo apt install -y zstd
             curl -fsSL https://ollama.ai/install.sh | sh
         else
             echo -e "${GREEN}✓ Ollama already installed${NC}"
