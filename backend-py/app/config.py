@@ -13,10 +13,18 @@ class Settings(BaseSettings):
     
     # Ollama / LangChain SQL agent
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:3b"
+    ollama_model: str = "Qwen2.5:7B-Instruct"
+    ollama_orchestrator_model: str = "Qwen2.5:7B"
+    ollama_data_model: str = "Qwen2.5:7B-Instruct"
     ollama_medical_model: str = "alibayram/medgemma:4b"
-    ollama_coding_model: str = "llama3.2:3b"
+    ollama_coding_model: str = "Qwen2.5:7B-Instruct"
     sql_agent_default_limit: int = 200
+    llm_max_retries: int = 2
+    llm_retry_backoff_s: float = 0.4
+    llm_retry_jitter_s: float = 0.2
+    orchestrator_llm_timeout_s: float = 8.0
+    data_llm_timeout_s: float = 20.0
+    medical_llm_timeout_s: float = 20.0
 
     # SQL Server (EHVol registry)
     sqlserver_host: str = "localhost"

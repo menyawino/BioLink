@@ -43,7 +43,7 @@ class IntentRouter:
             "criteria",
             "group",
         ]
-        self._coding_keywords = [
+        self._data_keywords = [
             "join",
             "group by",
             "chart",
@@ -87,7 +87,7 @@ class IntentRouter:
             return "general"
 
         if text.startswith("select ") or text.startswith("with "):
-            return "sql"
+            return "data"
 
         if self._contains_any(text, self._rag_keywords):
             return "rag"
@@ -96,9 +96,9 @@ class IntentRouter:
         if self._contains_any(text, self._ui_keywords):
             return "ui"
         if self._contains_any(text, self._sql_keywords):
-            return "sql"
-        if self._contains_any(text, self._coding_keywords):
-            return "coding"
+            return "data"
+        if self._contains_any(text, self._data_keywords):
+            return "data"
         if self._contains_any(text, self._medical_keywords):
             return "medical"
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
@@ -38,6 +40,26 @@ class Agent(Protocol):
         tool_registry: ToolRegistry,
     ) -> AgentResult:
         ...
+
+
+async def _ainvoke_with_retries(
+    llm: ChatOllama,
+    prompt: str,
+    timeout_s: float,
+    max_retries: int,
+) -> Any:
+    last_error: Optional[Exception] = None
+    for attempt in range(max_retries + 1):
+        try:
+            return await asyncio.wait_for(llm.ainvoke(prompt), timeout=timeout_s)
+        except Exception as exc:  # pragma: no cover - defensive
+            last_error = exc
+            if attempt >= max_retries:
+                break
+            backoff = settings.llm_retry_backoff_s * (2 ** attempt)
+            jitter = random.random() * settings.llm_retry_jitter_s
+            await asyncio.sleep(backoff + jitter)
+    raise last_error or RuntimeError("LLM invocation failed")
 
 
 class SqlAgentAdapter:
@@ -134,8 +156,36 @@ class MedicalAgentAdapter:
         tool_registry: ToolRegistry,
     ) -> AgentResult:
         prompt = self._build_prompt(message, history)
-        response = await self._llm.ainvoke(prompt)
+        response = await _ainvoke_with_retries(
+            self._llm,
+            prompt,
+            timeout_s=settings.medical_llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
         return AgentResult(content=response.content, agent=self.name)
+
+    async def run_handoff(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]],
+        agent_result: AgentResult,
+    ) -> AgentResult:
+        prompt = self._build_handoff_prompt(message, history, agent_result)
+        response = await _ainvoke_with_retries(
+            self._llm,
+            prompt,
+            timeout_s=settings.medical_llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
+        return AgentResult(
+            content=response.content,
+            agent=self.name,
+            tool_calls=agent_result.tool_calls,
+            metadata={
+                **agent_result.metadata,
+                "handoff_from": agent_result.agent,
+            },
+        )
 
     @staticmethod
     def _build_prompt(message: str, history: Optional[List[Dict[str, str]]]) -> str:
@@ -152,14 +202,47 @@ class MedicalAgentAdapter:
             f"User question: {message}\n"
         )
 
+    @staticmethod
+    def _build_handoff_prompt(
+        message: str,
+        history: Optional[List[Dict[str, str]]],
+        agent_result: AgentResult,
+    ) -> str:
+        history_block = ""
+        if history:
+            history_block = "\n".join(
+                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+            )
+        tool_call_block = ""
+        if agent_result.tool_calls:
+            tool_call_block = "\n".join(
+                [f"- {tc.name}: {json.dumps(tc.arguments, ensure_ascii=False)}" for tc in agent_result.tool_calls]
+            )
+        metadata_block = ""
+        if agent_result.metadata:
+            metadata_block = json.dumps(agent_result.metadata, ensure_ascii=False, indent=2)
+        return (
+            "You are a medical reasoning assistant. A specialist agent already executed tools and gathered data. "
+            "Use the tool results to provide the final response. Be explicit about uncertainty and avoid definitive diagnoses. "
+            "If results are insufficient, ask concise clarifying questions.\n\n"
+            f"Conversation history:\n{history_block}\n\n"
+            f"User question: {message}\n\n"
+            f"Specialist agent: {agent_result.agent}\n"
+            f"Specialist summary:\n{agent_result.content}\n\n"
+            f"Tool calls:\n{tool_call_block or 'None'}\n\n"
+            f"Metadata:\n{metadata_block or 'None'}\n"
+        )
 
-class CodingAgentAdapter:
-    name = "coding"
+
+class DataAgentAdapter:
+    name = "data"
+
+    _allowed_marks = {"bar", "line", "area", "point", "tick", "boxplot"}
 
     def __init__(self) -> None:
         self._llm = ChatOllama(
             base_url=settings.ollama_base_url,
-            model=settings.ollama_coding_model,
+            model=settings.ollama_data_model,
             temperature=0,
         )
 
@@ -170,7 +253,12 @@ class CodingAgentAdapter:
         tool_registry: ToolRegistry,
     ) -> AgentResult:
         prompt = self._build_prompt(message, history)
-        response = await self._llm.ainvoke(prompt)
+        response = await _ainvoke_with_retries(
+            self._llm,
+            prompt,
+            timeout_s=settings.data_llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
         payload = self._extract_json(response.content)
         if not payload:
             return AgentResult(
@@ -181,8 +269,8 @@ class CodingAgentAdapter:
         action = payload.get("action", "query_sql")
         if action == "chart_from_sql":
             args = {
-                "sql": payload.get("sql"),
-                "mark": payload.get("mark", "bar"),
+                "sql": self._sanitize_sql(payload.get("sql") or ""),
+                "mark": self._sanitize_mark(payload.get("mark", "bar")),
                 "x": payload.get("x"),
                 "y": payload.get("y"),
                 "color": payload.get("color"),
@@ -203,14 +291,21 @@ class CodingAgentAdapter:
                 metadata={"chart": result.get("spec")},
             )
 
-        sql = payload.get("sql") or ""
+        sql = self._sanitize_sql(payload.get("sql") or "")
         if not sql:
             return AgentResult(
                 content="Please provide a query intent so I can generate SQL.",
                 agent=self.name,
             )
-        result = tool_registry.call("query_sql", {"sql": sql, "limit": 200})
-        tool_call = ToolCall(name="query_sql", arguments={"sql": sql, "limit": 200})
+        sql = self._ensure_limit(sql, settings.sql_agent_default_limit)
+        result = tool_registry.call(
+            "query_sql",
+            {"sql": sql, "limit": settings.sql_agent_default_limit},
+        )
+        tool_call = ToolCall(
+            name="query_sql",
+            arguments={"sql": sql, "limit": settings.sql_agent_default_limit},
+        )
         return AgentResult(
             content=SqlAgentAdapter._format_result(sql, result),
             agent=self.name,
@@ -226,7 +321,7 @@ class CodingAgentAdapter:
                 [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
             )
         return (
-            "You are a data assistant. Decide whether to generate SQL or a chart. "
+            "You are a data agent. Decide whether to generate SQL or a chart. "
             "Return ONLY JSON with keys: action (query_sql|chart_from_sql), sql, mark, x, y, color, title. "
             "Use only tables: patients, patient_summary. Ensure SQL is SELECT-only.\n\n"
             f"Conversation history:\n{history_block}\n\n"
@@ -240,6 +335,11 @@ class CodingAgentAdapter:
         try:
             return json.loads(text)
         except Exception:
+            cleaned = re.sub(r"```json|```", "", text, flags=re.IGNORECASE).strip()
+            try:
+                return json.loads(cleaned)
+            except Exception:
+                pass
             match = re.search(r"\{[\s\S]*\}", text)
             if not match:
                 return None
@@ -247,6 +347,28 @@ class CodingAgentAdapter:
                 return json.loads(match.group(0))
             except Exception:
                 return None
+
+    @staticmethod
+    def _sanitize_sql(sql: str) -> str:
+        if not sql:
+            return ""
+        lowered = sql.strip().lower()
+        if not (lowered.startswith("select ") or lowered.startswith("with ")):
+            return ""
+        forbidden = [";", "insert ", "update ", "delete ", "drop ", "alter ", "create "]
+        if any(token in lowered for token in forbidden):
+            return ""
+        return sql.strip()
+
+    @staticmethod
+    def _ensure_limit(sql: str, limit: int) -> str:
+        if re.search(r"\blimit\b", sql, flags=re.IGNORECASE):
+            return sql
+        return f"{sql.rstrip()} LIMIT {int(limit)}"
+
+    def _sanitize_mark(self, mark: str) -> str:
+        cleaned = (mark or "").strip().lower()
+        return cleaned if cleaned in self._allowed_marks else "bar"
 
 
 class RagAgentAdapter:
@@ -341,18 +463,82 @@ class FallbackAgent:
 
 
 class ChatOrchestrator:
-    def __init__(self, tool_registry: ToolRegistry, router: Optional[IntentRouter] = None) -> None:
+    def __init__(
+        self,
+        tool_registry: ToolRegistry,
+        router: Optional[IntentRouter] = None,
+        use_llm_router: bool = True,
+    ) -> None:
         self._tool_registry = tool_registry
         self._router = router or IntentRouter()
+        self._use_llm_router = use_llm_router
+        self._orchestrator_llm = (
+            ChatOllama(
+                base_url=settings.ollama_base_url,
+                model=settings.ollama_orchestrator_model,
+                temperature=0,
+            )
+            if use_llm_router
+            else None
+        )
+        self._allowed_intents = {
+            "data",
+            "medical",
+            "rag",
+            "cohort",
+            "ui",
+            "general",
+        }
         self._agents: Dict[str, Agent] = {
-            "sql": SqlAgentAdapter(),
+            "data": DataAgentAdapter(),
             "medical": MedicalAgentAdapter(),
-            "coding": CodingAgentAdapter(),
             "rag": RagAgentAdapter(),
             "cohort": CohortAgent(),
             "ui": UiAgent(),
             "general": FallbackAgent(),
         }
+        self._agents["sql"] = self._agents["data"]
+        self._agents["coding"] = self._agents["data"]
+
+    async def _route_with_llm(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]],
+    ) -> Optional[str]:
+        if not self._orchestrator_llm:
+            return None
+
+        history_block = ""
+        if history:
+            history_block = "\n".join(
+                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+            )
+        prompt = (
+            "You are an orchestrator. Route the user request to exactly one intent from: "
+            "data, medical, rag, cohort, ui, general. "
+            "Return ONLY the intent string.\n\n"
+            f"Conversation history:\n{history_block}\n\n"
+            f"User request: {message}\n"
+        )
+        response = await _ainvoke_with_retries(
+            self._orchestrator_llm,
+            prompt,
+            timeout_s=settings.orchestrator_llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
+        intent = (response.content or "").strip().lower()
+        intent = re.sub(r"[^a-z]", "", intent)
+        if intent in {"sql", "coding"}:
+            intent = "data"
+        return intent if intent in self._allowed_intents else None
+
+    def _should_use_llm_router(self, intent: str) -> bool:
+        return self._use_llm_router and intent == "general"
+
+    def _normalize_intent(self, intent: str) -> str:
+        if intent in {"sql", "coding"}:
+            return "data"
+        return intent
 
     async def run(
         self,
@@ -361,6 +547,11 @@ class ChatOrchestrator:
         request_id: Optional[str] = None,
     ) -> AgentResult:
         intent = self._router.classify(message)
+        if self._should_use_llm_router(intent):
+            llm_intent = await self._route_with_llm(message, history)
+            if llm_intent:
+                intent = llm_intent
+        intent = self._normalize_intent(intent)
         audit_event("intent_routed", {"intent": intent, "message": message[:200]}, request_id)
         agent = self._agents.get(intent, self._agents["general"])
         audit_event("agent_selected", {"agent": getattr(agent, "name", intent)}, request_id)
@@ -370,6 +561,20 @@ class ChatOrchestrator:
             {"agent": result.agent, "tool_calls": [tc.name for tc in result.tool_calls]},
             request_id,
         )
+        if result.agent != "medical":
+            medical_agent = self._agents["medical"]
+            audit_event(
+                "agent_handoff",
+                {"from": result.agent, "to": "medical"},
+                request_id,
+            )
+            if hasattr(medical_agent, "run_handoff"):
+                return await medical_agent.run_handoff(message, history, result)
+            combined_message = (
+                f"User question: {message}\n\n"
+                f"Specialist agent ({result.agent}) summary:\n{result.content}"
+            )
+            return await medical_agent.run(combined_message, history, self._tool_registry)
         return result
 
 
