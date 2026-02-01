@@ -300,18 +300,22 @@ setup_databases() {
 
     elif [[ "$OSTYPE" == linux* ]]; then
         # Linux - manual PostgreSQL start
-        # Start PostgreSQL manually
-        sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main -l /tmp/postgres.log start &
-        POSTGRES_PID=$!
-        echo $POSTGRES_PID > /tmp/postgres.pid
-        sleep 5
+        if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+            echo -e "${YELLOW}Starting PostgreSQL manually...${NC}"
+            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
+            sleep 5
+        fi
+
+        if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+            echo -e "${RED}PostgreSQL failed to start. See /tmp/postgres.log${NC}"
+        fi
 
         # Create databases as postgres user
-        sudo -u postgres psql -c "CREATE DATABASE biolink;" 2>/dev/null || echo "Database biolink already exists"
-        sudo -u postgres psql -c "CREATE DATABASE biolink_vector;" 2>/dev/null || echo "Database biolink_vector already exists"
+        (cd /tmp && sudo -u postgres psql -c "CREATE DATABASE biolink;" 2>/dev/null || echo "Database biolink already exists")
+        (cd /tmp && sudo -u postgres psql -c "CREATE DATABASE biolink_vector;" 2>/dev/null || echo "Database biolink_vector already exists")
 
         # Install pgvector extension (if available)
-        sudo -u postgres psql -d biolink_vector -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || echo "pgvector extension not available or already installed"
+        (cd /tmp && sudo -u postgres psql -d biolink_vector -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || echo "pgvector extension not available or already installed")
     fi
 
     echo -e "${GREEN}✓ Databases setup complete${NC}"
@@ -417,6 +421,14 @@ start_services() {
 # Function to load data
 load_data() {
     echo -e "${YELLOW}Loading initial data...${NC}"
+
+    if [[ "$OSTYPE" == linux* ]]; then
+        if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+            echo -e "${YELLOW}Starting PostgreSQL for data load...${NC}"
+            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
+            sleep 5
+        fi
+    fi
 
     cd backend-py
     source venv/bin/activate
