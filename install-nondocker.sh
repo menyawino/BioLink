@@ -257,9 +257,17 @@ install_packages() {
 
         # Install Python 3.11+
         if ! command_exists python3.11; then
-            sudo apt install -y python3.11 python3.11-venv python3.11-pip
+            sudo apt install -y python3.11 python3.11-venv
         else
             echo -e "${GREEN}✓ Python 3.11 already installed${NC}"
+        fi
+
+        # Ensure pip is available for Python 3.11
+        if ! command_exists pip3.11; then
+            echo -e "${YELLOW}Installing pip for Python 3.11...${NC}"
+            if ! python3.11 -m ensurepip --upgrade >/dev/null 2>&1; then
+                sudo apt install -y python3-pip
+            fi
         fi
 
         # Install Node.js
