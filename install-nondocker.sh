@@ -494,8 +494,9 @@ load_data() {
     cd backend-py
     source venv/bin/activate
 
-    # Run data loading script
-    python -c "
+    # Run data loading script (skip if reduced CSV missing)
+    if [ -f "db/reduced_ehvol_50.csv" ]; then
+        python -c "
 from sqlalchemy import text, create_engine
 from app.config import settings
 from pathlib import Path
@@ -510,11 +511,14 @@ with engine.begin() as conn:
             load_reduced_data()
         else:
             print(f'Data already loaded: {count} records')
-    except:
-        print('Loading reduced dataset...')
+    except Exception as e:
+        print('Loading reduced dataset (initial schema/migration may run)...')
         from app.load_reduced_data import load_reduced_data
         load_reduced_data()
 "
+    else
+        echo -e "${YELLOW}⚠️  Reduced dataset not found at db/reduced_ehvol_50.csv - skipping data load. You can add the file and re-run $0 load-data${NC}"
+    fi
 
     cd ..
     echo -e "${GREEN}✓ Data loading complete${NC}"

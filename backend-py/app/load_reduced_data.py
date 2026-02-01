@@ -9,12 +9,31 @@ logger = logging.getLogger(__name__)
 def load_reduced_data():
     """Load 50 records from reduced EHVol CSV into the patients table"""
     try:
+        # Locate CSV file (try container path first, then repo paths)
+        possible_paths = [
+            '/app/db/reduced_ehvol_50.csv',
+            str(Path(__file__).resolve().parents[1] / 'db' / 'reduced_ehvol_50.csv'),
+            str(Path(__file__).resolve().parents[2] / 'db' / 'reduced_ehvol_50.csv'),
+            str(Path(__file__).resolve().parents[3] / 'db' / 'reduced_ehvol_50.csv'),
+        ]
+        csv_path = None
+        for p in possible_paths:
+            if Path(p).exists():
+                csv_path = p
+                break
+        if csv_path is None:
+            raise FileNotFoundError("Reduced dataset not found. Looked in: " + ", ".join(possible_paths))
+
         # Read the reduced CSV
-        df = pd.read_csv('/app/db/reduced_ehvol_50.csv')  # Path in container
-        logger.info(f"Loaded {len(df)} records from CSV")
+        df = pd.read_csv(csv_path)
+        logger.info(f"Loaded {len(df)} records from CSV at {csv_path}")
 
         # Create database engine
         engine = sa.create_engine(settings.database_url)
+
+        # Ensure schema exists before inserting
+        from app.db_bootstrap import ensure_schema
+        ensure_schema(engine)
 
         # Clear existing data
         with engine.begin() as conn:
