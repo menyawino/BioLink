@@ -55,6 +55,9 @@ install_homebrew() {
 install_packages() {
     echo -e "${YELLOW}Installing required packages...${NC}"
 
+    # Set BIOLINK_REQUIRE_KAFKA=1 to make Kafka installation mandatory
+    BIOLINK_REQUIRE_KAFKA=${BIOLINK_REQUIRE_KAFKA:-0}
+
     if [[ "$OSTYPE" == darwin* ]]; then
         # macOS with Homebrew
         # Update Homebrew
@@ -115,9 +118,11 @@ install_packages() {
             echo -e "${GREEN}✓ PostgreSQL already installed${NC}"
         fi
 
-        # Install Kafka manually
+        # Install Kafka manually (optional by default)
         if ! command_exists kafka-server-start; then
             echo -e "${YELLOW}Installing Kafka...${NC}"
+            set +e
+            KAFKA_OK=1
             sudo apt install -y openjdk-11-jdk wget curl
             
             # Create kafka user and directories
@@ -137,32 +142,39 @@ install_packages() {
                 ARCHIVE_URL="https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/${KAFKA_FILE}"
                 if ! curl -L -o "${KAFKA_FILE}" "${ARCHIVE_URL}"; then
                     echo -e "${RED}All download attempts failed${NC}"
-                    return 1
+                    KAFKA_OK=0
                 fi
             fi
             
             # Check if download was successful
-            if [ ! -f "${KAFKA_FILE}" ] || [ ! -s "${KAFKA_FILE}" ]; then
-                echo -e "${RED}Download failed - file not found or empty${NC}"
-                return 1
+            if [ "$KAFKA_OK" -eq 1 ]; then
+                if [ ! -f "${KAFKA_FILE}" ] || [ ! -s "${KAFKA_FILE}" ]; then
+                    echo -e "${RED}Download failed - file not found or empty${NC}"
+                    KAFKA_OK=0
+                fi
             fi
             
             # Check file size (should be at least 100MB for Kafka)
-            FILE_SIZE=$(stat -c%s "${KAFKA_FILE}" 2>/dev/null || stat -f%z "${KAFKA_FILE}" 2>/dev/null || echo "0")
-            if [ "$FILE_SIZE" -lt 100000000 ]; then
-                echo -e "${RED}Downloaded file is too small (${FILE_SIZE} bytes) - likely not the full Kafka archive${NC}"
-                rm "${KAFKA_FILE}"
-                return 1
+            if [ "$KAFKA_OK" -eq 1 ]; then
+                FILE_SIZE=$(stat -c%s "${KAFKA_FILE}" 2>/dev/null || stat -f%z "${KAFKA_FILE}" 2>/dev/null || echo "0")
+                if [ "$FILE_SIZE" -lt 100000000 ]; then
+                    echo -e "${RED}Downloaded file is too small (${FILE_SIZE} bytes) - likely not the full Kafka archive${NC}"
+                    rm "${KAFKA_FILE}"
+                    KAFKA_OK=0
+                fi
             fi
             
             # Verify download
-            if [ -f "${KAFKA_FILE}" ] && [ -s "${KAFKA_FILE}" ]; then
+            if [ "$KAFKA_OK" -eq 1 ]; then
                 echo -e "${YELLOW}Verifying download...${NC}"
                 file "${KAFKA_FILE}" | grep -q "gzip compressed data" || {
                     echo -e "${RED}Downloaded file is not a valid gzip archive${NC}"
                     rm "${KAFKA_FILE}"
-                    return 1
+                    KAFKA_OK=0
                 }
+            fi
+
+            if [ "$KAFKA_OK" -eq 1 ]; then
                 echo -e "${YELLOW}Extracting Kafka...${NC}"
                 if sudo tar -xzf "${KAFKA_FILE}" -C /opt/; then
                     # Check what was actually extracted
@@ -179,38 +191,48 @@ install_packages() {
                         echo -e "${YELLOW}Contents of /opt/:${NC}"
                         ls -la /opt/
                         rm "${KAFKA_FILE}"
-                        return 1
-                    fi
-                    
-                    echo -e "${YELLOW}Found Kafka directory: $KAFKA_DIR${NC}"
-                    sudo ln -sfn "$KAFKA_DIR" /opt/kafka
-                    sudo chown -R kafka:kafka "$KAFKA_DIR"
-                    sudo chown -R kafka:kafka /opt/kafka
-                    sudo mkdir -p /opt/kafka/logs
-                    sudo chown kafka:kafka /opt/kafka/logs
-                    
-                    # Configure Kafka for single-node setup
-                    if [ -f "/opt/kafka/config/server.properties" ]; then
-                        sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
-                        sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
-                        sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
-                        
-                        echo -e "${GREEN}✓ Kafka installed and configured successfully${NC}"
+                        KAFKA_OK=0
                     else
-                        echo -e "${RED}Kafka config file not found at /opt/kafka/config/server.properties${NC}"
-                        echo -e "${YELLOW}Checking Kafka directory structure...${NC}"
-                        find /opt/kafka -name "server.properties" 2>/dev/null || echo "server.properties not found"
-                        return 1
+                        
+                        echo -e "${YELLOW}Found Kafka directory: $KAFKA_DIR${NC}"
+                        sudo ln -sfn "$KAFKA_DIR" /opt/kafka
+                        sudo chown -R kafka:kafka "$KAFKA_DIR"
+                        sudo chown -R kafka:kafka /opt/kafka
+                        sudo mkdir -p /opt/kafka/logs
+                        sudo chown kafka:kafka /opt/kafka/logs
+                        
+                        # Configure Kafka for single-node setup
+                        if [ -f "/opt/kafka/config/server.properties" ]; then
+                            sudo sed -i 's/broker.id=0/broker.id=0/' /opt/kafka/config/server.properties
+                            sudo sed -i 's/#listeners=PLAINTEXT:\/\/:9092/listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
+                            sudo sed -i 's/#advertised.listeners=PLAINTEXT:\/\/your.host.name:9092/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' /opt/kafka/config/server.properties
+                            
+                            echo -e "${GREEN}✓ Kafka installed and configured successfully${NC}"
+                        else
+                            echo -e "${RED}Kafka config file not found at /opt/kafka/config/server.properties${NC}"
+                            echo -e "${YELLOW}Checking Kafka directory structure...${NC}"
+                            find /opt/kafka -name "server.properties" 2>/dev/null || echo "server.properties not found"
+                            KAFKA_OK=0
+                        fi
                     fi
                 else
                     echo -e "${RED}Failed to extract Kafka archive${NC}"
                     rm "${KAFKA_FILE}"
-                    return 1
+                    KAFKA_OK=0
                 fi
             else
                 echo -e "${RED}Downloaded file is empty or missing${NC}"
                 rm -f "${KAFKA_FILE}"
-                return 1
+                KAFKA_OK=0
+            fi
+
+            set -e
+            if [ "$KAFKA_OK" -ne 1 ]; then
+                if [ "$BIOLINK_REQUIRE_KAFKA" -eq 1 ]; then
+                    echo -e "${RED}Kafka installation failed and BIOLINK_REQUIRE_KAFKA=1 is set${NC}"
+                    exit 1
+                fi
+                echo -e "${YELLOW}⚠️  Kafka installation failed. Continuing without Kafka.${NC}"
             fi
         else
             echo -e "${GREEN}✓ Kafka already installed${NC}"
