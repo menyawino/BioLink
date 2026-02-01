@@ -331,6 +331,29 @@ setup_databases() {
         (cd /tmp && sudo -u postgres psql -c "CREATE DATABASE biolink;" 2>/dev/null || echo "Database biolink already exists")
         (cd /tmp && sudo -u postgres psql -c "CREATE DATABASE biolink_vector;" 2>/dev/null || echo "Database biolink_vector already exists")
 
+        # Ensure application DB user exists and has correct password (matches .env.example)
+        BIO_USER="biolink"
+        BIO_PASS="biolink_secret"
+        if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${BIO_USER}'" | grep -q 1; then
+            echo -e "${YELLOW}Updating password for database role ${BIO_USER}${NC}"
+            sudo -u postgres psql -c "ALTER ROLE \"${BIO_USER}\" WITH PASSWORD '${BIO_PASS}';" >/dev/null 2>&1 || true
+        else
+            echo -e "${YELLOW}Creating database role ${BIO_USER}${NC}"
+            sudo -u postgres psql -c "CREATE ROLE \"${BIO_USER}\" WITH LOGIN PASSWORD '${BIO_PASS}';" >/dev/null 2>&1 || true
+        fi
+
+        # Make the biolink user owner of the databases
+        sudo -u postgres psql -c "ALTER DATABASE biolink OWNER TO \"${BIO_USER}\";" >/dev/null 2>&1 || true
+        sudo -u postgres psql -c "ALTER DATABASE biolink_vector OWNER TO \"${BIO_USER}\";" >/dev/null 2>&1 || true
+
+        # Verify we can connect as biolink using password
+        echo -e "${YELLOW}Verifying connection as ${BIO_USER}...${NC}"
+        if PGPASSWORD="${BIO_PASS}" psql -h localhost -U "${BIO_USER}" -d biolink -c "\q" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Connection as ${BIO_USER} succeeded${NC}"
+        else
+            echo -e "${RED}✗ Connection as ${BIO_USER} failed - check credentials and pg_hba.conf${NC}"
+        fi
+
         # Install pgvector extension (if available)
         (cd /tmp && sudo -u postgres psql -d biolink_vector -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || echo "pgvector extension not available or already installed")
     fi
@@ -359,7 +382,15 @@ setup_python() {
     if [ ! -f ".env" ]; then
         cp .env.example .env
         echo -e "${YELLOW}⚠️  Please edit backend-py/.env with your database credentials${NC}"
+    else
+        echo -e "${GREEN}✓ backend-py/.env already exists${NC}"
     fi
+
+    # Ensure .env contains the default biolink credentials matching the installer
+    BIO_ENV_DB_URL="postgresql://biolink:biolink_secret@localhost:5432/biolink"
+    BIO_ENV_RAG_URL="postgresql://biolink:biolink_secret@localhost:5433/biolink_vector"
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=${BIO_ENV_DB_URL}|" .env || echo "DATABASE_URL=${BIO_ENV_DB_URL}" >> .env
+    sed -i "s|^RAG_PG_URL=.*|RAG_PG_URL=${BIO_ENV_RAG_URL}|" .env || echo "RAG_PG_URL=${BIO_ENV_RAG_URL}" >> .env
 
     cd ..
     echo -e "${GREEN}✓ Python environment setup complete${NC}"
