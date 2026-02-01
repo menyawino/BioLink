@@ -169,9 +169,12 @@ install_packages() {
                     echo -e "${YELLOW}Checking extracted contents...${NC}"
                     ls -la /opt/ | grep kafka || echo "No kafka directories found in /opt/"
                     
-                    # Try to find the actual kafka directory
-                    KAFKA_DIR=$(find /opt -maxdepth 1 -name "*kafka*" -type d | head -1)
-                    if [ -z "$KAFKA_DIR" ]; then
+                    # Try to find the actual kafka directory (avoid pre-created /opt/kafka)
+                    KAFKA_DIR="/opt/kafka_2.13-${KAFKA_VERSION}"
+                    if [ ! -d "$KAFKA_DIR" ]; then
+                        KAFKA_DIR=$(find /opt -maxdepth 1 -name "kafka_*" -type d | head -1)
+                    fi
+                    if [ -z "$KAFKA_DIR" ] || [ ! -d "$KAFKA_DIR" ]; then
                         echo -e "${RED}No Kafka directory found in /opt/${NC}"
                         echo -e "${YELLOW}Contents of /opt/:${NC}"
                         ls -la /opt/
@@ -180,7 +183,7 @@ install_packages() {
                     fi
                     
                     echo -e "${YELLOW}Found Kafka directory: $KAFKA_DIR${NC}"
-                    sudo ln -sf "$KAFKA_DIR" /opt/kafka
+                    sudo ln -sfn "$KAFKA_DIR" /opt/kafka
                     sudo chown -R kafka:kafka "$KAFKA_DIR"
                     sudo chown -R kafka:kafka /opt/kafka
                     sudo mkdir -p /opt/kafka/logs
