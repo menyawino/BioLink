@@ -302,12 +302,18 @@ setup_databases() {
         # Linux - manual PostgreSQL start
         if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
             echo -e "${YELLOW}Starting PostgreSQL manually...${NC}"
-            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
+            sudo touch /tmp/postgres.log
+            sudo chown postgres:postgres /tmp/postgres.log
+            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -w -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
             sleep 5
         fi
 
         if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
             echo -e "${RED}PostgreSQL failed to start. See /tmp/postgres.log${NC}"
+            if [ -f /tmp/postgres.log ]; then
+                echo -e "${YELLOW}Last 50 lines of /tmp/postgres.log:${NC}"
+                tail -n 50 /tmp/postgres.log || true
+            fi
         fi
 
         # Create databases as postgres user
@@ -425,7 +431,9 @@ load_data() {
     if [[ "$OSTYPE" == linux* ]]; then
         if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
             echo -e "${YELLOW}Starting PostgreSQL for data load...${NC}"
-            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
+            sudo touch /tmp/postgres.log
+            sudo chown postgres:postgres /tmp/postgres.log
+            (cd /tmp && sudo -u postgres /usr/lib/postgresql/14/bin/pg_ctl -w -D /var/lib/postgresql/14/main -l /tmp/postgres.log start)
             sleep 5
         fi
     fi
