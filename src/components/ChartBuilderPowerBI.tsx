@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
@@ -17,8 +17,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { Download, Save, Code2, BarChart3, LineChart as LineChartIcon, PieChart as PieChartIcon, Zap, Loader2, AlertCircle, TrendingUp } from "lucide-react";
 import { useScatterData, useChartSeries } from "../hooks/useCharts";
+import { DashboardBuilder } from "./DashboardBuilder";
+import { SupersetProgrammatic } from "./SupersetProgrammatic";
 
-type ChartType =
+export type ChartType =
   | "column"
   | "bar"
   | "stacked_column"
@@ -50,7 +52,7 @@ type ChartType =
   | "gauge"
   | "kpi";
 
-interface ChartConfig {
+export interface ChartConfig {
   type: ChartType;
   xAxis: string;
   yAxis: string;
@@ -93,6 +95,8 @@ const availableFields = [
   { id: "lv_mass", label: "LV Mass", type: "numeric" as const },
   { id: "smoking_years", label: "Smoking Years", type: "numeric" as const }
 ];
+
+const SAVED_CHARTS_STORAGE_KEY = "biolink.savedCharts.v1";
 
 const chartTypeRequirements: Record<ChartType, ChartRequirement> = {
   column: {
@@ -451,8 +455,20 @@ export function ChartBuilder() {
   });
 
   const [selectedPatients] = useState<string[]>([]);
-  const [savedCharts, setSavedCharts] = useState<ChartConfig[]>([]);
+  const [savedCharts, setSavedCharts] = useState<ChartConfig[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = localStorage.getItem(SAVED_CHARTS_STORAGE_KEY);
+      return stored ? (JSON.parse(stored) as ChartConfig[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [showCodeDialog, setShowCodeDialog] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem(SAVED_CHARTS_STORAGE_KEY, JSON.stringify(savedCharts));
+  }, [savedCharts]);
 
   const xField = availableFields.find(field => field.id === chartConfig.xAxis);
   const yField = availableFields.find(field => field.id === chartConfig.yAxis);
@@ -1086,27 +1102,35 @@ export function ChartBuilder() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-4">
-          <Tabs defaultValue="visuals" className="space-y-4">
-            <TabsList className="grid grid-cols-2">
-              <TabsTrigger value="visuals">Visuals</TabsTrigger>
-              <TabsTrigger value="customize">Customize</TabsTrigger>
-            </TabsList>
+      <Tabs defaultValue="builder" className="space-y-4">
+        <TabsList className="grid grid-cols-3 w-full">
+          <TabsTrigger value="builder">Chart Builder</TabsTrigger>
+          <TabsTrigger value="dashboard">Dashboard Canvas</TabsTrigger>
+          <TabsTrigger value="superset">Superset Live</TabsTrigger>
+        </TabsList>
 
-            <TabsContent value="visuals" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Visual Gallery</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ScrollArea className="h-[520px] pr-2">
-                    <div className="space-y-4">
-                      {chartTypeGroups.map(group => (
-                        <div key={group.title} className="space-y-2">
-                          <div className="text-xs uppercase text-muted-foreground">{group.title}</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {group.items.map(type => {
+        <TabsContent value="builder" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-4">
+              <Tabs defaultValue="visuals" className="space-y-4">
+                <TabsList className="grid grid-cols-2">
+                  <TabsTrigger value="visuals">Visuals</TabsTrigger>
+                  <TabsTrigger value="customize">Customize</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="visuals" className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Visual Gallery</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <ScrollArea className="h-[520px] pr-2">
+                        <div className="space-y-4">
+                          {chartTypeGroups.map(group => (
+                            <div key={group.title} className="space-y-2">
+                              <div className="text-xs uppercase text-muted-foreground">{group.title}</div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {group.items.map(type => {
                               const Icon = chartTypeIcons[type];
                               return (
                                 <Button
@@ -1457,6 +1481,16 @@ export function ChartBuilder() {
           </Card>
         </div>
       </div>
-    </div>
+    </TabsContent>
+
+    <TabsContent value="dashboard">
+      <DashboardBuilder savedCharts={savedCharts} />
+    </TabsContent>
+
+    <TabsContent value="superset">
+      <SupersetProgrammatic />
+    </TabsContent>
+  </Tabs>
+  </div>
   );
 }

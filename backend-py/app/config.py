@@ -43,6 +43,19 @@ class Settings(BaseSettings):
     rag_chunk_overlap: int = 120
     rag_top_k: int = 5
 
+    # Superset (programmatic charts + embed)
+    superset_url: str = "http://localhost:8088"
+    superset_public_url: str = "http://localhost:8088"
+    superset_admin_user: str = "admin"
+    superset_admin_password: str = "admin"
+    superset_admin_email: str = "admin@biolink.local"
+    superset_admin_firstname: str = "Bio"
+    superset_admin_lastname: str = "Link"
+    superset_database_name: str = "BioLink"
+    superset_database_uri: str = "postgresql://biolink:biolink_secret@localhost:5432/biolink"
+    superset_default_schema: str = "public"
+    superset_default_table: str = "patient_summary"
+
     @field_validator("database_url")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:

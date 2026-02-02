@@ -1,0 +1,9 @@
+FROM apache/superset:latest
+
+USER root
+
+# Install Postgres driver for Superset database connections (inside Superset venv)
+RUN /app/.venv/bin/python -m ensurepip \
+	&& /app/.venv/bin/python -m pip install --no-cache-dir psycopg2-binary
+
+USER superset

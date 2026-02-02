@@ -9,6 +9,12 @@ export interface ChartDataRequest {
   aggregation?: 'count' | 'avg' | 'sum' | 'min' | 'max';
 }
 
+export interface ChartFilter {
+  field: string;
+  operator: '=' | '!=';
+  value: string;
+}
+
 export interface ChartSeriesRequest {
   xAxis: string;
   yAxis?: string;
@@ -16,6 +22,7 @@ export interface ChartSeriesRequest {
   aggregation?: 'count' | 'avg' | 'sum' | 'min' | 'max';
   bins?: number;
   limit?: number;
+  filters?: ChartFilter[];
 }
 
 // Get chart data with flexible parameters
@@ -37,7 +44,8 @@ export async function getChartSeries(params: ChartSeriesRequest) {
     ...(params.groupBy && { groupBy: params.groupBy }),
     ...(params.aggregation && { aggregation: params.aggregation }),
     ...(params.bins && { bins: String(params.bins) }),
-    ...(params.limit && { limit: String(params.limit) })
+    ...(params.limit && { limit: String(params.limit) }),
+    ...(params.filters && params.filters.length > 0 ? { filters: JSON.stringify(params.filters) } : {})
   });
   return get<{ label: string; value: number; series?: string }[]>(`/api/charts/series?${queryString}`);
 }

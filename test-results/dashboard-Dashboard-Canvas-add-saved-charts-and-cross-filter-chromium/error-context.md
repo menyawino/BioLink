@@ -1,0 +1,90 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e6]:
+      - img "Magdi Yacoub Heart Foundation" [ref=e7]
+      - generic [ref=e8]:
+        - heading "MYF Biolink" [level=2] [ref=e9]
+        - paragraph [ref=e10]: Heart Foundation Registry
+    - navigation [ref=e12]:
+      - button "Welcome Platform overview & features" [ref=e13]:
+        - generic [ref=e14]:
+          - img
+          - generic [ref=e15]:
+            - generic [ref=e16]: Welcome
+            - paragraph [ref=e17]: Platform overview & features
+      - button "Patient Profile Individual patient view" [ref=e18]:
+        - generic [ref=e19]:
+          - img
+          - generic [ref=e20]:
+            - generic [ref=e21]: Patient Profile
+            - paragraph [ref=e22]: Individual patient view
+      - button "Patient Registry All patients table view" [ref=e23]:
+        - generic [ref=e24]:
+          - img
+          - generic [ref=e25]:
+            - generic [ref=e26]: Patient Registry
+            - paragraph [ref=e27]: All patients table view
+      - button "Cohort Builder Advanced patient selection" [ref=e28]:
+        - generic [ref=e29]:
+          - img
+          - generic [ref=e30]:
+            - generic [ref=e31]: Cohort Builder
+            - paragraph [ref=e32]: Advanced patient selection
+      - button "Registry Analytics Data visualization & insights" [ref=e33]:
+        - generic [ref=e34]:
+          - img
+          - generic [ref=e35]:
+            - generic [ref=e36]: Registry Analytics
+            - paragraph [ref=e37]: Data visualization & insights
+      - button "Chart Builder Create custom visualizations" [ref=e38]:
+        - generic [ref=e39]:
+          - img
+          - generic [ref=e40]:
+            - generic [ref=e41]: Chart Builder
+            - paragraph [ref=e42]: Create custom visualizations
+      - button "Data Dictionary Variables & metadata" [ref=e43]:
+        - generic [ref=e44]:
+          - img
+          - generic [ref=e45]:
+            - generic [ref=e46]: Data Dictionary
+            - paragraph [ref=e47]: Variables & metadata
+    - generic [ref=e48]:
+      - button "DR Dr. Ahmed Hassan View Profile" [ref=e49]:
+        - generic [ref=e50]:
+          - generic [ref=e51]: DR
+          - generic [ref=e52]:
+            - paragraph [ref=e53]: Dr. Ahmed Hassan
+            - paragraph [ref=e54]: View Profile
+      - button "Settings" [ref=e55]:
+        - img
+        - generic [ref=e56]: Settings
+      - generic [ref=e57]:
+        - paragraph [ref=e58]: Registry Version 2.1.0
+        - paragraph [ref=e59]: "Last Updated: Dec 2024"
+        - paragraph [ref=e60]: "Data Refresh: Live"
+  - generic [ref=e64]:
+    - tablist [ref=e65]:
+      - tab "Chart Builder" [ref=e66]
+      - tab "Dashboard Canvas" [active] [selected] [ref=e67]
+      - tab "Superset Studio" [ref=e68]
+    - tabpanel "Dashboard Canvas" [ref=e69]:
+      - generic [ref=e71]:
+        - generic [ref=e72]:
+          - generic [ref=e73]:
+            - heading "Dashboard Canvas" [level=4] [ref=e74]
+            - paragraph [ref=e75]: Drag, resize, and link panels. Filters sync across all visuals and are stored locally.
+          - generic [ref=e76]:
+            - button "Add Panel" [ref=e77]:
+              - img
+              - text: Add Panel
+            - button "Export JSON" [ref=e78]:
+              - img
+              - text: Export JSON
+            - button "Clear Filters" [ref=e79]:
+              - img
+              - text: Clear Filters
+        - generic [ref=e81]: No active filters
+```

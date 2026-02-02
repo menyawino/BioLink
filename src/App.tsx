@@ -254,6 +254,7 @@ function transformToMedicalHistory(patient: PatientDetail) {
 function transformToImagingData(patient: PatientDetail) {
   const hasEcho = patient.echo !== null && !patient.echo?.missing_echo;
   const hasMri = patient.mri !== null && !patient.mri?.missing_mri;
+  const hasAssets = true;
   
   const ct: any[] = [];
   const mri: any[] = [];
@@ -301,7 +302,7 @@ function transformToImagingData(patient: PatientDetail) {
   }
 
   return { 
-    hasData: hasEcho || hasMri,
+    hasData: hasEcho || hasMri || hasAssets,
     ct, 
     mri, 
     echo 

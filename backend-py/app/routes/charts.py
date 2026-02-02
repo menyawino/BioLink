@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import text
 from app.database import get_db
 import logging
+import json
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -71,18 +72,53 @@ def _validate_aggregation(aggregation: str) -> str:
         raise HTTPException(status_code=400, detail=f"Unsupported aggregation: {aggregation}")
     return aggregation
 
-def _build_base_where(x_axis: str, y_axis: str | None, group_by: str | None, aggregation: str) -> str:
+def _parse_filters(filters: str | None) -> list[dict]:
+    if not filters:
+        return []
+    try:
+        raw = json.loads(filters)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid filters JSON")
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=400, detail="Filters must be a list")
+
+    parsed = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        field = _validate_field(str(item.get("field", "")))
+        operator = str(item.get("operator", "=")).strip()
+        if operator not in {"=", "!="}:
+            raise HTTPException(status_code=400, detail=f"Unsupported filter operator: {operator}")
+        value = item.get("value")
+        parsed.append({"field": field, "operator": operator, "value": value})
+    return parsed
+
+
+def _build_base_where(
+    x_axis: str,
+    y_axis: str | None,
+    group_by: str | None,
+    aggregation: str,
+    filters: list[dict]
+) -> tuple[str, dict]:
     clauses = [f"{x_axis} IS NOT NULL"]
+    params: dict = {}
     if group_by:
         clauses.append(f"{group_by} IS NOT NULL")
     if aggregation != "count" and y_axis:
         clauses.append(f"{y_axis} IS NOT NULL")
-    return " AND ".join(clauses)
+    for idx, flt in enumerate(filters):
+        param_key = f"filter_{idx}"
+        clauses.append(f"{flt['field']} {flt['operator']} :{param_key}")
+        params[param_key] = flt.get("value")
+    return " AND ".join(clauses), params
 
 @router.get("/correlation")
 async def get_correlation(
     field1: str = Query(..., description="First field for correlation"),
     field2: str = Query(..., description="Second field for correlation"),
+    filters: str | None = Query(None, description="JSON-encoded filters"),
     db = Depends(get_db)
 ):
     """Get correlation data between two numeric fields"""
@@ -90,17 +126,19 @@ async def get_correlation(
         f1 = _validate_field(field1)
         f2 = _validate_field(field2)
 
+        parsed_filters = _parse_filters(filters)
+        where_sql, params = _build_base_where(f1, f2, None, "count", parsed_filters)
         stmt = text(f"""
             SELECT
                 dna_id,
                 {f1} AS {f1},
                 {f2} AS {f2}
             FROM patient_summary
-            WHERE {f1} IS NOT NULL AND {f2} IS NOT NULL
+            WHERE {where_sql}
             LIMIT 500
         """)
 
-        result = db.execute(stmt).mappings().fetchall()
+        result = db.execute(stmt, params).mappings().fetchall()
         
         return {
             "success": True,
@@ -117,6 +155,7 @@ async def get_chart_data(
     yAxis: str = Query(None, alias="yAxis"),
     groupBy: str = Query(None, alias="groupBy"),
     aggregation: str = Query("count"),
+    filters: str | None = Query(None, description="JSON-encoded filters"),
     db = Depends(get_db)
 ):
     """Get chart data with flexible parameters"""
@@ -127,12 +166,15 @@ async def get_chart_data(
         if groupBy:
             groupBy = _validate_field(groupBy)
 
+        parsed_filters = _parse_filters(filters)
+        where_sql, params = _build_base_where(xAxis, yAxis, groupBy, aggregation, parsed_filters)
+
         # For simple aggregations, use patient_summary view
         if aggregation == "count" and groupBy:
             stmt = text(f"""
                 SELECT {groupBy} as label, COUNT(*) as value
                 FROM patient_summary
-                WHERE {groupBy} IS NOT NULL
+                WHERE {where_sql}
                 GROUP BY {groupBy}
                 ORDER BY value DESC
                 LIMIT 20
@@ -142,7 +184,7 @@ async def get_chart_data(
             stmt = text(f"""
                 SELECT {xAxis} as x, {agg_func}({yAxis}) as y
                 FROM patient_summary
-                WHERE {xAxis} IS NOT NULL AND {yAxis} IS NOT NULL
+                WHERE {where_sql}
                 GROUP BY {xAxis}
                 ORDER BY {xAxis}
             """)
@@ -150,13 +192,13 @@ async def get_chart_data(
             stmt = text(f"""
                 SELECT {xAxis} as label, COUNT(*) as value
                 FROM patient_summary
-                WHERE {xAxis} IS NOT NULL
+                WHERE {where_sql}
                 GROUP BY {xAxis}
                 ORDER BY value DESC
                 LIMIT 20
             """)
         
-        result = db.execute(stmt).mappings().fetchall()
+        result = db.execute(stmt, params).mappings().fetchall()
         
         return {
             "success": True,
@@ -175,6 +217,7 @@ async def get_chart_series(
     aggregation: str = Query("count"),
     bins: int = Query(8, ge=2, le=50),
     limit: int = Query(60, ge=5, le=200),
+    filters: str | None = Query(None, description="JSON-encoded filters"),
     db = Depends(get_db)
 ):
     """Get chart series data for rich visualizations"""
@@ -187,7 +230,8 @@ async def get_chart_series(
         if aggregation != "count" and not y_axis:
             raise HTTPException(status_code=400, detail="yAxis is required for aggregation")
 
-        base_where = _build_base_where(x_axis, y_axis, group_by, aggregation)
+        parsed_filters = _parse_filters(filters)
+        base_where, params = _build_base_where(x_axis, y_axis, group_by, aggregation, parsed_filters)
         group_select = f", {group_by} as series" if group_by else ""
         group_group = f", {group_by}" if group_by else ""
 
@@ -229,7 +273,7 @@ async def get_chart_series(
                 ORDER BY bin
             """)
 
-            result = db.execute(stmt, {"bins": bins}).mappings().fetchall()
+            result = db.execute(stmt, {"bins": bins, **params}).mappings().fetchall()
             rows = []
             for row in result:
                 min_x = row.get("min_x")
@@ -268,7 +312,7 @@ async def get_chart_series(
             LIMIT :limit
         """)
 
-        result = db.execute(stmt, {"limit": limit}).mappings().fetchall()
+        result = db.execute(stmt, {"limit": limit, **params}).mappings().fetchall()
         return {
             "success": True,
             "data": [
