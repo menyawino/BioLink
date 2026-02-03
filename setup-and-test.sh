@@ -1,30 +1,7 @@
 #!/bin/bash
 
-# BioLink Complete Setup and Test Script
-# This script sets up the entire BioLink system from scratch
-
-set -e  # Exit on any error
-
-# Colors for output
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
-
-# Get the script's directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
-
-echo -e "${BLUE}🚀 BioLink Complete Setup Script${NC}"
-echo -e "${BLUE}================================${NC}"
-echo ""
-
-# Function to check command existence
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
+echo "This helper script has been moved to ./scripts/setup-and-test.sh"
+exec ./scripts/setup-and-test.sh "$@"
 # Function to check if Docker is running
 docker_running() {
     docker info >/dev/null 2>&1

@@ -1,4 +1,6 @@
-# BioLink Non-Docker Installation
+# Non-Docker README moved
+
+This file has been moved to `docs/NONDOCKER_README.md` for documentation grouping. Please see `docs/NONDOCKER_README.md` for details on non-docker installation.
 
 This script provides an alternative installation method for BioLink that doesn't require Docker. It installs all dependencies natively on macOS using Homebrew and on Linux using apt.
 
@@ -19,7 +21,7 @@ This script provides an alternative installation method for BioLink that doesn't
 
 2. **Run the installation script**:
    ```bash
-   ./install-nondocker.sh install
+   ./scripts/install-nondocker.sh install
    ```
 
    This will:

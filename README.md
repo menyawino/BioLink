@@ -14,10 +14,10 @@ git clone https://github.com/menyawino/BioLink.git
 cd BioLink/
 
 # Run the complete setup script (first time)
-./setup-and-test.sh
+./scripts/setup-and-test.sh
 
 # Or just run if already set up
-./run.sh
+./scripts/run.sh
 ```
 
 These scripts will:
@@ -30,7 +30,7 @@ These scripts will:
 - ✅ Open frontend in browser
 - ✅ Provide access URLs
 
-**Migration to bigger machines**: Just copy the project and run `./setup-and-test.sh`!
+**Migration to bigger machines**: Just copy the project and run `./scripts/setup-and-test.sh`!
 
 📋 **[Complete Migration Guide →](MIGRATION.md)**
 
@@ -53,8 +53,8 @@ BioLink now features a **complete agentic system** powered by AI with function c
 
 ## 📋 Available Scripts
 
-- **`./setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
-- **`./run.sh`**: Quick start for machines that already have the environment set up
+- **`./scripts/setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
+- **`./scripts/run.sh`**: Quick start for machines that already have the environment set up
 - **`./scripts/start-all.sh`**: Start all Docker services (assumes Docker is running)
 - **`./scripts/quick_test.sh`**: Run basic functionality tests against running services
 
@@ -136,7 +136,7 @@ Use this order to ensure Docker components are ready before tests:
 
 1. **Install and verify Docker components**
 ```bash
-./setup-and-test.sh
+./scripts/setup-and-test.sh
 ```
 
 If Docker is already installed, you can skip the full script and do:
@@ -185,12 +185,12 @@ For users who prefer not to use Docker, there's a native installation script for
 
 1. **Run the non-docker installation**:
 ```bash
-./install-nondocker.sh install
+./scripts/install-nondocker.sh install
 ```
 
 2. **Start the application**:
 ```bash
-./install-nondocker.sh start
+./scripts/install-nondocker.sh start
 ```
 
 3. **Access the application**:
@@ -199,9 +199,9 @@ For users who prefer not to use Docker, there's a native installation script for
 
 **Management commands**:
 ```bash
-./install-nondocker.sh stop      # Stop application
-./install-nondocker.sh status    # Check service status
-./install-nondocker.sh restart   # Restart everything
+./scripts/install-nondocker.sh stop      # Stop application
+./scripts/install-nondocker.sh status    # Check service status
+./scripts/install-nondocker.sh restart   # Restart everything
 ```
 
 📖 **[Complete non-Docker installation guide →](NONDOCKER_README.md)**

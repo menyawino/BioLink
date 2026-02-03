@@ -1,30 +1,7 @@
 #!/bin/bash
 
-# BioLink Non-Docker Install Script
-# This script sets up BioLink without Docker on macOS and Linux
-
-set -e  # Exit on any error
-
-# Colors for output
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
-
-# Get the script's directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
-
-echo -e "${BLUE}🚀 BioLink Non-Docker Setup Script${NC}"
-echo -e "${BLUE}===================================${NC}"
-echo ""
-
-# Function to check command existence
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
+echo "This helper script has been moved to ./scripts/install-nondocker.sh"
+exec ./scripts/install-nondocker.sh "$@"
 # Function to check OS
 check_os() {
     if [[ "$OSTYPE" != darwin* && "$OSTYPE" != linux* ]]; then

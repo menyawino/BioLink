@@ -1,4 +1,6 @@
-# BioLink Migration Guide for macOS and Linux
+# Migration guide moved
+
+This file has been moved to `docs/MIGRATION.md` for documentation grouping. Please see `docs/MIGRATION.md` for migration instructions.
 
 ## macOS Migration
 

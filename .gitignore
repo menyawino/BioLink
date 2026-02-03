@@ -137,3 +137,24 @@ __blobstorage__
 __queuestorage__
 __azurite_db*__.json
 .python_packages
+
+# Editor & OS files
+.DS_Store
+.vscode/
+.idea/
+
+# Local env files
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+public/build/
+
+# Test results and logs
+test-results/
+*.log
+
+# Temporary files
+tmp/
+*.tmp
