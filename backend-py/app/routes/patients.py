@@ -71,6 +71,33 @@ async def get_patients(
             conditions.append("has_mri = :has_mri")
             params["has_mri"] = hasMri
 
+        # Imaging (any imaging modality: echo OR mri)
+        if hasImaging is not None:
+            # Evaluate (has_mri OR has_echo) and compare to requested boolean
+            conditions.append("((has_mri OR has_echo) = :has_imaging)")
+            params["has_imaging"] = hasImaging
+
+        # Laboratory data availability (best-effort based on stored lab columns)
+        if hasLabs is not None:
+            conditions.append("((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = :has_labs)")
+            params["has_labs"] = hasLabs
+
+        # Family history (derived from available family-history flags)
+        if hasFamilyHistory is not None:
+            conditions.append("((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = :has_family_history)")
+            params["has_family_history"] = hasFamilyHistory
+
+        # Genomics availability: the EHVol schema does not include genomic tables/flags.
+        # If the caller requests genomics == true, there are no matching patients in this dataset.
+        if hasGenomics is not None:
+            if hasGenomics:
+                # Short-circuit: no genomics data available in this dataset
+                logger.warning("Requested hasGenomics filter but no genomics data available in DB; returning empty result set for this filter")
+                conditions.append("FALSE")
+            else:
+                # hasGenomics=false is a no-op (we cannot positively assert absence of future columns)
+                pass
+
         if minDataCompleteness is not None:
             conditions.append("data_completeness >= :min_data_completeness")
             params["min_data_completeness"] = minDataCompleteness
@@ -79,6 +106,11 @@ async def get_patients(
         if nationality:
             conditions.append("nationality = :nationality")
             params["nationality"] = nationality
+
+        # Region (freeform match against nationality/current_city/current_city_category)
+        if region:
+            conditions.append("(LOWER(nationality) LIKE :region OR LOWER(current_city_category) LIKE :region OR LOWER(current_city) LIKE :region)")
+            params["region"] = f"%{region.lower()}%"
 
         # Temporal filters
         if enrollmentDateFrom:

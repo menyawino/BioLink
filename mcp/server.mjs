@@ -70,6 +70,11 @@ const toolSchemas = {
     has_hypertension: z.boolean().optional(),
     has_echo: z.boolean().optional(),
     has_mri: z.boolean().optional(),
+    has_imaging: z.boolean().optional(),
+    has_labs: z.boolean().optional(),
+    has_genomics: z.boolean().optional(),
+    has_family_history: z.boolean().optional(),
+    region: z.string().optional(),
     limit: z.number().int().optional(),
   }),
   registry_overview: z.object({}).optional(),
@@ -141,6 +146,11 @@ const tools = [
         has_hypertension: { type: "boolean" },
         has_echo: { type: "boolean" },
         has_mri: { type: "boolean" },
+        has_imaging: { type: "boolean" },
+        has_labs: { type: "boolean" },
+        has_genomics: { type: "boolean" },
+        has_family_history: { type: "boolean" },
+        region: { type: "string" },
         limit: { type: "integer" },
       },
     },
@@ -284,6 +294,30 @@ async function handleBuildCohort(args) {
   }
   if (has_mri !== undefined) {
     clauses.push(`(mri_ef IS NOT NULL) = ${has_mri}`);
+  }
+
+  if (has_imaging !== undefined) {
+    clauses.push(`((mri_ef IS NOT NULL OR echo_ef IS NOT NULL) = ${has_imaging})`);
+  }
+
+  if (has_labs !== undefined) {
+    clauses.push(`((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = ${has_labs})`);
+  }
+
+  if (has_family_history !== undefined) {
+    clauses.push(`((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = ${has_family_history})`);
+  }
+
+  if (has_genomics !== undefined) {
+    if (has_genomics) {
+      // No genomics data present in EHVol schema; short-circuit to empty set
+      clauses.push(`FALSE`);
+    }
+  }
+
+  if (region) {
+    params.push(`%${region.toLowerCase()}%`);
+    clauses.push(`(LOWER(nationality) LIKE $${params.length} OR LOWER(current_city_category) LIKE $${params.length} OR LOWER(current_city) LIKE $${params.length})`);
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";

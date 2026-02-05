@@ -162,6 +162,32 @@ class ToolRegistry:
         if args.get("has_mri") is True:
             conditions.append("mri_ef IS NOT NULL")
 
+        if args.get("has_imaging") is not None:
+            # Any imaging modality present (echo OR mri) matches when True; both absent when False
+            conditions.append("((mri_ef IS NOT NULL OR echo_ef IS NOT NULL) = :has_imaging)")
+            params["has_imaging"] = bool(args["has_imaging"])
+
+        if args.get("has_labs") is not None:
+            conditions.append("((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = :has_labs)")
+            params["has_labs"] = bool(args["has_labs"])
+
+        if args.get("has_family_history") is not None:
+            conditions.append("((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = :has_family_history)")
+            params["has_family_history"] = bool(args["has_family_history"])
+
+        if args.get("region"):
+            # Match region text against nationality or city/category (case-insensitive)
+            conditions.append("(LOWER(nationality) LIKE :region OR LOWER(current_city_category) LIKE :region OR LOWER(current_city) LIKE :region)")
+            params["region"] = f"%{args.get('region').lower()}%"
+
+        if args.get("has_genomics") is not None:
+            if bool(args.get("has_genomics")):
+                # No genomics data in the schema; short-circuit to empty set when requested true
+                logger.warning("Requested has_genomics filter but no genomics data available in DB; returning empty result set for this filter")
+                conditions.append("FALSE")
+            else:
+                pass
+
         where_clause = " AND ".join(conditions) if conditions else "TRUE"
         limit = int(args.get("limit", 100))
         limit = min(limit, self._max_limit)
