@@ -5,6 +5,7 @@ import type {
   PatientVitals,
   RiskFactors,
   ImagingData,
+  GenomicData,
 } from './types';
 
 export interface PatientsQueryParams {
@@ -104,4 +105,9 @@ export async function getPatientImaging(dnaId: string) {
 // Get patient risk factors
 export async function getPatientRiskFactors(dnaId: string) {
   return get<RiskFactors>(`/api/patients/${dnaId}/risk-factors`);
+}
+
+// Get patient genomics data
+export async function getPatientGenomics(dnaId: string) {
+  return get<GenomicData>(`/api/patients/${dnaId}/genomics`);
 }

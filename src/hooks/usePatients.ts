@@ -6,9 +6,10 @@ import {
   getPatientVitals,
   getPatientImaging,
   getPatientRiskFactors,
+  getPatientGenomics,
   type PatientsQueryParams,
 } from '../api/patients';
-import type { Patient, PatientDetail, PatientVitals, ImagingData, RiskFactors } from '../api/types';
+import type { Patient, PatientDetail, PatientVitals, ImagingData, RiskFactors, GenomicData } from '../api/types';
 
 // Hook for fetching paginated patients
 export function usePatients(params: PatientsQueryParams = {}) {
@@ -58,6 +59,15 @@ export function usePatientImaging(dnaId: string) {
 export function usePatientRiskFactors(dnaId: string) {
   return useQuery<RiskFactors>(
     () => getPatientRiskFactors(dnaId),
+    [dnaId],
+    { enabled: !!dnaId }
+  );
+}
+
+// Hook for patient genomics data
+export function usePatientGenomics(dnaId: string) {
+  return useQuery<GenomicData>(
+    () => getPatientGenomics(dnaId),
     [dnaId],
     { enabled: !!dnaId }
   );

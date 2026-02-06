@@ -34,9 +34,21 @@ class ToolRegistryFilterTests(unittest.TestCase):
                     enrollment_date DATE
                 )
             """))
+            conn.execute(sa.text("""
+                CREATE TABLE patient_genomic_variants (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dna_id TEXT NOT NULL,
+                    chrom TEXT NOT NULL,
+                    pos INTEGER NOT NULL,
+                    ref TEXT NOT NULL,
+                    alt TEXT NOT NULL,
+                    genotype TEXT
+                )
+            """))
             # Insert two rows: one with imaging/labs/family history, one without
             conn.execute(sa.text("INSERT INTO patients (dna_id, age, gender, echo_ef, hba1c, history_sudden_death, nationality, current_city_category, current_city) VALUES ('dna1', 50, 'female', 55.0, 6.1, 1, 'Africa', 'Urban', 'Cairo')"))
             conn.execute(sa.text("INSERT INTO patients (dna_id, age, gender) VALUES ('dna2', 40, 'male')"))
+            conn.execute(sa.text("INSERT INTO patient_genomic_variants (dna_id, chrom, pos, ref, alt, genotype) VALUES ('dna1', '1', 123, 'A', 'G', '0/1')"))
 
         self.registry = ToolRegistry(engine_override=self.engine)
 
@@ -56,9 +68,9 @@ class ToolRegistryFilterTests(unittest.TestCase):
         res = self.registry.build_cohort({"region": "Africa", "limit": 10})
         self.assertEqual(res["count"], 1)
 
-    def test_has_genomics_filter_true_returns_empty(self):
+    def test_has_genomics_filter_true_returns_rows(self):
         res = self.registry.build_cohort({"has_genomics": True, "limit": 10})
-        self.assertEqual(res["count"], 0)
+        self.assertEqual(res["count"], 1)
 
 
 if __name__ == "__main__":

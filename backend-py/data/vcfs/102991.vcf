@@ -1,0 +1,10 @@
+##fileformat=VCFv4.2
+##source=BioLinkMock
+##INFO=<ID=GENE,Number=1,Type=String,Description="Gene symbol">
+##INFO=<ID=CLNSIG,Number=1,Type=String,Description="Clinical significance">
+##INFO=<ID=COND,Number=1,Type=String,Description="Associated condition">
+##INFO=<ID=AF,Number=1,Type=Float,Description="Allele frequency">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	CVD-001247
+1	123456	rs123	A	G	.	PASS	GENE=MYH7;CLNSIG=pathogenic;COND=Hypertrophic cardiomyopathy;AF=0.001	GT	0/1
+12	112233	.	C	T	.	PASS	GENE=LDLR;CLNSIG=likely_pathogenic;COND=Familial hypercholesterolemia;AF=0.005	GT	1/1
+10	965432	rs789	G	A	.	PASS	GENE=CYP2C19;CLNSIG=uncertain;COND=Drug response;AF=0.12	GT	0/1

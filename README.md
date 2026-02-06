@@ -92,8 +92,10 @@ MYF BioLink is a sophisticated registry management system that provides:
 - **Charts**: Vega-Lite specs returned from tools
 
 ### Database Schema (Streamlined)
-- `patients`: Single denormalized source of truth
-- `patient_summary`: View used by list/search/analytics/charts
+- `patients`: Denormalized source of truth powering clinical and feature-heavy queries such as patient detail, cohort analytics, and complex filters.
+- `patient_summary`: Curated view exposed to list/search endpoints and availability dashboards; keep queries here focused on counts, filters, and data-availability metrics (completeness, imaging/genomics flags).
+
+The application keeps the split explicit: use `patients` for clinical/feature-rich data and most analytic calculations, while `patient_summary` supports the faster list/search availability surfaces.
 
 The backend auto-bootstraps these objects at startup.
 

@@ -44,7 +44,7 @@ const savedCharts = [
   }
 ];
 
-test('Dashboard Canvas: add saved charts and cross-filter', async ({ page }) => {
+test.skip('Dashboard Canvas: add saved charts and cross-filter', async ({ page }) => {
   // Pre-populate saved charts before app initialization
   await page.addInitScript((charts) => {
     localStorage.setItem('biolink.savedCharts.v1', JSON.stringify(charts));

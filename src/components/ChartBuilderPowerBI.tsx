@@ -17,7 +17,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { Download, Save, Code2, BarChart3, LineChart as LineChartIcon, PieChart as PieChartIcon, Zap, Loader2, AlertCircle, TrendingUp } from "lucide-react";
 import { useScatterData, useChartSeries } from "../hooks/useCharts";
-import { DashboardBuilder } from "./DashboardBuilder";
 import { SupersetProgrammatic } from "./SupersetProgrammatic";
 
 export type ChartType =
@@ -465,6 +464,7 @@ export function ChartBuilder() {
     }
   });
   const [showCodeDialog, setShowCodeDialog] = useState(false);
+  const [galleryFilter, setGalleryFilter] = useState("");
 
   useEffect(() => {
     localStorage.setItem(SAVED_CHARTS_STORAGE_KEY, JSON.stringify(savedCharts));
@@ -522,6 +522,24 @@ export function ChartBuilder() {
     }
     setChartConfig(nextConfig);
   };
+
+  const applicableGroups = useMemo(() => {
+    const normalizedFilter = galleryFilter.trim().toLowerCase();
+    if (!normalizedFilter) {
+      return chartTypeGroups;
+    }
+
+    return chartTypeGroups
+      .map(group => ({
+        ...group,
+        items: group.items.filter(type => {
+          const label = chartTypeLabels[type].toLowerCase();
+          const description = chartTypeRequirements[type].description.toLowerCase();
+          return label.includes(normalizedFilter) || description.includes(normalizedFilter);
+        })
+      }))
+      .filter(group => group.items.length > 0);
+  }, [galleryFilter]);
 
   const normalizedSeriesData = useMemo(() => {
     if (!seriesData) return [];
@@ -1101,12 +1119,11 @@ export function ChartBuilder() {
   };
 
   return (
-    <div className="space-y-6">
-      <Tabs defaultValue="builder" className="space-y-4">
-        <TabsList className="grid grid-cols-3 w-full">
-          <TabsTrigger value="builder">Chart Builder</TabsTrigger>
-          <TabsTrigger value="dashboard">Dashboard Canvas</TabsTrigger>
-          <TabsTrigger value="superset">Superset Live</TabsTrigger>
+        <div className="space-y-6">
+        <Tabs defaultValue="superset" className="space-y-4">
+          <TabsList className="grid grid-cols-2 w-full">
+            <TabsTrigger value="builder">Chart Builder</TabsTrigger>
+            <TabsTrigger value="superset">Superset Dashboards</TabsTrigger>
         </TabsList>
 
         <TabsContent value="builder" className="space-y-6">
@@ -1124,40 +1141,73 @@ export function ChartBuilder() {
                       <CardTitle className="text-base">Visual Gallery</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      <div className="space-y-1">
+                        <Label htmlFor="visual-gallery-filter" className="text-xs uppercase tracking-widest text-muted-foreground">
+                          Filter visuals
+                        </Label>
+                        <Input
+                          id="visual-gallery-filter"
+                          value={galleryFilter}
+                          onChange={event => setGalleryFilter(event.target.value)}
+                          placeholder="Search by name or description"
+                          className="w-full"
+                        />
+                      </div>
                       <ScrollArea className="h-[520px] pr-2">
-                        <div className="space-y-4">
-                          {chartTypeGroups.map(group => (
-                            <div key={group.title} className="space-y-2">
-                              <div className="text-xs uppercase text-muted-foreground">{group.title}</div>
-                              <div className="grid grid-cols-2 gap-2">
-                                {group.items.map(type => {
-                              const Icon = chartTypeIcons[type];
-                              return (
-                                <Button
-                                  key={type}
-                                  variant={chartConfig.type === type ? "default" : "outline"}
-                                  size="sm"
-                                  onClick={() => handleChartTypeSelect(type)}
-                                  className="justify-start flex-col h-auto py-2 min-h-[68px]"
-                                >
-                                  <div className="flex items-center w-full">
-                                    <Icon className="h-4 w-4 mr-2" />
-                                    {chartTypeLabels[type]}
-                                  </div>
-                                  <span className="text-[10px] text-muted-foreground font-normal w-full text-left line-clamp-2 break-words">
-                                    {chartTypeRequirements[type].description}
-                                  </span>
-                                </Button>
-                              );
-                            })}
+                        {applicableGroups.length === 0 ? (
+                          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                            No visuals match your filter. Try a different keyword.
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                        ) : (
+                          <div className="space-y-4">
+                            {applicableGroups.map(group => (
+                              <div key={group.title} className="space-y-2">
+                                <div className="text-xs uppercase text-muted-foreground">{group.title}</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {group.items.map(type => {
+                                    const Icon = chartTypeIcons[type];
+                                    const requirement = chartTypeRequirements[type];
+                                    const badges = [
+                                      requirement.xRequired ? "X required" : "X optional",
+                                      `X: ${requirement.xTypes.join(", ")}`,
+                                      requirement.yRequired ? "Y required" : "Y optional",
+                                      `Y: ${requirement.yTypes.join(", ")}`
+                                    ];
+                                    return (
+                                      <Button
+                                        key={type}
+                                        variant={chartConfig.type === type ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => handleChartTypeSelect(type)}
+                                        className="justify-start flex-col h-auto py-2 min-h-[68px] text-left"
+                                        aria-label={`${chartTypeLabels[type]} chart · ${requirement.description}`}
+                                      >
+                                        <div className="flex items-center w-full">
+                                          <Icon className="h-4 w-4 mr-2" />
+                                          {chartTypeLabels[type]}
+                                        </div>
+                                        <span className="text-[10px] text-muted-foreground font-normal w-full text-left line-clamp-2 break-words">
+                                          {requirement.description}
+                                        </span>
+                                        <div className="flex flex-wrap gap-1 mt-2 w-full">
+                                          {badges.map(badge => (
+                                            <Badge key={`${type}-${badge}`} variant="outline" className="text-[9px] uppercase tracking-widest">
+                                              {badge}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
             <TabsContent value="customize" className="space-y-4">
               <Card>
@@ -1483,12 +1533,20 @@ export function ChartBuilder() {
       </div>
     </TabsContent>
 
-    <TabsContent value="dashboard">
-      <DashboardBuilder savedCharts={savedCharts} />
-    </TabsContent>
-
     <TabsContent value="superset">
-      <SupersetProgrammatic />
+      <Card>
+        <CardHeader>
+          <div className="space-y-1">
+            <CardTitle className="text-base">Superset Dashboards</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Superset powers the primary dashboard experience. Use the builder to prototype tiles and then deploy through the programmatic interface below.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <SupersetProgrammatic />
+        </CardContent>
+      </Card>
     </TabsContent>
   </Tabs>
   </div>

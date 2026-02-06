@@ -8,6 +8,7 @@ import { VitalSigns } from "./components/VitalSigns";
 import { RiskFactors } from "./components/RiskFactors";
 import { MedicalHistory } from "./components/MedicalHistory";
 import { TraditionalImaging } from "./components/TraditionalImaging";
+import { GenomicData } from "./components/GenomicData";
 import { PatientRegistryTable } from "./components/PatientRegistryTable";
 import { RegistryAnalytics } from "./components/RegistryAnalytics";
 import { ChartBuilder } from "./components/ChartBuilder";
@@ -17,7 +18,7 @@ import { Settings } from "./components/Settings";
 import { UserProfile } from "./components/UserProfile";
 import { DataNotAvailable } from "./components/DataNotAvailable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { usePatient } from "./hooks/usePatients";
+import { usePatient, usePatientGenomics } from "./hooks/usePatients";
 import type { PatientDetail } from "./api/types";
 
 // Transform patient data from API to component format
@@ -94,130 +95,9 @@ function transformToRiskFactors(patient: PatientDetail) {
 }
 
 function transformToMedicalHistory(patient: PatientDetail) {
-  const hasMedicalData = patient.medical !== null;
+  const diagnoses = patient.medical?.diagnoses ?? [];
   const hasLabsData = patient.labs !== null;
   
-  const diagnoses = [];
-  
-  if (hasMedicalData) {
-    if (patient.medical?.high_blood_pressure) {
-      diagnoses.push({
-        id: "D001",
-        condition: "Hypertension",
-        icd10Code: "I10",
-        category: "Cardiovascular",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "treated" as const,
-        severity: "Present" as const,
-        clinicalNotes: "Recorded in medical history"
-      });
-    }
-    
-    if (patient.medical?.diabetes_mellitus) {
-      diagnoses.push({
-        id: "D002",
-        condition: "Diabetes Mellitus",
-        icd10Code: "E11",
-        category: "Metabolic",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "treated" as const,
-        severity: "Present" as const,
-        clinicalNotes: "Recorded in medical history"
-      });
-    }
-
-    if (patient.medical?.dyslipidemia) {
-      diagnoses.push({
-        id: "D003",
-        condition: "Dyslipidemia",
-        icd10Code: "E78.5",
-        category: "Metabolic",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "treated" as const,
-        severity: "Present" as const,
-        clinicalNotes: "Recorded in medical history"
-      });
-    }
-
-    if (patient.medical?.heart_attack_or_angina) {
-      diagnoses.push({
-        id: "D004",
-        condition: "Coronary Heart Disease / Angina",
-        icd10Code: "I25.1",
-        category: "Cardiovascular",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "symptomatic" as const,
-        severity: "Present" as const,
-        clinicalNotes: "History of heart attack or angina"
-      });
-    }
-
-    if (patient.medical?.prior_heart_failure) {
-      diagnoses.push({
-        id: "D005",
-        condition: "Heart Failure",
-        icd10Code: "I50",
-        category: "Cardiovascular",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "treated" as const,
-        severity: "Present" as const,
-        clinicalNotes: "Prior heart failure"
-      });
-    }
-
-    if (patient.medical?.rheumatic_fever) {
-      diagnoses.push({
-        id: "D006",
-        condition: "Rheumatic Fever",
-        icd10Code: "I00",
-        category: "Cardiovascular",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "stable" as const,
-        severity: "History" as const,
-        clinicalNotes: "History of rheumatic fever"
-      });
-    }
-
-    if (patient.medical?.anaemia) {
-      diagnoses.push({
-        id: "D007",
-        condition: "Anaemia",
-        icd10Code: "D64.9",
-        category: "Hematologic",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "treated" as const,
-        severity: "Present" as const,
-        clinicalNotes: "Recorded in medical history"
-      });
-    }
-
-    if (patient.medical?.kidney_problems) {
-      diagnoses.push({
-        id: "D008",
-        condition: "Kidney Disease",
-        icd10Code: "N18",
-        category: "Renal",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "treated" as const,
-        severity: "Present" as const,
-        clinicalNotes: "Kidney problems recorded"
-      });
-    }
-
-    if (patient.medical?.liver_problems) {
-      diagnoses.push({
-        id: "D009",
-        condition: "Liver Disease",
-        icd10Code: "K76.9",
-        category: "Hepatic",
-        diagnosedDate: patient.enrollment_date || "Not recorded",
-        status: "treated" as const,
-        severity: "Present" as const,
-        clinicalNotes: "Liver problems recorded"
-      });
-    }
-  }
-
   const tests = [];
   if (hasLabsData && patient.labs) {
     if (patient.labs.hba1c !== null) {
@@ -496,6 +376,7 @@ function AppContent() {
   const { currentView, setCurrentView, selectedPatient, setSelectedPatient } = useApp();
   const [currentTab, setCurrentTab] = useState<string>("vitals");
   const { data: patient, error: patientError, isLoading: patientLoading } = usePatient(selectedPatient || '');
+  const { data: genomicsData, error: genomicsError, isLoading: genomicsLoading } = usePatientGenomics(selectedPatient || '');
   
   const handlePatientSelect = (dnaId: string) => {
     setSelectedPatient(dnaId);
@@ -508,7 +389,20 @@ function AppContent() {
       
       <div className="flex-1 overflow-auto">
         <div className="p-6">
-          {renderContent(currentView, selectedPatient, setSelectedPatient, currentTab, setCurrentTab, patient, patientError, patientLoading, handlePatientSelect)}
+          {renderContent(
+            currentView,
+            selectedPatient,
+            setSelectedPatient,
+            currentTab,
+            setCurrentTab,
+            patient,
+            patientError,
+            patientLoading,
+            genomicsData,
+            genomicsError,
+            genomicsLoading,
+            handlePatientSelect
+          )}
         </div>
       </div>
     </div>
@@ -524,6 +418,9 @@ function renderContent(
   patient: any,
   patientError: any,
   patientLoading: boolean,
+  genomicsData: import("./api/types").GenomicData | undefined,
+  genomicsError: string | null,
+  genomicsLoading: boolean,
   handlePatientSelect: (dnaId: string) => void
 ) {
   const renderMainContent = () => {
@@ -536,7 +433,17 @@ function renderContent(
         if (!selectedPatient) {
           return <PatientSearch onPatientSelect={setSelectedPatient} />;
         }
-        return renderPatientView(selectedPatient, currentTab, setCurrentTab, patient, patientError, patientLoading);
+        return renderPatientView(
+          selectedPatient,
+          currentTab,
+          setCurrentTab,
+          patient,
+          patientError,
+          patientLoading,
+          genomicsData,
+          genomicsError,
+          genomicsLoading
+        );
       case "analytics":
         return <RegistryAnalytics />;
       case "cohort":
@@ -557,7 +464,17 @@ function renderContent(
   return renderMainContent();
 }
 
-function renderPatientView(patientId: string, currentTab: string, setCurrentTab: (tab: string) => void, patient: any, error: any, isLoading: boolean) {
+function renderPatientView(
+  patientId: string,
+  currentTab: string,
+  setCurrentTab: (tab: string) => void,
+  patient: any,
+  error: any,
+  isLoading: boolean,
+  genomicsData: import("./api/types").GenomicData | undefined,
+  genomicsError: string | null,
+  genomicsLoading: boolean
+) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -586,10 +503,11 @@ function renderPatientView(patientId: string, currentTab: string, setCurrentTab:
       <PatientHeader patient={headerData} />
       
       <Tabs value={currentTab} onValueChange={setCurrentTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="vitals">Vital Signs</TabsTrigger>
           <TabsTrigger value="risk">Risk Factors</TabsTrigger>
           <TabsTrigger value="history">Medical History</TabsTrigger>
+          <TabsTrigger value="genomics">Genomics</TabsTrigger>
           <TabsTrigger value="imaging">Imaging</TabsTrigger>
         </TabsList>
         
@@ -626,6 +544,22 @@ function renderPatientView(patientId: string, currentTab: string, setCurrentTab:
               message="No medical history recorded for this patient."
               type="empty-for-patient"
             />
+          )}
+        </TabsContent>
+
+        <TabsContent value="genomics">
+          {genomicsLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <p className="text-muted-foreground">Loading genomic data...</p>
+            </div>
+          ) : genomicsError || !genomicsData || (genomicsData.variants.length === 0 && genomicsData.pharmacogenomics.length === 0) ? (
+            <DataNotAvailable 
+              title="Genomic Data Not Available" 
+              message="No genomic variants have been ingested for this patient. Import VCFs to enable genomic insights."
+              type="empty-for-patient"
+            />
+          ) : (
+            <GenomicData genomicData={genomicsData} />
           )}
         </TabsContent>
         

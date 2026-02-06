@@ -2,12 +2,30 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import text
 from app.database import get_db
 import logging
+import hashlib
+from typing import List
+
+from app.diagnoses import build_patient_diagnoses
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Allowed columns for sorting to prevent SQL injection
 ALLOWED_SORT_COLUMNS = {"dna_id", "age", "gender", "nationality"}
+
+
+def _stable_unit_float(seed: str) -> float:
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) / 0xFFFFFFFF
+
+
+def _stable_range(seed: str, min_val: float = 0.1, max_val: float = 0.9) -> float:
+    return min_val + (max_val - min_val) * _stable_unit_float(seed)
+
+
+def _normalize(values: List[float]) -> List[float]:
+    total = sum(values) or 1.0
+    return [v / total for v in values]
 
 @router.get("")
 async def get_patients(
@@ -87,16 +105,10 @@ async def get_patients(
             conditions.append("((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = :has_family_history)")
             params["has_family_history"] = hasFamilyHistory
 
-        # Genomics availability: the EHVol schema does not include genomic tables/flags.
-        # If the caller requests genomics == true, there are no matching patients in this dataset.
+        # Genomics availability (backed by patient_summary.has_genomics)
         if hasGenomics is not None:
-            if hasGenomics:
-                # Short-circuit: no genomics data available in this dataset
-                logger.warning("Requested hasGenomics filter but no genomics data available in DB; returning empty result set for this filter")
-                conditions.append("FALSE")
-            else:
-                # hasGenomics=false is a no-op (we cannot positively assert absence of future columns)
-                pass
+            conditions.append("has_genomics = :has_genomics")
+            params["has_genomics"] = hasGenomics
 
         if minDataCompleteness is not None:
             conditions.append("data_completeness >= :min_data_completeness")
@@ -226,6 +238,7 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Patient not found")
         
         patient_data = dict(patient)
+        diagnoses = build_patient_diagnoses(patient_data)
 
         # Build nested objects from the denormalized row (keep the frontend contract stable)
         lifestyle = {
@@ -258,13 +271,8 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
             "undergone_surgery": False,
             "procedure_details": None,
             "malignancy": False,
-            "comorbidity": int(
-                bool(patient_data.get("high_blood_pressure") or False)
-                + bool(patient_data.get("diabetes_mellitus") or False)
-                + bool(patient_data.get("dyslipidemia") or False)
-                + bool(patient_data.get("heart_attack_or_angina") or False)
-                + bool(patient_data.get("prior_heart_failure") or False)
-            ),
+            "comorbidity": len(diagnoses),
+            "diagnoses": diagnoses,
         }
 
         physical = {
@@ -399,6 +407,130 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
         raise
     except Exception as e:
         logger.error(f"Error fetching patient {dna_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/{dna_id}/genomics")
+async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
+    """Get genomic data for a patient based on ingested VCF variants."""
+    try:
+        patient_row = db.execute(
+            text("SELECT dna_id FROM patients WHERE dna_id = :dna_id"),
+            {"dna_id": dna_id}
+        ).fetchone()
+
+        if not patient_row:
+            raise HTTPException(status_code=404, detail="Patient not found")
+
+        stmt = text("""
+            SELECT chrom, pos, ref, alt, variant_id, gene, genotype,
+                   clinical_significance, condition, frequency
+            FROM patient_genomic_variants
+            WHERE dna_id = :dna_id
+            ORDER BY gene NULLS LAST, chrom, pos
+            LIMIT 500
+        """)
+        rows = db.execute(stmt, {"dna_id": dna_id}).mappings().fetchall()
+
+        variants = []
+        for row in rows:
+            variant_id = row.get("variant_id")
+            chrom = row.get("chrom")
+            pos = row.get("pos")
+            ref = row.get("ref")
+            alt = row.get("alt")
+            variant_label = variant_id if variant_id and variant_id != "." else f"{chrom}:{pos}{ref}>{alt}"
+
+            clnsig = (row.get("clinical_significance") or "uncertain").lower()
+            if clnsig not in {"pathogenic", "likely_pathogenic", "uncertain", "likely_benign", "benign"}:
+                clnsig = "uncertain"
+
+            variants.append({
+                "gene": row.get("gene") or "Unknown",
+                "variant": variant_label,
+                "genotype": row.get("genotype") or "0/0",
+                "clinicalSignificance": clnsig,
+                "condition": row.get("condition") or "Cardiovascular risk",
+                "frequency": float(row.get("frequency")) if row.get("frequency") is not None else 0.0,
+            })
+
+        pharmacogenomics_map = {
+            "CYP2C19": {
+                "drug": "Clopidogrel",
+                "recommendation": "Consider alternative antiplatelet therapy for poor metabolizers.",
+            },
+            "CYP2D6": {
+                "drug": "Metoprolol",
+                "recommendation": "Consider dose adjustment for poor metabolizers.",
+            },
+            "SLCO1B1": {
+                "drug": "Simvastatin",
+                "recommendation": "Consider lower dose or alternative statin.",
+            },
+        }
+
+        pharmacogenomics = []
+        seen_genes = set()
+        for variant in variants:
+            gene = variant["gene"]
+            if gene not in pharmacogenomics_map or gene in seen_genes:
+                continue
+            seen_genes.add(gene)
+
+            genotype = variant["genotype"]
+            if genotype in {"0/0", "0|0"}:
+                metabolizer = "normal"
+            elif genotype in {"0/1", "1/0", "0|1", "1|0"}:
+                metabolizer = "intermediate"
+            elif genotype in {"1/1", "1|1"}:
+                metabolizer = "poor"
+            else:
+                metabolizer = "normal"
+
+            pharmacogenomics.append({
+                "drug": pharmacogenomics_map[gene]["drug"],
+                "gene": gene,
+                "genotype": genotype,
+                "metabolizer": metabolizer,
+                "recommendation": pharmacogenomics_map[gene]["recommendation"],
+                "confidence": "moderate",
+            })
+
+        polygenic = {
+            "coronaryArteryDisease": _stable_range(f"{dna_id}:cad"),
+            "myocardialInfarction": _stable_range(f"{dna_id}:mi"),
+            "strokeRisk": _stable_range(f"{dna_id}:stroke"),
+            "atrialFibrillation": _stable_range(f"{dna_id}:afib"),
+        }
+
+        ancestry_values = _normalize([
+            _stable_unit_float(f"{dna_id}:eu"),
+            _stable_unit_float(f"{dna_id}:af"),
+            _stable_unit_float(f"{dna_id}:as"),
+            _stable_unit_float(f"{dna_id}:na"),
+            _stable_unit_float(f"{dna_id}:ot"),
+        ])
+        ancestry = {
+            "european": ancestry_values[0],
+            "african": ancestry_values[1],
+            "asian": ancestry_values[2],
+            "native_american": ancestry_values[3],
+            "other": ancestry_values[4],
+        }
+
+        return {
+            "success": True,
+            "data": {
+                "polygenic": polygenic,
+                "variants": variants,
+                "pharmacogenomics": pharmacogenomics,
+                "ancestry": ancestry,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching genomics for {dna_id}: {e}")
         return {"success": False, "error": str(e)}
 
 

@@ -60,6 +60,27 @@ ALTER TABLE patients ADD COLUMN IF NOT EXISTS prior_heart_failure BOOLEAN;
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS history_sudden_death BOOLEAN;
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS history_premature_cad BOOLEAN;
 
+-- Patient genomic variants (ingested from VCFs)
+CREATE TABLE IF NOT EXISTS patient_genomic_variants (
+    id BIGSERIAL PRIMARY KEY,
+    dna_id TEXT NOT NULL,
+    chrom TEXT NOT NULL,
+    pos INTEGER NOT NULL,
+    ref TEXT NOT NULL,
+    alt TEXT NOT NULL,
+    variant_id TEXT,
+    gene TEXT,
+    genotype TEXT,
+    clinical_significance TEXT,
+    condition TEXT,
+    frequency DOUBLE PRECISION,
+    source_vcf TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS patient_genomic_variants_dna_id_idx ON patient_genomic_variants(dna_id);
+CREATE INDEX IF NOT EXISTS patient_genomic_variants_gene_idx ON patient_genomic_variants(gene);
+CREATE UNIQUE INDEX IF NOT EXISTS patient_genomic_variants_uidx ON patient_genomic_variants(dna_id, chrom, pos, ref, alt, genotype);
+
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
@@ -107,6 +128,10 @@ SELECT
     migration_pattern,
     (mri_ef IS NOT NULL) AS has_mri,
     (echo_ef IS NOT NULL) AS has_echo,
+    EXISTS (
+        SELECT 1 FROM patient_genomic_variants v
+        WHERE v.dna_id = patients.dna_id
+    ) AS has_genomics,
     COALESCE((
         (CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) +
         (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) +

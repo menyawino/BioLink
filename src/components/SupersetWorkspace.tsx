@@ -53,7 +53,7 @@ export function SupersetWorkspace() {
             </div>
           </div>
           <div className="text-xs text-muted-foreground">
-            Tip: use Superset embedded dashboard or Explore URL. You can still build local dashboards in the Canvas tab.
+            Tip: use Superset embedded dashboard or Explore URL to build and explore dashboards.
           </div>
         </CardContent>
       </Card>

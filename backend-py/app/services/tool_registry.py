@@ -23,7 +23,7 @@ class ToolRegistry:
             "build_cohort": self.build_cohort,
             "chart_from_sql": self.chart_from_sql,
         }
-        self._allowed_tables = {"patients", "patient_summary"}
+        self._allowed_tables = {"patients", "patient_summary", "patient_genomic_variants"}
         self._max_limit = 500
         self._engine = engine_override
         self._patient_columns = None
@@ -182,11 +182,13 @@ class ToolRegistry:
 
         if args.get("has_genomics") is not None:
             if bool(args.get("has_genomics")):
-                # No genomics data in the schema; short-circuit to empty set when requested true
-                logger.warning("Requested has_genomics filter but no genomics data available in DB; returning empty result set for this filter")
-                conditions.append("FALSE")
+                conditions.append(
+                    "EXISTS (SELECT 1 FROM patient_genomic_variants v WHERE v.dna_id = patients.dna_id)"
+                )
             else:
-                pass
+                conditions.append(
+                    "NOT EXISTS (SELECT 1 FROM patient_genomic_variants v WHERE v.dna_id = patients.dna_id)"
+                )
 
         where_clause = " AND ".join(conditions) if conditions else "TRUE"
         limit = int(args.get("limit", 100))

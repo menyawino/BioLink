@@ -1,0 +1,10 @@
+##fileformat=VCFv4.2
+##source=BioLinkMock
+##INFO=<ID=GENE,Number=1,Type=String,Description="Gene symbol">
+##INFO=<ID=CLNSIG,Number=1,Type=String,Description="Clinical significance">
+##INFO=<ID=COND,Number=1,Type=String,Description="Associated condition">
+##INFO=<ID=AF,Number=1,Type=Float,Description="Allele frequency">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	CVD-001248
+2	234567	.	T	C	.	PASS	GENE=TTN;CLNSIG=likely_benign;COND=Dilated cardiomyopathy;AF=0.08	GT	0/1
+7	778899	rs456	A	C	.	PASS	GENE=PCSK9;CLNSIG=pathogenic;COND=Familial hypercholesterolemia;AF=0.002	GT	0/1
+22	445566	.	G	T	.	PASS	GENE=SLCO1B1;CLNSIG=uncertain;COND=Statin myopathy risk;AF=0.16	GT	0/1

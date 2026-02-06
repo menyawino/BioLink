@@ -310,8 +310,9 @@ async function handleBuildCohort(args) {
 
   if (has_genomics !== undefined) {
     if (has_genomics) {
-      // No genomics data present in EHVol schema; short-circuit to empty set
-      clauses.push(`FALSE`);
+      clauses.push(`EXISTS (SELECT 1 FROM patient_genomic_variants v WHERE v.dna_id = patients.dna_id)`);
+    } else {
+      clauses.push(`NOT EXISTS (SELECT 1 FROM patient_genomic_variants v WHERE v.dna_id = patients.dna_id)`);
     }
   }
 

@@ -1,0 +1,10 @@
+##fileformat=VCFv4.2
+##source=BioLinkMock
+##INFO=<ID=GENE,Number=1,Type=String,Description="Gene symbol">
+##INFO=<ID=CLNSIG,Number=1,Type=String,Description="Clinical significance">
+##INFO=<ID=COND,Number=1,Type=String,Description="Associated condition">
+##INFO=<ID=AF,Number=1,Type=Float,Description="Allele frequency">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	CVD-001249
+3	345678	rs321	C	A	.	PASS	GENE=SCN5A;CLNSIG=pathogenic;COND=Arrhythmia risk;AF=0.0008	GT	0/1
+6	556677	.	G	C	.	PASS	GENE=ACE;CLNSIG=likely_benign;COND=Hypertension susceptibility;AF=0.22	GT	0/0
+5	998877	.	T	G	.	PASS	GENE=CYP2D6;CLNSIG=uncertain;COND=Drug response;AF=0.18	GT	1/1

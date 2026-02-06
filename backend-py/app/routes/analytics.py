@@ -1,6 +1,11 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from app.database import get_db
+from app.diagnoses import (
+    DIAGNOSIS_DEFINITIONS,
+    build_comorbidity_counts_sql,
+    build_comorbidity_distribution_sql,
+)
 import logging
 
 router = APIRouter()
@@ -30,20 +35,9 @@ async def registry_overview(db=Depends(get_db)):
         with_ecg = 0
 
         # Calculate average data completeness
-        completeness_result = db.execute(text("""
-            SELECT AVG(data_completeness) as avg_completeness
-            FROM (
-                SELECT
-                    COALESCE((
-                        (CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) +
-                        (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) +
-                        (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) +
-                        (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) +
-                        (CASE WHEN mri_ef IS NOT NULL THEN 20 ELSE 0 END)
-                    ), 0) as data_completeness
-                FROM patient_summary
-            ) as completeness_scores
-        """)).scalar()
+        completeness_result = db.execute(
+            text("SELECT AVG(data_completeness) as avg_completeness FROM patient_summary")
+        ).scalar()
         avg_completeness = float(completeness_result) if completeness_result is not None else 0.0
 
         data = {
@@ -139,36 +133,21 @@ async def clinical_metrics(db=Depends(get_db)):
 @router.get("/comorbidities")
 async def comorbidities(db=Depends(get_db)):
     try:
-        # Comorbidities derived from denormalized patients table
-        comorbidity_query = text("""
-            SELECT
-                COUNT(*) FILTER (WHERE COALESCE(high_blood_pressure, false)) AS hypertension,
-                COUNT(*) FILTER (WHERE COALESCE(diabetes_mellitus, false)) AS diabetes,
-                COUNT(*) FILTER (WHERE COALESCE(dyslipidemia, false)) AS dyslipidemia,
-                COUNT(*) FILTER (WHERE COALESCE(heart_attack_or_angina, false)) AS cad,
-                COUNT(*) FILTER (WHERE COALESCE(prior_heart_failure, false)) AS heart_failure
-            FROM patients
-        """)
-        comorbidity_result = db.execute(comorbidity_query).fetchone()
+        counts_sql = build_comorbidity_counts_sql("patients")
+        count_row = db.execute(text(counts_sql)).fetchone()
 
-        distribution_query = text("""
-            SELECT
-                comorbidity_count,
-                COUNT(*) AS patient_count
-            FROM (
-                SELECT
-                    (CASE WHEN COALESCE(high_blood_pressure, false) THEN 1 ELSE 0 END +
-                     CASE WHEN COALESCE(diabetes_mellitus, false) THEN 1 ELSE 0 END +
-                     CASE WHEN COALESCE(dyslipidemia, false) THEN 1 ELSE 0 END +
-                     CASE WHEN COALESCE(heart_attack_or_angina, false) THEN 1 ELSE 0 END +
-                     CASE WHEN COALESCE(prior_heart_failure, false) THEN 1 ELSE 0 END
-                    ) AS comorbidity_count
-                FROM patients
-            ) AS c
-            GROUP BY comorbidity_count
-            ORDER BY comorbidity_count
-        """)
-        distribution_results = db.execute(distribution_query).fetchall()
+        condition_counts = {
+            definition["key"]: (count_row[idx] or 0) if count_row else 0
+            for idx, definition in enumerate(DIAGNOSIS_DEFINITIONS)
+        }
+        condition_counts.update({
+            "kidney_disease": 0,
+            "liver_disease": 0,
+            "anaemia": 0,
+        })
+
+        distribution_sql = build_comorbidity_distribution_sql("patients")
+        distribution_results = db.execute(text(distribution_sql)).fetchall()
         distribution_data = [
             {"comorbidities": row[0], "patients": row[1]}
             for row in distribution_results
@@ -177,16 +156,7 @@ async def comorbidities(db=Depends(get_db)):
         return {
             "success": True,
             "data": {
-                "conditions": {
-                    "hypertension": comorbidity_result[0] or 0,
-                    "diabetes": comorbidity_result[1] or 0,
-                    "dyslipidemia": comorbidity_result[2] or 0,
-                    "cad": comorbidity_result[3] or 0,
-                    "heart_failure": comorbidity_result[4] or 0,
-                    "kidney_disease": 0,
-                    "liver_disease": 0,
-                    "anaemia": 0,
-                },
+                "conditions": condition_counts,
                 "comorbidityDistribution": distribution_data,
             },
         }

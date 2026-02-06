@@ -76,6 +76,30 @@ export interface FamilyHistory {
   childhood_location: string | null;
 }
 
+export type DiagnosisSeverity =
+  | 'Present'
+  | 'History'
+  | 'Stage 1'
+  | 'Stage 2'
+  | 'High-Risk Category'
+  | 'Mild MR (Grade 1)'
+  | 'Moderate MR (Grade 2)'
+  | 'Severe MR (Grade 3-4)'
+  | 'Moderate Stenosis (60-70%)'
+  | 'Severe Stenosis (>70%)'
+  | 'Critical Stenosis (>90%)';
+
+export interface DiagnosisSummary {
+  id: string;
+  condition: string;
+  icd10Code: string;
+  diagnosedDate: string;
+  status: 'controlled' | 'treated' | 'symptomatic' | 'stable' | 'resolved' | 'chronic';
+  severity: DiagnosisSeverity;
+  category: string;
+  clinicalNotes?: string;
+}
+
 export interface MedicalHistory {
   heart_attack_or_angina: boolean;
   high_blood_pressure: boolean;
@@ -94,6 +118,7 @@ export interface MedicalHistory {
   procedure_details: string | null;
   malignancy: boolean;
   comorbidity: number;
+  diagnoses: DiagnosisSummary[];
 }
 
 export interface PhysicalExam {
@@ -180,6 +205,42 @@ export interface GeographicData {
   current_city_category: string | null;
   childhood_city_category: string | null;
   migration_pattern: string | null;
+}
+
+export interface GenomicVariant {
+  gene: string;
+  variant: string;
+  genotype: string;
+  clinicalSignificance: 'pathogenic' | 'likely_pathogenic' | 'uncertain' | 'likely_benign' | 'benign';
+  condition: string;
+  frequency: number;
+}
+
+export interface PharmacogenomicData {
+  drug: string;
+  gene: string;
+  genotype: string;
+  metabolizer: 'poor' | 'intermediate' | 'normal' | 'rapid' | 'ultra-rapid';
+  recommendation: string;
+  confidence: 'high' | 'moderate' | 'low';
+}
+
+export interface GenomicData {
+  polygenic: {
+    coronaryArteryDisease: number;
+    myocardialInfarction: number;
+    strokeRisk: number;
+    atrialFibrillation: number;
+  };
+  variants: GenomicVariant[];
+  pharmacogenomics: PharmacogenomicData[];
+  ancestry: {
+    european: number;
+    african: number;
+    asian: number;
+    native_american: number;
+    other: number;
+  };
 }
 
 // Analytics types
