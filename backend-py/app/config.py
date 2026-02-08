@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     superset_database_name: str = "BioLink"
     superset_database_uri: str = "postgresql://biolink:biolink_secret@localhost:5432/biolink"
     superset_default_schema: str = "public"
-    superset_default_table: str = "patient_summary"
+    superset_default_table: str = "EHVOL"
 
     @field_validator("database_url")
     @classmethod

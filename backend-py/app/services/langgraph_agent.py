@@ -212,22 +212,22 @@ class SQLAgentService:
     def _heuristic_sql(self, query_lower: str) -> Optional[str]:
         """Return a simple SQL query for common prompts to keep responses fast."""
         if "how many" in query_lower or ("count" in query_lower and "patient" in query_lower):
-            return "SELECT COUNT(*) AS count FROM patient_summary"
+            return "SELECT COUNT(*) AS count FROM EHVOL"
 
         if "average age" in query_lower:
-            return "SELECT AVG(age) AS avg_age FROM patient_summary WHERE age IS NOT NULL"
+            return "SELECT AVG(age) AS avg_age FROM EHVOL WHERE age IS NOT NULL"
 
         if "age distribution" in query_lower or ("age" in query_lower and "distribution" in query_lower):
-            return "SELECT age FROM patient_summary WHERE age IS NOT NULL LIMIT 1000"
+            return "SELECT age FROM EHVOL WHERE age IS NOT NULL LIMIT 1000"
 
         if "count" in query_lower and "gender" in query_lower:
-            return "SELECT gender, COUNT(*) AS count FROM patient_summary GROUP BY gender"
+            return "SELECT gender, COUNT(*) AS count FROM EHVOL GROUP BY gender"
 
         if "average" in query_lower and "ef" in query_lower and ("male" in query_lower or "female" in query_lower):
-            return "SELECT gender, AVG(ef) AS avg_ef FROM patient_summary WHERE ef IS NOT NULL GROUP BY gender"
+            return "SELECT gender, AVG(ef) AS avg_ef FROM EHVOL WHERE ef IS NOT NULL GROUP BY gender"
 
         if "average" in query_lower and "ef" in query_lower:
-            return "SELECT AVG(ef) AS avg_ef FROM patient_summary WHERE ef IS NOT NULL"
+            return "SELECT AVG(ef) AS avg_ef FROM EHVOL WHERE ef IS NOT NULL"
 
         return None
 

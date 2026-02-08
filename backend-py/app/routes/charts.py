@@ -133,7 +133,7 @@ async def get_correlation(
                 dna_id,
                 {f1} AS {f1},
                 {f2} AS {f2}
-            FROM patient_summary
+            FROM EHVOL
             WHERE {where_sql}
             LIMIT 500
         """)
@@ -169,11 +169,11 @@ async def get_chart_data(
         parsed_filters = _parse_filters(filters)
         where_sql, params = _build_base_where(xAxis, yAxis, groupBy, aggregation, parsed_filters)
 
-        # For simple aggregations, use patient_summary view
+        # For simple aggregations, use EHVOL view
         if aggregation == "count" and groupBy:
             stmt = text(f"""
                 SELECT {groupBy} as label, COUNT(*) as value
-                FROM patient_summary
+                FROM EHVOL
                 WHERE {where_sql}
                 GROUP BY {groupBy}
                 ORDER BY value DESC
@@ -183,7 +183,7 @@ async def get_chart_data(
             agg_func = aggregation.upper()
             stmt = text(f"""
                 SELECT {xAxis} as x, {agg_func}({yAxis}) as y
-                FROM patient_summary
+                FROM EHVOL
                 WHERE {where_sql}
                 GROUP BY {xAxis}
                 ORDER BY {xAxis}
@@ -191,7 +191,7 @@ async def get_chart_data(
         else:
             stmt = text(f"""
                 SELECT {xAxis} as label, COUNT(*) as value
-                FROM patient_summary
+                FROM EHVOL
                 WHERE {where_sql}
                 GROUP BY {xAxis}
                 ORDER BY value DESC
@@ -246,7 +246,7 @@ async def get_chart_series(
             stmt = text(f"""
                 WITH stats AS (
                     SELECT MIN({x_axis}) AS min_x, MAX({x_axis}) AS max_x
-                    FROM patient_summary
+                    FROM EHVOL
                     WHERE {base_where}
                 ),
                 binned AS (
@@ -259,7 +259,7 @@ async def get_chart_series(
                         stats.max_x AS max_x
                         {group_select}
                         {y_value_select}
-                    FROM patient_summary, stats
+                    FROM EHVOL, stats
                     WHERE {base_where}
                 )
                 SELECT
@@ -305,7 +305,7 @@ async def get_chart_series(
 
         stmt = text(f"""
             SELECT {x_axis} as label{group_select}, {agg_select} as value
-            FROM patient_summary
+            FROM EHVOL
             WHERE {base_where}
             GROUP BY {x_axis}{group_group}
             ORDER BY value DESC
@@ -371,14 +371,14 @@ async def generate_chart(config: dict, db = Depends(get_db)):
         if chart_type == "scatter" and y_field:
             stmt = text(f"""
                 SELECT {x_field} as x, {y_field} as y
-                FROM patient_summary
+                FROM EHVOL
                 WHERE {x_field} IS NOT NULL AND {y_field} IS NOT NULL
                 LIMIT 500
             """)
         elif chart_type == "bar":
             stmt = text(f"""
                 SELECT {x_field} as label, COUNT(*) as value
-                FROM patient_summary
+                FROM EHVOL
                 WHERE {x_field} IS NOT NULL
                 GROUP BY {x_field}
                 ORDER BY value DESC
@@ -387,7 +387,7 @@ async def generate_chart(config: dict, db = Depends(get_db)):
         else:
             stmt = text(f"""
                 SELECT {x_field} as x, COUNT(*) as y
-                FROM patient_summary
+                FROM EHVOL
                 WHERE {x_field} IS NOT NULL
                 GROUP BY {x_field}
                 ORDER BY {x_field}

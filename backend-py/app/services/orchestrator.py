@@ -98,17 +98,17 @@ class SqlAgentAdapter:
                 f"WHERE LOWER(current_city) = LOWER('{city}')"
             )
         if "how many" in text or ("count" in text and "patient" in text):
-            return "SELECT COUNT(*) AS count FROM patient_summary"
+            return "SELECT COUNT(*) AS count FROM EHVOL"
         if "average age" in text:
-            return "SELECT AVG(age) AS avg_age FROM patient_summary WHERE age IS NOT NULL"
+            return "SELECT AVG(age) AS avg_age FROM EHVOL WHERE age IS NOT NULL"
         if "age distribution" in text:
-            return "SELECT age FROM patient_summary WHERE age IS NOT NULL"
+            return "SELECT age FROM EHVOL WHERE age IS NOT NULL"
         if "count" in text and "gender" in text:
-            return "SELECT gender, COUNT(*) AS count FROM patient_summary GROUP BY gender"
+            return "SELECT gender, COUNT(*) AS count FROM EHVOL GROUP BY gender"
         if "average" in text and "ef" in text:
-            return "SELECT AVG(echo_ef) AS avg_ef FROM patient_summary WHERE echo_ef IS NOT NULL"
+            return "SELECT AVG(echo_ef) AS avg_ef FROM EHVOL WHERE echo_ef IS NOT NULL"
         if "registry overview" in text or "overview" in text:
-            return "SELECT COUNT(*) AS total FROM patient_summary"
+            return "SELECT COUNT(*) AS total FROM EHVOL"
         return None
 
     @staticmethod
@@ -323,7 +323,7 @@ class DataAgentAdapter:
         return (
             "You are a data agent. Decide whether to generate SQL or a chart. "
             "Return ONLY JSON with keys: action (query_sql|chart_from_sql), sql, mark, x, y, color, title. "
-            "Use only tables: patients, patient_summary. Ensure SQL is SELECT-only.\n\n"
+            "Use only tables: patients, EHVOL. Ensure SQL is SELECT-only.\n\n"
             f"Conversation history:\n{history_block}\n\n"
             f"User request: {message}\n"
         )

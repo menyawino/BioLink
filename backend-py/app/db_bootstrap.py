@@ -109,9 +109,10 @@ CREATE INDEX IF NOT EXISTS patient_note_extractions_patient_id_idx ON patient_no
 
 VIEW_SQL = """
 
--- patient_summary view: what list/search/analytics/charts should use
-DROP VIEW IF EXISTS patient_summary;
-CREATE VIEW patient_summary AS
+ -- EHVOL view: what list/search/analytics/charts should use
+-- EHVOL view: what list/search/analytics/charts should use
+DROP VIEW IF EXISTS EHVOL;
+CREATE VIEW EHVOL AS
 SELECT
     id,
     dna_id,
@@ -154,6 +155,7 @@ SELECT
         (CASE WHEN mri_ef IS NOT NULL THEN 20 ELSE 0 END)
     ), 0) AS data_completeness
 FROM patients;
+
 """
 
 

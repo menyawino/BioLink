@@ -23,7 +23,7 @@ class ToolRegistry:
             "build_cohort": self.build_cohort,
             "chart_from_sql": self.chart_from_sql,
         }
-        self._allowed_tables = {"patients", "patient_summary", "patient_genomic_variants"}
+        self._allowed_tables = {"patients", "EHVOL", "patient_genomic_variants"}
         self._max_limit = 500
         self._engine = engine_override
         self._patient_columns = None

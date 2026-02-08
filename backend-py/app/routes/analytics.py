@@ -36,7 +36,7 @@ async def registry_overview(db=Depends(get_db)):
 
         # Calculate average data completeness
         completeness_result = db.execute(
-            text("SELECT AVG(data_completeness) as avg_completeness FROM patient_summary")
+            text("SELECT AVG(data_completeness) as avg_completeness FROM EHVOL")
         ).scalar()
         avg_completeness = float(completeness_result) if completeness_result is not None else 0.0
 
@@ -211,7 +211,7 @@ async def geographic(db=Depends(get_db)):
         # City category distribution
         city_category_query = text("""
             SELECT current_city_category, COUNT(*) as count
-            FROM patient_summary
+            FROM EHVOL
             WHERE current_city_category IS NOT NULL
             GROUP BY current_city_category
             ORDER BY count DESC
@@ -456,7 +456,7 @@ async def data_quality(db=Depends(get_db)):
                 ROUND(AVG(CASE WHEN mri_ef IS NOT NULL THEN 100 ELSE 0 END)) as mri,
                 ROUND(AVG(CASE WHEN dna_id IN (SELECT dna_id FROM ecg) THEN 100 ELSE 0 END)) as ecg,
                 ROUND(AVG(data_completeness)) as overall
-            FROM patient_summary
+            FROM EHVOL
         """)
         completeness_result = db.execute(completeness_query).fetchone()
 
@@ -471,7 +471,7 @@ async def data_quality(db=Depends(get_db)):
                     ELSE '0-19%'
                 END as completeness_range,
                 COUNT(*) as count
-            FROM patient_summary
+            FROM EHVOL
             GROUP BY completeness_range
             ORDER BY completeness_range
         """)

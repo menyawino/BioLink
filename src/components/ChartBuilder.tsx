@@ -1,4 +1,4 @@
-export { ChartBuilder } from "./ChartBuilderPowerBI";
+export { SupersetWorkspace as ChartBuilder } from "./SupersetWorkspace";
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";

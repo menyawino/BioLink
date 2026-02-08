@@ -59,9 +59,9 @@ Uses PostgreSQL. Connection string from `DATABASE_URL` env var.
 
 This backend is intentionally streamlined around a single denormalized table with a supporting summary view:
 - `patients`: Maintains the full set of clinical, imaging, genomic, and risk-factor fields used by patient detail endpoints and deep analytical queries.
-- `patient_summary`: Curated read-only view exposed to list/search endpoints and availability dashboards; keep queries here focused on counts, filters, and data-availability metrics (data completeness, imaging/genomics flags, geographic categories).
+-- `EHVOL`: Curated read-only view exposed to list/search endpoints and availability dashboards; keep queries here focused on counts, filters, and data-availability metrics (data completeness, imaging/genomics flags, geographic categories).
 
-The policy is explicit: target `patients` for heavy clinical/feature processing, and reserve `patient_summary` for the tables/filters that power the registry list, search, and availability metrics.
+The policy is explicit: target `patients` for heavy clinical/feature processing, and reserve `EHVOL` for the tables/filters that power the registry list, search, and availability metrics.
 
 Schema is auto-bootstrapped on backend startup.
 

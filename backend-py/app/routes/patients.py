@@ -80,7 +80,7 @@ async def get_patients(
             conditions.append("age <= :age_max")
             params["age_max"] = ageMax
 
-        # Data availability filters (backed by patient_summary flags)
+        # Data availability filters (backed by EHVOL flags)
         if hasEcho is not None:
             conditions.append("has_echo = :has_echo")
             params["has_echo"] = hasEcho
@@ -105,7 +105,7 @@ async def get_patients(
             conditions.append("((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = :has_family_history)")
             params["has_family_history"] = hasFamilyHistory
 
-        # Genomics availability (backed by patient_summary.has_genomics)
+        # Genomics availability (backed by EHVOL.has_genomics)
         if hasGenomics is not None:
             conditions.append("has_genomics = :has_genomics")
             params["has_genomics"] = hasGenomics
@@ -160,17 +160,17 @@ async def get_patients(
 
         # Get total count for pagination
         count_stmt = text(
-            f"SELECT COUNT(*) as total FROM patient_summary WHERE {' AND '.join(conditions)}"
+            f"SELECT COUNT(*) as total FROM EHVOL WHERE {' AND '.join(conditions)}"
         )
         total_result = db.execute(count_stmt, params).fetchone()
         total = total_result[0] if total_result else 0
 
-        # Get paginated results using patient_summary view for complete data
+        # Get paginated results using EHVOL view for complete data
         stmt = text(
             "SELECT id, dna_id, age, gender, nationality, enrollment_date, current_city, "
             "heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, mri_ef, "
             "current_city_category, has_mri, has_echo, data_completeness "
-            "FROM patient_summary "
+            "FROM EHVOL "
             f"WHERE {' AND '.join(conditions)} "
             f"ORDER BY {sort_column} {sort_direction} "
             "LIMIT :limit OFFSET :offset"
@@ -208,7 +208,7 @@ async def search_patients(
             "SELECT id, dna_id, age, gender, nationality, enrollment_date, current_city, "
             "heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, mri_ef, "
             "current_city_category, has_mri, has_echo, data_completeness "
-            "FROM patient_summary "
+            "FROM EHVOL "
             "WHERE dna_id ILIKE :search OR nationality ILIKE :search "
             "ORDER BY dna_id ASC "
             "LIMIT :limit"

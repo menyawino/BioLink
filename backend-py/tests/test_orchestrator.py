@@ -105,7 +105,7 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
             use_llm_router=False,
         )
         orchestrator._agents["medical"] = DummyMedicalAgent()
-        result = await orchestrator.run("SELECT COUNT(*) FROM patient_summary")
+        result = await orchestrator.run("SELECT COUNT(*) FROM EHVOL")
         self.assertEqual(result.agent, "medical")
         self.assertEqual(result.metadata.get("handoff_from"), "data")
         self.assertTrue(any(call[0] == "query_sql" for call in registry.calls))

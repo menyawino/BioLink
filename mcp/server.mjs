@@ -233,7 +233,7 @@ async function handleSearchPatients(args) {
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const sql = `SELECT dna_id, age, gender, nationality, current_city_category, echo_ef, mri_ef
-      FROM patient_summary
+      FROM EHVOL
       ${where}
       ORDER BY dna_id`;
 

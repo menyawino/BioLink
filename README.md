@@ -23,7 +23,7 @@ cd BioLink/
 These scripts will:
 - Check system requirements (8GB RAM, 10GB disk)
 - Install Docker and Docker Compose if needed
-- **Automatically detect and configure GPU acceleration** (NVIDIA/Apple Silicon/AMD)
+- Automatically detect and configure GPU acceleration (NVIDIA/Apple Silicon/AMD)
 - Build and start all services
 - Load reduced 50-record dataset for testing
 - Run comprehensive tests
@@ -93,9 +93,9 @@ MYF BioLink is a sophisticated registry management system that provides:
 
 ### Database Schema (Streamlined)
 - `patients`: Denormalized source of truth powering clinical and feature-heavy queries such as patient detail, cohort analytics, and complex filters.
-- `patient_summary`: Curated view exposed to list/search endpoints and availability dashboards; keep queries here focused on counts, filters, and data-availability metrics (completeness, imaging/genomics flags).
+- `EHVOL`: Curated view exposed to list/search endpoints and availability dashboards; keep queries here focused on counts, filters, and data-availability metrics (completeness, imaging/genomics flags).
 
-The application keeps the split explicit: use `patients` for clinical/feature-rich data and most analytic calculations, while `patient_summary` supports the faster list/search availability surfaces.
+The application keeps the split explicit: use `patients` for clinical/feature-rich data and most analytic calculations, while `EHVOL` supports the faster list/search availability surfaces.
 
 The backend auto-bootstraps these objects at startup.
 
