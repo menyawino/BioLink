@@ -34,21 +34,20 @@ export function SupersetWorkspace() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1">
-            <Label>Superset URL</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="https://superset.example.com/superset/dashboard/"
-                value={url}
-                onChange={event => setUrl(event.target.value)}
-              />
-              <Button onClick={saveUrl}>Save</Button>
-              {url && (
+            <Label>Superset</Label>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm text-muted-foreground">
+                Embedded Superset (static). The dashboard below will fill the tab.
+              </div>
+              {url ? (
                 <Button variant="outline" asChild>
                   <a href={url} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-4 w-4 mr-2" />
                     Open
                   </a>
                 </Button>
+              ) : (
+                <div className="text-xs text-muted-foreground">Superset not configured</div>
               )}
             </div>
           </div>
@@ -58,19 +57,19 @@ export function SupersetWorkspace() {
         </CardContent>
       </Card>
 
-      {url ? (
-        <Card>
-          <CardContent className="p-0">
-            <iframe title="Superset" src={url} className="w-full h-[800px] rounded-md border" />
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="text-sm text-muted-foreground py-10 text-center">
-            Add a Superset URL to begin.
-          </CardContent>
-        </Card>
-      )}
+      <Card className="h-full">
+        <CardContent className="p-0 h-full">
+          {url ? (
+            <iframe
+              title="Superset"
+              src={url}
+              className="w-full h-[calc(100vh-6rem)] rounded-none border-0"
+            />
+          ) : (
+            <div className="text-sm text-muted-foreground py-10 text-center">Superset is not configured.</div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

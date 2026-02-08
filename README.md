@@ -21,18 +21,18 @@ cd BioLink/
 ```
 
 These scripts will:
-- ✅ Check system requirements (8GB RAM, 10GB disk)
-- ✅ Install Docker and Docker Compose if needed
-- ✅ **Automatically detect and configure GPU acceleration** (NVIDIA/Apple Silicon/AMD)
-- ✅ Build and start all services
-- ✅ Load reduced 50-record dataset for testing
-- ✅ Run comprehensive tests
-- ✅ Open frontend in browser
-- ✅ Provide access URLs
+- Check system requirements (8GB RAM, 10GB disk)
+- Install Docker and Docker Compose if needed
+- **Automatically detect and configure GPU acceleration** (NVIDIA/Apple Silicon/AMD)
+- Build and start all services
+- Load reduced 50-record dataset for testing
+- Run comprehensive tests
+- Open frontend in browser
+- Provide access URLs
 
 **Migration to bigger machines**: Just copy the project and run `./scripts/setup-and-test.sh`!
 
-📋 **[Complete Migration Guide →](MIGRATION.md)**
+**[Complete Migration Guide →](MIGRATION.md)**
 
 ## AI Agent System
 
@@ -48,8 +48,8 @@ BioLink now features a **complete agentic system** powered by AI with function c
 
 **Fully Functional** - The agent can search, filter, analyze, navigate, and control every aspect of the platform.
 
-📖 **[Read the complete AI Agent documentation →](AGENT_SYSTEM.md)**  
-⚡ **[Quick reference guide →](QUICK_REFERENCE.md)**
+**[Read the complete AI Agent documentation →](AGENT_SYSTEM.md)**  
+**[Quick reference guide →](QUICK_REFERENCE.md)**
 
 ## Available Scripts
 
@@ -384,18 +384,6 @@ BioLink/Code/
 - Check table schemas match expected structure
 - Verify foreign key relationships
 - Ensure proper permissions for database user
-
-## Development
-
-### Building for Production
-```bash
-# Build frontend
-npm run build
-
-# Build backend
-cd backend
-npm run build
-```
 
 ### Code Quality
 - TypeScript strict mode enabled
