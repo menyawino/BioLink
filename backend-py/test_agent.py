@@ -34,9 +34,13 @@ def mock_llm():
 @pytest.fixture
 def agent(mock_db, mock_llm):
     """Create agent with mocks"""
-    with patch('app.services.langgraph_agent.SQLDatabase', return_value=mock_db):
-        with patch('app.services.langgraph_agent.ChatOllama', return_value=mock_llm):
-            agent = SQLAgentService("postgresql://test:test@localhost/test")
+    with patch('app.services.langgraph_agent.ChatOllama', return_value=mock_llm):
+        agent = SQLAgentService(
+            "postgresql://test:test@localhost/test",
+            db=mock_db,
+            llm=mock_llm,
+            toolkit_factory=lambda **_: Mock(),
+        )
     return agent
 
 
@@ -58,7 +62,7 @@ def test_generate_sql(agent, mock_llm):
     state = {"messages": [{"role": "user", "content": "How many patients?"}]}
     result = agent.generate_sql(state)
 
-    assert result["sql_query"] == "SELECT COUNT(*) FROM patients"
+    assert result["sql_query"] == "SELECT COUNT(*) AS count FROM EHVOL"
 
 
 def test_validate_sql(agent):

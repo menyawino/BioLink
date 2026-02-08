@@ -253,12 +253,37 @@ class DataAgentAdapter:
         tool_registry: ToolRegistry,
     ) -> AgentResult:
         prompt = self._build_prompt(message, history)
-        response = await _ainvoke_with_retries(
-            self._llm,
-            prompt,
-            timeout_s=settings.data_llm_timeout_s,
-            max_retries=settings.llm_max_retries,
-        )
+        try:
+            response = await _ainvoke_with_retries(
+                self._llm,
+                prompt,
+                timeout_s=settings.data_llm_timeout_s,
+                max_retries=settings.llm_max_retries,
+            )
+        except Exception as exc:
+            logger.warning("Data agent LLM unavailable, falling back to heuristic SQL: %s", exc)
+            sql = SqlAgentAdapter()._heuristic_sql(message)
+            if not sql:
+                return AgentResult(
+                    content="Ask about patient counts, averages, or registry statistics.",
+                    agent=self.name,
+                )
+            sql = self._ensure_limit(sql, settings.sql_agent_default_limit)
+            result = tool_registry.call(
+                "query_sql",
+                {"sql": sql, "limit": settings.sql_agent_default_limit},
+            )
+            tool_call = ToolCall(
+                name="query_sql",
+                arguments={"sql": sql, "limit": settings.sql_agent_default_limit},
+            )
+            return AgentResult(
+                content=SqlAgentAdapter._format_result(sql, result),
+                agent=self.name,
+                tool_calls=[tool_call],
+                metadata={"count": result.get("count", 0), "fallback": "heuristic"},
+            )
+
         payload = self._extract_json(response.content)
         if not payload:
             return AgentResult(

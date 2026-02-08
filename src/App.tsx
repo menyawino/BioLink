@@ -11,7 +11,7 @@ import { TraditionalImaging } from "./components/TraditionalImaging";
 import { GenomicData } from "./components/GenomicData";
 import { PatientRegistryTable } from "./components/PatientRegistryTable";
 import { RegistryAnalytics } from "./components/RegistryAnalytics";
-import { ChartBuilder } from "./components/ChartBuilder";
+import { SupersetWorkspace } from "./components/SupersetWorkspace";
 import { CohortBuilder } from "./components/CohortBuilder";
 import { DataDictionary } from "./components/DataDictionary";
 import { Settings } from "./components/Settings";
@@ -215,7 +215,7 @@ export default function App() {
         return <RegistryAnalytics />;
       
       case "charts":
-        return <ChartBuilder />;
+        return <SupersetWorkspace />;
       
       case "dictionary":
         return <DataDictionary />;
@@ -449,7 +449,7 @@ function renderContent(
       case "cohort":
         return <CohortBuilder />;
       case "charts":
-        return <ChartBuilder />;
+        return <SupersetWorkspace />;
       case "dictionary":
         return <DataDictionary />;
       case "settings":

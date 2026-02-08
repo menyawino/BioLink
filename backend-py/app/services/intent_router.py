@@ -87,7 +87,7 @@ class IntentRouter:
             return "general"
 
         if text.startswith("select ") or text.startswith("with "):
-            return "data"
+            return "sql"
 
         if self._contains_any(text, self._rag_keywords):
             return "rag"
@@ -96,7 +96,7 @@ class IntentRouter:
         if self._contains_any(text, self._ui_keywords):
             return "ui"
         if self._contains_any(text, self._sql_keywords):
-            return "data"
+            return "sql"
         if self._contains_any(text, self._data_keywords):
             return "data"
         if self._contains_any(text, self._medical_keywords):

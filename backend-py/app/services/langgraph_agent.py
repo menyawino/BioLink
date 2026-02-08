@@ -3,7 +3,7 @@ from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, Annotated, List, Optional
+from typing import TypedDict, Annotated, List, Optional, Callable
 import operator
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -30,22 +30,37 @@ class AgentState(TypedDict):
     iteration_count: int
 
 class SQLAgentService:
-    def __init__(self, db_url: str, ollama_base_url: str = "http://localhost:11434", model: str = "phi:latest"):
-        try:
-            self.db = SQLDatabase.from_uri(db_url, sample_rows_in_table_info=3)
-            logger.info("Database connection established")
-        except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            raise Exception(f"Database connection failed: {e}")
+    def __init__(
+        self,
+        db_url: str,
+        ollama_base_url: str = "http://localhost:11434",
+        model: str = "phi:latest",
+        db: Optional[SQLDatabase] = None,
+        llm: Optional[ChatOllama] = None,
+        toolkit_factory: Optional[Callable[..., object]] = None,
+    ):
+        if db is None:
+            try:
+                self.db = SQLDatabase.from_uri(db_url, sample_rows_in_table_info=3)
+                logger.info("Database connection established")
+            except Exception as e:
+                logger.error(f"Failed to connect to database: {e}")
+                raise Exception(f"Database connection failed: {e}")
+        else:
+            self.db = db
 
-        try:
-            self.llm = ChatOllama(base_url=ollama_base_url, model=model, temperature=0)
-            logger.info(f"LLM initialized with model {model}")
-        except Exception as e:
-            logger.error(f"Failed to initialize LLM: {e}")
-            raise Exception(f"LLM initialization failed: {e}")
+        if llm is None:
+            try:
+                self.llm = ChatOllama(base_url=ollama_base_url, model=model, temperature=0)
+                logger.info(f"LLM initialized with model {model}")
+            except Exception as e:
+                logger.error(f"Failed to initialize LLM: {e}")
+                raise Exception(f"LLM initialization failed: {e}")
+        else:
+            self.llm = llm
 
-        self.toolkit = SQLDatabaseToolkit(db=self.db, llm=self.llm)
+        factory = toolkit_factory or SQLDatabaseToolkit
+        self.toolkit = factory(db=self.db, llm=self.llm)
         self.graph = self._build_graph()
         logger.info("LangGraph agent initialized successfully")
 
@@ -253,13 +268,23 @@ class SQLAgentService:
                                 value = float(value_str)
                             except:
                                 value = value_str.strip("'\"")
-                            
+
                             # Use generic column name
                             col_name = 'result'
                             df = pd.DataFrame([value], columns=[col_name])
                             logger.info(f"Parsed aggregate result: {df}")
                         else:
-                            df = pd.DataFrame()
+                            lines = result_str.split('\n')
+                            if len(lines) > 1:
+                                headers = [h.strip() for h in lines[0].split('|')]
+                                data = [
+                                    [cell.strip() for cell in line.split('|')]
+                                    for line in lines[1:]
+                                    if line.strip()
+                                ]
+                                df = pd.DataFrame(data, columns=headers)
+                            else:
+                                df = pd.DataFrame()
                     except Exception as e:
                         logger.error(f"Failed to parse aggregate result: {e}")
                         df = pd.DataFrame()
