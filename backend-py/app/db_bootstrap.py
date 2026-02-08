@@ -90,6 +90,20 @@ UPDATE patients
 SET id = nextval(pg_get_serial_sequence('patients', 'id'))
 WHERE id IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS patients_id_uidx ON patients(id);
+
+-- Patient note extractions: structured extraction outputs from LLM-based
+-- processors (e.g., langextract). Store JSONB so the frontend or analytics
+-- can query or rehydrate extraction results later.
+CREATE TABLE IF NOT EXISTS patient_note_extractions (
+    id BIGSERIAL PRIMARY KEY,
+    patient_id BIGINT,
+    chunk_id INTEGER,
+    extraction JSONB,
+    source TEXT,
+    stage INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS patient_note_extractions_patient_id_idx ON patient_note_extractions(patient_id);
 """
 
 

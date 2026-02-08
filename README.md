@@ -1,10 +1,10 @@
 # MYF BioLink - AI-Powered Cardiovascular Research Registry
 
-> **🤖 Now with Natural Language AI Agent - Control everything through chat!**
+> **Now with Natural Language AI Agent - Control everything through chat!**
 
 A comprehensive web-based platform for managing and analyzing cardiovascular research data from the Magdi Yacoub Heart Foundation's EHVol Registry. Built with React, TypeScript, PostgreSQL, and AI-powered chat agents.
 
-## 🚀 Quick Start (Automated Setup)
+## Quick Start
 
 For the fastest setup on any machine with internet access:
 
@@ -34,7 +34,7 @@ These scripts will:
 
 📋 **[Complete Migration Guide →](MIGRATION.md)**
 
-## 🌟 NEW: AI Agent System
+## AI Agent System
 
 BioLink now features a **complete agentic system** powered by AI with function calling. Interact with the entire platform using natural language:
 
@@ -46,12 +46,12 @@ BioLink now features a **complete agentic system** powered by AI with function c
 "Find patient EHV001 and show their details"
 ```
 
-**✅ Fully Functional** - The agent can search, filter, analyze, navigate, and control every aspect of the platform.
+**Fully Functional** - The agent can search, filter, analyze, navigate, and control every aspect of the platform.
 
 📖 **[Read the complete AI Agent documentation →](AGENT_SYSTEM.md)**  
 ⚡ **[Quick reference guide →](QUICK_REFERENCE.md)**
 
-## 📋 Available Scripts
+## Available Scripts
 
 - **`./scripts/setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
 - **`./scripts/run.sh`**: Quick start for machines that already have the environment set up
@@ -130,7 +130,7 @@ PORT=3001
 ENVIRONMENT=development
 ```
 
-📖 **See [AGENT_SYSTEM.md](AGENT_SYSTEM.md) for complete AI agent setup and usage**
+**See [AGENT_SYSTEM.md](AGENT_SYSTEM.md) for complete AI agent setup and usage**
 
 ### Fast Docker-First Install (Recommended)
 
@@ -206,7 +206,7 @@ For users who prefer not to use Docker, there's a native installation script for
 ./scripts/install-nondocker.sh restart   # Restart everything
 ```
 
-📖 **[Complete non-Docker installation guide →](NONDOCKER_README.md)**
+**[Complete non-Docker installation guide →](NONDOCKER_README.md)**
 
 ### MCP Tools (SQL + Charts)
 
@@ -292,7 +292,7 @@ Complete variable documentation:
 - **Descriptions**: Clinical definitions and units
 - **Data Types**: Field types and validation rules
 
-## 🔧 API Endpoints
+## API Endpoints
 
 ### Patient Endpoints
 ```
@@ -329,7 +329,7 @@ Built with shadcn/ui and Radix UI:
 - `Chart` (Recharts integration)
 - Custom `Sidebar`, `PatientHeader` components
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 BioLink/Code/
