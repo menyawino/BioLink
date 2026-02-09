@@ -54,6 +54,47 @@ def sanitize_column_names(df: pd.DataFrame, mapping_name: str = "column_map_etl.
     return df
 
 
+def drop_name_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Drop columns that likely contain personal names (PII).
+
+    Returns (df, dropped_columns)
+    """
+    cols_to_drop = []
+    for col in list(df.columns):
+        c = str(col)
+        # match standalone 'name', columns starting with name, or typical name fields
+        if re.search(r"\bname\b", c, flags=re.IGNORECASE) or re.search(r"first\s*name|last\s*name|full\s*name", c, flags=re.IGNORECASE):
+            cols_to_drop.append(col)
+
+    if cols_to_drop:
+        df = df.drop(columns=cols_to_drop)
+    return df, cols_to_drop
+
+
+def standardize_dates(df: pd.DataFrame, dayfirst: bool = True) -> tuple[pd.DataFrame, list[str]]:
+    """Convert date-like columns to pandas datetime dtype.
+
+    Heuristics: column name contains 'date', 'dob', 'birth', 'enrol', 'exam', 'echo', 'mri'
+    Returns (df, converted_columns)
+    """
+    date_keywords = [r"date", r"dob", r"birth", r"enrol", r"enroll", r"exam", r"examination", r"echo", r"mri"]
+    pattern = re.compile("|".join(date_keywords), flags=re.IGNORECASE)
+    converted = []
+    for col in list(df.columns):
+        if pattern.search(col):
+            try:
+                parsed = pd.to_datetime(df[col], dayfirst=dayfirst, errors='coerce')
+            except Exception:
+                parsed = pd.to_datetime(df[col].astype(str), dayfirst=dayfirst, errors='coerce')
+            # Only keep conversion if a reasonable fraction parsed
+            non_null = parsed.notna().sum()
+            if non_null > 0:
+                df[col] = parsed
+                converted.append(col)
+
+    return df, converted
+
+
 def write_dataframe_to_db(df: pd.DataFrame, table: str, schema: str, uri: str, replace: bool = False):
     engine = create_engine(uri)
     if_exists = "replace" if replace else "append"
@@ -83,6 +124,16 @@ def run_etl(csv_path: str, table: str, schema: str, db_uri: str, replace: bool =
     df_raw = pd.read_csv(csv)
     cleaning = load_cleaning_module()
     df_clean = cleaning.apply_all_cleaning(df_raw.copy())
+    # Drop PII name columns
+    df_clean, dropped_names = drop_name_columns(df_clean)
+    if dropped_names:
+        print(f"Dropped name columns: {dropped_names}")
+
+    # Standardize date columns into datetime dtype
+    df_clean, converted_dates = standardize_dates(df_clean)
+    if converted_dates:
+        print(f"Converted date columns: {converted_dates}")
+
     df_clean = sanitize_column_names(df_clean)
     write_dataframe_to_db(df_clean, table, schema, db_uri, replace=replace)
     return len(df_clean)
