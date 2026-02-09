@@ -22,7 +22,7 @@ export function SupersetWorkspace() {
 
   return (
     <Card className="w-full h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)]">
-      <CardContent className="p-0 h-full">
+      <CardContent className="flex-1 min-h-0 p-0">
         {url ? (
           <iframe
             title="Superset"
