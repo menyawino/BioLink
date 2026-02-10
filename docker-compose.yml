@@ -189,11 +189,12 @@ services:
     volumes:
       - superset_home:/app/superset_home
       - ./config/superset/superset_config.py:/app/superset_config.py:ro
-      - ./public/blank.png:/app/superset/static/assets/biolink-logo.png:ro
-      - ./public/blank.png:/app/superset/static/assets/images/superset-logo-horiz.png:ro
-      - ./public/blank.png:/app/superset/static/assets/images/superset.png:ro
-      - ./public/blank.png:/app/superset/static/assets/images/favicon.png:ro
-      - ./public/blank.png:/app/superset/static/assets/images/blank.png:ro
+      - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/biolink-logo.png:ro
+      - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/superset-logo-horiz.png:ro
+      - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/superset.png:ro
+      - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/favicon.png:ro
+      - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/custom_logo.png:ro
+      - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/custom_img_favicon.png:ro
     depends_on:
       - postgres
     command:

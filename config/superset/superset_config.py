@@ -24,10 +24,10 @@ CORS_OPTIONS = {
 
 # Branding
 APP_NAME = "BioLink Visualize"
-APP_ICON = "/static/assets/images/blank.png"
+APP_ICON = "/static/assets/images/custom_logo.png"
 APP_ICON_WIDTH = 32
 APP_ICON_HEIGHT = 32
-APP_FAVICON = "/static/assets/images/blank.png"
+APP_FAVICON = "/static/assets/images/custom_img_favicon.png"
 
 # Theme (Ant Design v5 tokens)
 ENABLE_UI_THEME_ADMINISTRATION = False
