@@ -158,3 +158,5 @@ Left ventricular EF,left_ventricular_ef
 Right ventricular EF,right_ventricular_ef
 Other MRI findings,other_mri_findings
 Complete?.9,complete__9
+current_city_lat,current_city_lat
+current_city_lon,current_city_lon
