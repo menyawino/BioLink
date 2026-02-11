@@ -1,162 +1,147 @@
 original,sanitized
-Record ID,record_id
-DNA ID,dna_id
-Date of Birth,date_of_birth
-Age,age
-Gender,gender
-Is there any chance you might be pregnant?,is_there_any_chance_you_might_be_pregnant
-Nationality,nationality
-Father's City of Origin,father_s_city_of_origin
-Father's City of Origin.1,father_s_city_of_origin_1
-City of Residence during childhood,city_of_residence_during_childhood
-Current City of Residence,current_city_of_residence
- Consent obtained? ,consent_obtained
- Consent Scan ,consent_scan
-Home Tel.,home_tel
-Home Tel. 2,home_tel__2
-Mobile Tel.,mobile_tel
-Mobile Tel. 2,mobile_tel__2
-Email,email
-Address,address
-Date of Enrolment,date_of_enrolment
-"We may contact you yearly to follow up on your health, do you accept?",we_may_contact_you_yearly_to_follow_up_on_your_health__do_
-Do you wish to be informed if we discover any abnormality was detected during the course of this study?,do_you_wish_to_be_informed_if_we_discover_any_abnormality_
-Complete?,complete
-Current/Recent Smoker (< 1 year),current_recent_smoker____1_year
-How long have you been smoking?,how_long_have_you_been_smoking
-How many cigarettes have you been smoking a day?,how_many_cigarettes_have_you_been_smoking_a_day
-How many years have you been smoking?,how_many_years_have_you_been_smoking
-How many cigarettes have you been smoking a day before you quit?,how_many_cigarettes_have_you_been_smoking_a_day_before_you
-Do you drink alcohol?,do_you_drink_alcohol
-Amount of Alcohol,amount_of_alcohol
-Do you take any medication currently?,do_you_take_any_medication_currently
-List these medications,list_these_medications
-Complete?.1,complete__1
-Volunteer under 18 year old ?,volunteer_under_18_year_old
-Non-Egyptian Parents?,non_egyptian_parents
-Known CVS disease,known_cvs_disease
-Known Collagen disease,known_collagen_disease
-Communication difficulties,communication_difficulties
-Unwilling to participate,unwilling_to_participate
-Pregnant female,pregnant_female
-Contraindications for MRI,contraindications_for_mri
-History of Sudden Death History,history_of_sudden_death_history
-History of Familial Cardiomyopathies,history_of_familial_cardiomyopathies
-History of Premature CAD,history_of_premature_cad
-Complete?.2,complete__2
-Offspring of Consanguinous Marriage,offspring_of_consanguinous_marriage
-Parents' occupation,parents__occupation
-Marital Status,marital_status
-Number of wives,number_of_wives
-Consanguinous Marriage,consanguinous_marriage
-Number of Children,number_of_children
-How many siblings you have?,how_many_siblings_you_have
-Are you one of a twin or triplet ?,are_you_one_of_a_twin_or_triplet
-"Do any of your own children, parents or siblings have any of the following health conditions (choice=Heart Disease)",do_any_of_your_own_children__parents_or_siblings_have_any_
-"Do any of your own children, parents or siblings have any of the following health conditions (choice=Stroke)",do_any_of_your_own_children__parents_or_siblings_have_any__1
-"Do any of your own children, parents or siblings have any of the following health conditions (choice=Diabetes)",do_any_of_your_own_children__parents_or_siblings_have_any__2
-"Do any of your own children, parents or siblings have any of the following health conditions (choice=High Blood Pressure)",do_any_of_your_own_children__parents_or_siblings_have_any__3
-"Do any of your own children, parents or siblings have any of the following health conditions (choice=Sudden unexpected death)",do_any_of_your_own_children__parents_or_siblings_have_any__4
-Who and what disease?,who_and_what_disease
-Does any other non-cardiac condition run in your family?,does_any_other_non_cardiac_condition_run_in_your_family
-What is this(these) condition(s)?,what_is_this_these__condition_s
-Where did you spend your childhood?,where_did_you_spend_your_childhood
-"Are your parents, grandparents or great grandparents from non-Egyptian origin?",are_your_parents__grandparents_or_great_grandparents_from_
-From where?,from_where
-Complete?.3,complete__3
-Heart Attack or Angina,heart_attack_or_angina
-High blood pressure,high_blood_pressure
-Dyslipidemia,dyslipidemia
-Rheumatic Fever,rheumatic_fever
-Anaemia,anaemia
-Lung Problems,lung_problems
-Kidney problems,kidney_problems
-Liver Problems,liver_problems
-Diabetes Mellitus,diabetes_mellitus
-Diabetes Therapy,diabetes_therapy
-Prior Heart Failure (previous Hx),prior_heart_failure__previous_hx
-Neurological problems,neurological_problems
-Muscloskeletal Problems,muscloskeletal_problems
-Autoimmune problems,autoimmune_problems
-Have you undergone an operation or any surgical procedures?,have_you_undergone_an_operation_or_any_surgical_procedures
-Procedure details,procedure_details
-Malignancy,malignancy
-Malignancy details,malignancy_details
-Complete?.4,complete__4
-Examination Date,examination_date
-Type,type
-Heart Rate,heart_rate
-Regularity,regularity
-BP,bp
-Height (cm),height__cm
-Weight (kg),weight__kg
-BMI,bmi
-BSA,bsa
-Fat Mass,fat_mass
-Fat-Free Mass,fat_free_mass
-Span (cm),span__cm
-JVP,jvp
-Abnormal physical structure,abnormal_physical_structure
-Physical abnormality details,physical_abnormality_details
-S1,s1
-S2,s2
-S3,s3
-S4,s4
-Other Findings,other_findings
-Complete?.5,complete__5
-HbA1c,hba1c
-Troponin I,troponin_i
-Complete?.6,complete__6
-Rate,rate
-Rhythm,rhythm
-P wave abnormality,p_wave_abnormality
-Specifiy P wave abnormality,specifiy_p_wave_abnormality
-PR interval,pr_interval
-QRS duration,qrs_duration
-QRS abnormalities,qrs_abnormalities
-Specifiy QRS abnormality,specifiy_qrs_abnormality
-ST segment abnormalities,st_segment_abnormalities
-Specifiy ST seg. abnormality,specifiy_st_seg__abnormality
-QTc interval,qtc_interval
-T wave abnormalities,t_wave_abnormalities
-Specifiy T wave abnormality,specifiy_t_wave_abnormality
-ECG_Conclusion,ecg_conclusion
-Notes,notes
-Complete?.7,complete__7
-Echo Date,echo_date
-Aortic Root,aortic_root
-Left Atrium,left_atrium
-Right Ventricle,right_ventricle
-LVEDD,lvedd
-LVESD,lvesd
-IVSd,ivsd
-IVSs,ivss
-LVPWd,lvpwd
-LVPWs,lvpws
-LVM,lvm
-EF,ef
-FS,fs
-Subaortic Membrane,subaortic_membrane
-Mitral Regurge,mitral_regurge
-Mitral Stenosis,mitral_stenosis
-Tricuspid Regurge,tricuspid_regurge
-Tricuspid Stenosis,tricuspid_stenosis
-Aortic Regurge,aortic_regurge
-Aortic Stenosis,aortic_stenosis
-Pulmonary Regurge,pulmonary_regurge
-Pulmonary stenosis,pulmonary_stenosis
-Other,other
-Complete?.8,complete__8
-MRI,mri
-Heart Rate during MRI,heart_rate_during_mri
-MRI Date,mri_date
-Left ventricular ejection fraction,left_ventricular_ejection_fraction
-Left ventricular end diastolic volume,left_ventricular_end_diastolic_volume
-Left ventricular end systolic volume,left_ventricular_end_systolic_volume
-Left ventricular mass,left_ventricular_mass
-Left ventricular EF,left_ventricular_ef
-Right ventricular EF,right_ventricular_ef
-Other MRI findings,other_mri_findings
-Complete?.9,complete__9
+dna_id,dna_id
+date_of_birth,date_of_birth
+age,age
+gender,gender
+is_there_any_chance_you_might_be_pregnant_,is_there_any_chance_you_might_be_pregnant
+nationality,nationality
+father_s_city_of_origin,father_s_city_of_origin
+father_s_city_of_origin_1,father_s_city_of_origin_1
+city_of_residence_during_childhood,city_of_residence_during_childhood
+current_city_of_residence,current_city_of_residence
+consent_obtained_,consent_obtained
+date_of_enrolment,date_of_enrolment
+complete_,complete
+current_recent_smoker_1_year_,current_recent_smoker_1_year
+how_long_have_you_been_smoking_,how_long_have_you_been_smoking
+how_many_cigarettes_have_you_been_smoking_a_day_,how_many_cigarettes_have_you_been_smoking_a_day
+do_you_drink_alcohol_,do_you_drink_alcohol
+do_you_take_any_medication_currently_,do_you_take_any_medication_currently
+complete_1,complete_1
+volunteer_under_18_year_old_,volunteer_under_18_year_old
+non_egyptian_parents_,non_egyptian_parents
+known_cvs_disease,known_cvs_disease
+known_collagen_disease,known_collagen_disease
+communication_difficulties,communication_difficulties
+unwilling_to_participate,unwilling_to_participate
+pregnant_female,pregnant_female
+contraindications_for_mri,contraindications_for_mri
+history_of_sudden_death_history,history_of_sudden_death_history
+history_of_familial_cardiomyopathies,history_of_familial_cardiomyopathies
+history_of_premature_cad,history_of_premature_cad
+complete_2,complete_2
+offspring_of_consanguinous_marriage,offspring_of_consanguinous_marriage
+parents_occupation,parents_occupation
+marital_status,marital_status
+consanguinous_marriage,consanguinous_marriage
+number_of_children,number_of_children
+how_many_siblings_you_have_,how_many_siblings_you_have
+are_you_one_of_a_twin_or_triplet_,are_you_one_of_a_twin_or_triplet
+who_and_what_disease_,who_and_what_disease
+does_any_other_non_cardiac_condition_run_in_your_family_,does_any_other_non_cardiac_condition_run_in_your_family
+what_is_this_these_condition_s_,what_is_this_these_condition_s
+where_did_you_spend_your_childhood_,where_did_you_spend_your_childhood
+complete_3,complete_3
+heart_attack_or_angina,heart_attack_or_angina
+high_blood_pressure,high_blood_pressure
+dyslipidemia,dyslipidemia
+rheumatic_fever,rheumatic_fever
+anaemia,anaemia
+lung_problems,lung_problems
+kidney_problems,kidney_problems
+liver_problems,liver_problems
+diabetes_mellitus,diabetes_mellitus
+prior_heart_failure_previous_hx_,prior_heart_failure_previous_hx
+neurological_problems,neurological_problems
+muscloskeletal_problems,muscloskeletal_problems
+autoimmune_problems,autoimmune_problems
+have_you_undergone_an_operation_or_any_surgical_procedures_,have_you_undergone_an_operation_or_any_surgical_procedures
+procedure_details,procedure_details
+malignancy,malignancy
+complete_4,complete_4
+examination_date,examination_date
+type,type
+heart_rate,heart_rate
+regularity,regularity
+bp,bp
+height_cm_,height_cm
+weight_kg_,weight_kg
+bmi,bmi
+bsa,bsa
+jvp,jvp
+abnormal_physical_structure,abnormal_physical_structure
+s1,s1
+s2,s2
+s3,s3
+s4,s4
+complete_5,complete_5
+hba1c,hba1c
+troponin_i,troponin_i
+complete_6,complete_6
+rate,rate
+rhythm,rhythm
+p_wave_abnormality,p_wave_abnormality
+pr_interval,pr_interval
+qrs_duration,qrs_duration
+qrs_abnormalities,qrs_abnormalities
+st_segment_abnormalities,st_segment_abnormalities
+qtc_interval,qtc_interval
+t_wave_abnormalities,t_wave_abnormalities
+ecg_conclusion,ecg_conclusion
+complete_7,complete_7
+echo_date,echo_date
+aortic_root,aortic_root
+left_atrium,left_atrium
+right_ventricle,right_ventricle
+lvedd,lvedd
+lvesd,lvesd
+ivsd,ivsd
+ivss,ivss
+lvpwd,lvpwd
+lvpws,lvpws
+ef,ef
+fs,fs
+subaortic_membrane,subaortic_membrane
+mitral_regurge,mitral_regurge
+mitral_stenosis,mitral_stenosis
+tricuspid_regurge,tricuspid_regurge
+tricuspid_stenosis,tricuspid_stenosis
+aortic_regurge,aortic_regurge
+aortic_stenosis,aortic_stenosis
+pulmonary_regurge,pulmonary_regurge
+pulmonary_stenosis,pulmonary_stenosis
+complete_8,complete_8
+mri,mri
+heart_rate_during_mri,heart_rate_during_mri
+mri_date,mri_date
+left_ventricular_ejection_fraction,left_ventricular_ejection_fraction
+left_ventricular_end_diastolic_volume,left_ventricular_end_diastolic_volume
+left_ventricular_end_systolic_volume,left_ventricular_end_systolic_volume
+left_ventricular_mass,left_ventricular_mass
+right_ventricular_ef,right_ventricular_ef
+complete_9,complete_9
+ever_smoked,ever_smoked
+smoking_years,smoking_years
+current_city_category,current_city_category
+childhood_city_category,childhood_city_category
+migration_pattern,migration_pattern
+comorbidity,comorbidity
+sysbp,sysbp
+diasbp,diasbp
+ecg_rate_clean,ecg_rate_clean
+missing_ecg,missing_ecg
+missing_echo,missing_echo
+missing_mri,missing_mri
+missing_ecg_echo_mri,missing_ecg_echo_mri
+bp_outlier,bp_outlier
+hba1c_outlier,hba1c_outlier
+troponin_i_outlier,troponin_i_outlier
+heart_rate_outlier,heart_rate_outlier
+height_cm__outlier,height_cm__outlier
+weight_kg__outlier,weight_kg__outlier
+bmi_outlier,bmi_outlier
+bsa_outlier,bsa_outlier
+sysbp_outlier,sysbp_outlier
+diasbp_outlier,diasbp_outlier
 current_city_lat,current_city_lat
 current_city_lon,current_city_lon

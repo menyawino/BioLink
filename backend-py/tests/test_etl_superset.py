@@ -1,18 +1,31 @@
-import asyncio
 import os
 import pytest
-from biolink_etl.etl import run_etl
+from app.services.etl_protocol_client import run_pipeline_request
 
 
 @pytest.mark.integration
-def test_run_etl_and_superset_registration(tmp_path):
-    """Run a short ETL (nrows=5) and confirm Superset dataset exists.
+def test_run_etl_protocol_small_sample():
+    """Run a short ETL via governed protocol (nrows=5).
 
-    This test requires Superset and the project's DB to be available (same env used by the app).
-    If Superset is not reachable the test is skipped.
+    This test requires the project's DB to be available.
     """
-    # Use small sample
-    csv = os.path.join(os.getcwd(), "db", "090925_EHVol_Data.csv")
-    # Run ETL for 5 rows to speed up test
-    count = run_etl(csv, table="EHVOL", schema="public", db_uri=None, replace=True, nrows=5)
-    assert count == 5 or count == 0
+    csv = os.path.join(os.getcwd(), "db", "EHVOL_50.csv")
+    payload = {
+        "version": "1.0",
+        "action": "run_pipeline",
+        "request_id": "test-1",
+        "payload": {
+            "csv": csv,
+            "table": "ehvol_50_protocol_test",
+            "schema": "public",
+            "nrows": 5,
+            "replace": True,
+            "skip_superset": True,
+            "skip_iso_mapping": True,
+            "skip_refresh": True,
+        },
+    }
+    response = run_pipeline_request(payload)
+    assert response.get("ok") is True
+    result = response.get("result") or {}
+    assert result.get("etl", {}).get("rows_written") in (0, 5)
