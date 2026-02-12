@@ -127,6 +127,7 @@ services:
       - kafka
       - connect
       - superset
+      - etl
     ports:
       - "3001:3001"
     volumes:
@@ -210,6 +211,34 @@ services:
           --password "$${SUPERSET_ADMIN_PASSWORD}" || true && \
         superset init && \
         superset run -h 0.0.0.0 -p 8088
+
+  etl:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.etl
+    container_name: biolink-etl
+    environment:
+      DATABASE_URL: postgresql+psycopg2://biolink:biolink_secret@postgres:5432/biolink
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: biolink
+      DB_USER: biolink
+      DB_PASSWORD: biolink_secret
+      DB_SCHEMA: public
+      SUPERSET_URL: http://superset:8088
+      SUPERSET_PUBLIC_URL: http://superset:8088
+      SUPERSET_ADMIN_USER: admin
+      SUPERSET_ADMIN_PASSWORD: admin
+      SUPERSET_DATABASE_NAME: BioLink
+      SUPERSET_DATABASE_URI: postgresql://biolink:biolink_secret@postgres:5432/biolink
+      OPENMETADATA_URL: ${OPENMETADATA_URL:-}
+      OPENMETADATA_JWT: ${OPENMETADATA_JWT:-}
+      OPENMETADATA_LINEAGE_ENDPOINT: ${OPENMETADATA_LINEAGE_ENDPOINT:-}
+    ports:
+      - "8090:8090"
+    depends_on:
+      - postgres
+      - superset
 
 volumes:
   postgres_data:

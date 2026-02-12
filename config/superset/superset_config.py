@@ -5,6 +5,11 @@ FEATURE_FLAGS = {
     "EMBEDDED_SUPERSET": True
 }
 
+# Enable CSV upload UI/handlers in Superset
+FEATURE_FLAGS.update({
+    "CSV_UPLOAD": True,
+})
+
 # Basic security settings for local/dev
 SECRET_KEY = os.getenv("SUPERSET_SECRET_KEY", "biolink-superset-secret")
 TALISMAN_ENABLED = False
@@ -72,3 +77,13 @@ THEME_DARK = {
         "fontFamily": "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif",
     },
 }
+
+# File upload settings
+UPLOAD_FOLDER = os.getenv("SUPERSET_UPLOAD_FOLDER", "/tmp/superset_uploads")
+MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
+
+try:
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+except Exception:
+    # best-effort directory creation; container may handle this
+    pass

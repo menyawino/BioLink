@@ -95,6 +95,10 @@ MYF BioLink is a sophisticated registry management system that provides:
 - `patients`: Denormalized source of truth powering clinical and feature-heavy queries such as patient detail, cohort analytics, and complex filters.
 - `EHVOL`: Curated view exposed to list/search endpoints and availability dashboards; keep queries here focused on counts, filters, and data-availability metrics (completeness, imaging/genomics flags).
 
+### Superset dataset naming (CSV stem)
+
+When publishing data to Superset via the ETL orchestrator, the dataset name is derived from the ingested CSV filename (without `.csv`, lowercased and sanitized). Example: `db/EHVol_Full.csv` publishes a Superset dataset/view named `ehvol_full`.
+
 The application keeps the split explicit: use `patients` for clinical/feature-rich data and most analytic calculations, while `EHVOL` supports the faster list/search availability surfaces.
 
 The backend auto-bootstraps these objects at startup.
@@ -175,6 +179,28 @@ docker compose up -d --build
 Frontend: http://localhost:3000
 Backend: http://localhost:3001
 Ollama: http://localhost:11434
+NiFi: https://localhost:8443/nifi
+
+### NiFi Ingestion (Local)
+
+NiFi reads CSVs from the repo `db/` folder (mounted at `/data/db` inside the container) and can load them into Postgres.
+Login (local): `nifi_admin` / `nifi_admin_12345`
+Recommended processors:
+- `GetFile` (Input Directory: `/data/db`)
+- `UpdateAttribute` (set `table` to `ehvol_full`)
+- `PutDatabaseRecord` (DBCPConnectionPool pointing to `postgres:5432`)
+
+### ETL (dbt + Superset)
+
+To publish the dataset to Superset using the CSV filename as the dataset name (and keep all CSV columns):
+
+```bash
+python3 biolink_etl/pipeline.py \
+	--table ehvol_full \
+	--schema public \
+	--csv db/EHVol_Full.csv \
+	--dbt-select ehvol_full
+```
 
 **Stop the stack:**
 ```bash

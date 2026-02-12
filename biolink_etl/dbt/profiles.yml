@@ -1,0 +1,12 @@
+biolink_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DB_HOST', 'postgres') }}"
+      port: "{{ env_var('DB_PORT', '5432') | int }}"
+      user: "{{ env_var('DB_USER', 'biolink') }}"
+      password: "{{ env_var('DB_PASSWORD', 'biolink_secret') }}"
+      dbname: "{{ env_var('DB_NAME', 'biolink') }}"
+      schema: "{{ env_var('DB_SCHEMA', 'public') }}"
+      threads: 4

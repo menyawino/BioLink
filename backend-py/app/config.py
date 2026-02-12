@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     superset_default_schema: str = "public"
     superset_default_table: str = "EHVOL"
 
+    # ETL service
+    etl_service_url: str = "http://etl:8090"
+
     @field_validator("database_url")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:

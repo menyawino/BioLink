@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY biolink_etl ./biolink_etl
+COPY db ./db
+
+RUN pip install --no-cache-dir -r biolink_etl/requirements.txt
+
+EXPOSE 8090
+
+CMD ["python", "-m", "biolink_etl.pipeline", "--protocol-http", "--host", "0.0.0.0", "--port", "8090"]

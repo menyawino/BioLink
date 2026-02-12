@@ -1,0 +1,4 @@
+requests>=2.31
+dlt[postgres]>=1.0
+dbt-core>=1.7
+dbt-postgres>=1.7
