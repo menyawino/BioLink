@@ -57,7 +57,7 @@ def to_int(value):
 def load_full_data():
     """Load full EHVol CSV into the patients table."""
     try:
-        df = pd.read_csv('/app/db/100925_Cleaned_EHVol_Data_STANDARDIZED.csv')
+        df = pd.read_csv("/app/db/100925_Cleaned_EHVol_Data_STANDARDIZED.csv")
         logger.info(f"Loaded {len(df)} records from full CSV")
 
         engine = sa.create_engine(settings.database_url)
@@ -69,43 +69,55 @@ def load_full_data():
         records = []
         for _, row in df.iterrows():
             record = {
-                'dna_id': str(row['dna_id']),
-                'age': to_int(row.get('age')),
-                'gender': row.get('gender'),
-                'nationality': row.get('nationality'),
-                'current_city': row.get('current_city_of_residence'),
-                'enrollment_date': pd.to_datetime(row.get('date_of_enrolment')).date() if pd.notna(row.get('date_of_enrolment')) else None,
-                'heart_rate': to_float(row.get('heart_rate')),
-                'height_cm': to_float(row.get('height_cm_')),
-                'weight_kg': to_float(row.get('weight_kg_')),
-                'bmi': to_float(row.get('bmi')),
-                'bsa': to_float(row.get('bsa')),
-                'hba1c': to_float(row.get('hba1c')),
-                'troponin_i': to_float(row.get('troponin_i')),
-                'echo_ef': to_float(row.get('ef')),
-                'mri_ef': to_float(row.get('left_ventricular_ejection_fraction')),
-                'rv_ef': to_float(row.get('right_ventricular_ef')),
-                'current_smoker': to_bool(row.get('current_recent_smoker_1_year_')),
-                'ever_smoked': to_bool(row.get('ever_smoked')),
-                'smoking_years': to_float(row.get('smoking_years')),
-                'cigarettes_per_day': to_int(row.get('how_many_cigarettes_have_you_been_smoking_a_day_')),
-                'drinks_alcohol': to_bool(row.get('do_you_drink_alcohol_')),
-                'takes_medication': to_bool(row.get('do_you_take_any_medication_currently_')),
-                'diabetes_mellitus': to_bool(row.get('diabetes_mellitus')),
-                'high_blood_pressure': to_bool(row.get('high_blood_pressure')),
-                'dyslipidemia': to_bool(row.get('dyslipidemia')),
-                'heart_attack_or_angina': to_bool(row.get('heart_attack_or_angina')),
-                'prior_heart_failure': to_bool(row.get('prior_heart_failure_previous_hx_')),
-                'history_sudden_death': to_bool(row.get('history_of_sudden_death_history')),
-                'history_premature_cad': to_bool(row.get('history_of_premature_cad')),
+                "dna_id": str(row["dna_id"]),
+                "age": to_int(row.get("age")),
+                "gender": row.get("gender"),
+                "nationality": row.get("nationality"),
+                "current_city": row.get("current_city_of_residence"),
+                "enrollment_date": (
+                    pd.to_datetime(row.get("date_of_enrolment")).date()
+                    if pd.notna(row.get("date_of_enrolment"))
+                    else None
+                ),
+                "heart_rate": to_float(row.get("heart_rate")),
+                "height_cm": to_float(row.get("height_cm_")),
+                "weight_kg": to_float(row.get("weight_kg_")),
+                "bmi": to_float(row.get("bmi")),
+                "bsa": to_float(row.get("bsa")),
+                "hba1c": to_float(row.get("hba1c")),
+                "troponin_i": to_float(row.get("troponin_i")),
+                "echo_ef": to_float(row.get("ef")),
+                "mri_ef": to_float(row.get("left_ventricular_ejection_fraction")),
+                "rv_ef": to_float(row.get("right_ventricular_ef")),
+                "current_smoker": to_bool(row.get("current_recent_smoker_1_year_")),
+                "ever_smoked": to_bool(row.get("ever_smoked")),
+                "smoking_years": to_float(row.get("smoking_years")),
+                "cigarettes_per_day": to_int(
+                    row.get("how_many_cigarettes_have_you_been_smoking_a_day_")
+                ),
+                "drinks_alcohol": to_bool(row.get("do_you_drink_alcohol_")),
+                "takes_medication": to_bool(
+                    row.get("do_you_take_any_medication_currently_")
+                ),
+                "diabetes_mellitus": to_bool(row.get("diabetes_mellitus")),
+                "high_blood_pressure": to_bool(row.get("high_blood_pressure")),
+                "dyslipidemia": to_bool(row.get("dyslipidemia")),
+                "heart_attack_or_angina": to_bool(row.get("heart_attack_or_angina")),
+                "prior_heart_failure": to_bool(
+                    row.get("prior_heart_failure_previous_hx_")
+                ),
+                "history_sudden_death": to_bool(
+                    row.get("history_of_sudden_death_history")
+                ),
+                "history_premature_cad": to_bool(row.get("history_of_premature_cad")),
             }
 
-            bp_str = row.get('bp')
+            bp_str = row.get("bp")
             if pd.notna(bp_str) and isinstance(bp_str, str):
                 try:
-                    systolic, diastolic = bp_str.split('/')
-                    record['systolic_bp'] = to_float(systolic.strip())
-                    record['diastolic_bp'] = to_float(diastolic.strip())
+                    systolic, diastolic = bp_str.split("/")
+                    record["systolic_bp"] = to_float(systolic.strip())
+                    record["diastolic_bp"] = to_float(diastolic.strip())
                 except Exception:
                     pass
 
@@ -113,8 +125,8 @@ def load_full_data():
 
         with engine.begin() as conn:
             for record in records:
-                columns = ', '.join(record.keys())
-                placeholders = ', '.join([f':{k}' for k in record.keys()])
+                columns = ", ".join(record.keys())
+                placeholders = ", ".join([f":{k}" for k in record.keys()])
                 sql = f"INSERT INTO patients ({columns}) VALUES ({placeholders})"
                 conn.execute(text(sql), record)
 

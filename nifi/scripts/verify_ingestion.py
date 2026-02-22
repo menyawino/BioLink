@@ -44,18 +44,20 @@ def verify(host="localhost", port=5432, db="biolink", user="biolink", password="
     for table in ["bhs_participants", "ehvol_participants"]:
         if table in tables:
             cur.execute(f"SELECT COUNT(*) as cnt FROM {table}")
-            cnt = cur.fetchone()["cnt"]
+            row = cur.fetchone() or {"cnt": 0}
+            cnt = row["cnt"]
             print(f"  {table}: {cnt:,} rows")
         else:
             print(f"  {table}: TABLE MISSING")
 
-    # 3. Unified view
+    # 3. Combined count (BHS + EHVol)
     try:
-        cur.execute("SELECT COUNT(*) as cnt FROM unified_participants")
-        cnt = cur.fetchone()["cnt"]
-        print(f"  unified_participants (view): {cnt:,} rows")
+        cur.execute("SELECT (SELECT COUNT(*) FROM bhs_participants) + (SELECT COUNT(*) FROM ehvol_participants) as cnt")
+        row = cur.fetchone() or {"cnt": 0}
+        cnt = row["cnt"]
+        print(f"  total participants (bhs + ehvol): {cnt:,} rows")
     except Exception as e:
-        print(f"  unified_participants (view): ERROR - {e}")
+        print(f"  total participants (bhs + ehvol): ERROR - {e}")
         conn.rollback()
 
     # 4. Gender distribution
@@ -69,12 +71,16 @@ def verify(host="localhost", port=5432, db="biolink", user="biolink", password="
         for r in rows:
             print(f"    {r['gender'] or 'NULL'}: {r['cnt']:,}")
 
-    # 5. City distribution (top 10)
-    print("\n[Quality] Top 10 cities (unified):")
+    # 5. City distribution (top 10 across BHS + EHVol)
+    print("\n[Quality] Top 10 cities (bhs + ehvol):")
     try:
         cur.execute("""
             SELECT current_city, COUNT(*) as cnt
-            FROM unified_participants
+            FROM (
+                SELECT current_city FROM bhs_participants
+                UNION ALL
+                SELECT current_city FROM ehvol_participants
+            ) p
             WHERE current_city IS NOT NULL
             GROUP BY current_city
             ORDER BY cnt DESC
@@ -101,7 +107,14 @@ def verify(host="localhost", port=5432, db="biolink", user="biolink", password="
                 COUNT(*) FILTER (WHERE data_quality_score < 0.5) as low_quality
             FROM {table}
         """)
-        r = cur.fetchone()
+        r = cur.fetchone() or {
+            "avg_score": 0,
+            "min_score": 0,
+            "max_score": 0,
+            "high_quality": 0,
+            "medium_quality": 0,
+            "low_quality": 0,
+        }
         print(f"  {table}:")
         print(f"    Score: avg={r['avg_score']}, min={r['min_score']}, max={r['max_score']}")
         print(f"    High (>=0.8): {r['high_quality']}, Medium (0.5-0.8): {r['medium_quality']}, Low (<0.5): {r['low_quality']}")
@@ -117,7 +130,8 @@ def verify(host="localhost", port=5432, db="biolink", user="biolink", password="
         if table not in tables:
             continue
         cur.execute(f"SELECT COUNT(*) as total FROM {table}")
-        total = cur.fetchone()["total"]
+        total_row = cur.fetchone() or {"total": 0}
+        total = total_row["total"]
         if total == 0:
             print(f"  {table}: EMPTY")
             continue
@@ -125,7 +139,8 @@ def verify(host="localhost", port=5432, db="biolink", user="biolink", password="
         for field in key_fields:
             try:
                 cur.execute(f"SELECT COUNT({field}) as cnt FROM {table}")
-                cnt = cur.fetchone()["cnt"]
+                field_row = cur.fetchone() or {"cnt": 0}
+                cnt = field_row["cnt"]
                 pct = (cnt / total * 100) if total > 0 else 0
                 print(f"    {field}: {cnt}/{total} ({pct:.0f}%)")
             except Exception:

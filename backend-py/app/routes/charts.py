@@ -66,11 +66,15 @@ def _validate_field(field: str) -> str:
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field}")
     return field
 
+
 def _validate_aggregation(aggregation: str) -> str:
     allowed = {"count", "avg", "sum", "min", "max"}
     if aggregation not in allowed:
-        raise HTTPException(status_code=400, detail=f"Unsupported aggregation: {aggregation}")
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported aggregation: {aggregation}"
+        )
     return aggregation
+
 
 def _parse_filters(filters: str | None) -> list[dict]:
     if not filters:
@@ -89,7 +93,9 @@ def _parse_filters(filters: str | None) -> list[dict]:
         field = _validate_field(str(item.get("field", "")))
         operator = str(item.get("operator", "=")).strip()
         if operator not in {"=", "!="}:
-            raise HTTPException(status_code=400, detail=f"Unsupported filter operator: {operator}")
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported filter operator: {operator}"
+            )
         value = item.get("value")
         parsed.append({"field": field, "operator": operator, "value": value})
     return parsed
@@ -100,7 +106,7 @@ def _build_base_where(
     y_axis: str | None,
     group_by: str | None,
     aggregation: str,
-    filters: list[dict]
+    filters: list[dict],
 ) -> tuple[str, dict]:
     clauses = [f"{x_axis} IS NOT NULL"]
     params: dict = {}
@@ -114,12 +120,13 @@ def _build_base_where(
         params[param_key] = flt.get("value")
     return " AND ".join(clauses), params
 
+
 @router.get("/correlation")
 async def get_correlation(
     field1: str = Query(..., description="First field for correlation"),
     field2: str = Query(..., description="Second field for correlation"),
     filters: str | None = Query(None, description="JSON-encoded filters"),
-    db = Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get correlation data between two numeric fields"""
     try:
@@ -139,11 +146,8 @@ async def get_correlation(
         """)
 
         result = db.execute(stmt, params).mappings().fetchall()
-        
-        return {
-            "success": True,
-            "data": [dict(row) for row in result]
-        }
+
+        return {"success": True, "data": [dict(row) for row in result]}
     except Exception as e:
         logger.error(f"Error fetching correlation data: {e}")
         return {"success": False, "error": str(e)}
@@ -156,7 +160,7 @@ async def get_chart_data(
     groupBy: str = Query(None, alias="groupBy"),
     aggregation: str = Query("count"),
     filters: str | None = Query(None, description="JSON-encoded filters"),
-    db = Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get chart data with flexible parameters"""
     try:
@@ -167,7 +171,9 @@ async def get_chart_data(
             groupBy = _validate_field(groupBy)
 
         parsed_filters = _parse_filters(filters)
-        where_sql, params = _build_base_where(xAxis, yAxis, groupBy, aggregation, parsed_filters)
+        where_sql, params = _build_base_where(
+            xAxis, yAxis, groupBy, aggregation, parsed_filters
+        )
 
         # For simple aggregations, use EHVOL view
         if aggregation == "count" and groupBy:
@@ -197,13 +203,10 @@ async def get_chart_data(
                 ORDER BY value DESC
                 LIMIT 20
             """)
-        
+
         result = db.execute(stmt, params).mappings().fetchall()
-        
-        return {
-            "success": True,
-            "data": [dict(row) for row in result]
-        }
+
+        return {"success": True, "data": [dict(row) for row in result]}
     except Exception as e:
         logger.error(f"Error fetching chart data: {e}")
         return {"success": False, "error": str(e)}
@@ -218,7 +221,7 @@ async def get_chart_series(
     bins: int = Query(8, ge=2, le=50),
     limit: int = Query(60, ge=5, le=200),
     filters: str | None = Query(None, description="JSON-encoded filters"),
-    db = Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get chart series data for rich visualizations"""
     try:
@@ -228,15 +231,21 @@ async def get_chart_series(
         aggregation = _validate_aggregation(aggregation)
 
         if aggregation != "count" and not y_axis:
-            raise HTTPException(status_code=400, detail="yAxis is required for aggregation")
+            raise HTTPException(
+                status_code=400, detail="yAxis is required for aggregation"
+            )
 
         parsed_filters = _parse_filters(filters)
-        base_where, params = _build_base_where(x_axis, y_axis, group_by, aggregation, parsed_filters)
+        base_where, params = _build_base_where(
+            x_axis, y_axis, group_by, aggregation, parsed_filters
+        )
         group_select = f", {group_by} as series" if group_by else ""
         group_group = f", {group_by}" if group_by else ""
 
         if x_axis in NUMERIC_FIELDS:
-            y_value_select = f", {y_axis} as y_value" if aggregation != "count" and y_axis else ""
+            y_value_select = (
+                f", {y_axis} as y_value" if aggregation != "count" and y_axis else ""
+            )
             if aggregation == "count":
                 agg_select = "COUNT(*)"
             else:
@@ -289,11 +298,13 @@ async def get_chart_series(
                     end = min_x + bin_index * bin_size
                     label = f"{round(start, 2)}–{round(end, 2)}"
 
-                rows.append({
-                    "label": label,
-                    "value": float(row.get("value") or 0),
-                    "series": row.get("series") if group_by else None,
-                })
+                rows.append(
+                    {
+                        "label": label,
+                        "value": float(row.get("value") or 0),
+                        "series": row.get("series") if group_by else None,
+                    }
+                )
 
             return {"success": True, "data": rows}
 
@@ -341,33 +352,53 @@ async def get_chart_fields():
                 {"name": "age", "label": "Age", "category": "Demographics"},
                 {"name": "bmi", "label": "BMI", "category": "Physical"},
                 {"name": "systolic_bp", "label": "Systolic BP", "category": "Physical"},
-                {"name": "diastolic_bp", "label": "Diastolic BP", "category": "Physical"},
+                {
+                    "name": "diastolic_bp",
+                    "label": "Diastolic BP",
+                    "category": "Physical",
+                },
                 {"name": "heart_rate", "label": "Heart Rate", "category": "Physical"},
                 {"name": "hba1c", "label": "HbA1c", "category": "Labs"},
                 {"name": "troponin_i", "label": "Troponin I", "category": "Labs"},
                 {"name": "ef", "label": "Echo EF", "category": "Imaging"},
-                {"name": "lv_ejection_fraction", "label": "LV EF (MRI)", "category": "Imaging"},
+                {
+                    "name": "lv_ejection_fraction",
+                    "label": "LV EF (MRI)",
+                    "category": "Imaging",
+                },
                 {"name": "lv_mass", "label": "LV Mass", "category": "Imaging"},
             ],
             "categorical": [
                 {"name": "gender", "label": "Gender", "category": "Demographics"},
-                {"name": "nationality", "label": "Nationality", "category": "Demographics"},
-                {"name": "current_city_category", "label": "City Category", "category": "Geographic"},
-                {"name": "migration_pattern", "label": "Migration Pattern", "category": "Geographic"},
-            ]
-        }
+                {
+                    "name": "nationality",
+                    "label": "Nationality",
+                    "category": "Demographics",
+                },
+                {
+                    "name": "current_city_category",
+                    "label": "City Category",
+                    "category": "Geographic",
+                },
+                {
+                    "name": "migration_pattern",
+                    "label": "Migration Pattern",
+                    "category": "Geographic",
+                },
+            ],
+        },
     }
 
 
 @router.post("/generate")
-async def generate_chart(config: dict, db = Depends(get_db)):
+async def generate_chart(config: dict, db=Depends(get_db)):
     """Generate chart data based on configuration"""
     try:
         chart_type = config.get("type", "bar")
         x_field = config.get("xField", "age")
         y_field = config.get("yField")
-        group_by = config.get("groupBy")
-        
+        _group_by = config.get("groupBy")
+
         if chart_type == "scatter" and y_field:
             stmt = text(f"""
                 SELECT {x_field} as x, {y_field} as y
@@ -392,13 +423,10 @@ async def generate_chart(config: dict, db = Depends(get_db)):
                 GROUP BY {x_field}
                 ORDER BY {x_field}
             """)
-        
+
         result = db.execute(stmt).mappings().fetchall()
-        
-        return {
-            "success": True,
-            "data": [dict(row) for row in result]
-        }
+
+        return {"success": True, "data": [dict(row) for row in result]}
     except Exception as e:
         logger.error(f"Error generating chart: {e}")
         return {"success": False, "error": str(e)}

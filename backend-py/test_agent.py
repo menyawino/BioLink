@@ -34,7 +34,7 @@ def mock_llm():
 @pytest.fixture
 def agent(mock_db, mock_llm):
     """Create agent with mocks"""
-    with patch('app.services.langgraph_agent.ChatOllama', return_value=mock_llm):
+    with patch("app.services.langgraph_agent.ChatOllama", return_value=mock_llm):
         agent = SQLAgentService(
             "postgresql://test:test@localhost/test",
             db=mock_db,
@@ -46,7 +46,9 @@ def agent(mock_db, mock_llm):
 
 def test_query_router(agent, mock_llm):
     """Test query routing"""
-    mock_llm.invoke.return_value.content = '{"needs_sql": true, "needs_viz": false, "intent": "count patients"}'
+    mock_llm.invoke.return_value.content = (
+        '{"needs_sql": true, "needs_viz": false, "intent": "count patients"}'
+    )
 
     state = {"messages": [{"role": "user", "content": "How many patients?"}]}
     result = agent.query_router(state)

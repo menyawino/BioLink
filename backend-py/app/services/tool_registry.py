@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _get_engine():
     from app.database import engine
+
     return engine
 
 
@@ -45,7 +46,7 @@ class ToolRegistry:
             table=args.get("table", "ehvol_full"),
             schema=args.get("schema", "public"),
             dataset_name=args.get("dataset_name"),
-            dbt_select=args.get("dbt_select")
+            dbt_select=args.get("dbt_select"),
         )
         return trigger_etl_pipeline(params)
 
@@ -78,7 +79,9 @@ class ToolRegistry:
         engine = self._engine or _get_engine()
         sql = args.get("sql", "")
         limit = int(args.get("limit", self._max_limit))
-        safe_sql = self._sanitize_select_sql(self._rewrite_sql_columns(sql, engine), limit)
+        safe_sql = self._sanitize_select_sql(
+            self._rewrite_sql_columns(sql, engine), limit
+        )
 
         try:
             with engine.connect() as conn:
@@ -106,7 +109,9 @@ class ToolRegistry:
 
         if "search" in args and args["search"]:
             search_term = f"%{args['search']}%"
-            conditions.append("(LOWER(name) LIKE :search OR CAST(dna_id AS TEXT) LIKE :search)")
+            conditions.append(
+                "(LOWER(name) LIKE :search OR CAST(dna_id AS TEXT) LIKE :search)"
+            )
             params["search"] = search_term.lower()
 
         if "gender" in args and args["gender"]:
@@ -165,7 +170,9 @@ class ToolRegistry:
             params["has_diabetes"] = bool(args["has_diabetes"])
 
         if args.get("has_hypertension") is not None:
-            conditions.append("COALESCE(high_blood_pressure, false) = :has_hypertension")
+            conditions.append(
+                "COALESCE(high_blood_pressure, false) = :has_hypertension"
+            )
             params["has_hypertension"] = bool(args["has_hypertension"])
 
         if args.get("has_echo") is True:
@@ -176,20 +183,28 @@ class ToolRegistry:
 
         if args.get("has_imaging") is not None:
             # Any imaging modality present (echo OR mri) matches when True; both absent when False
-            conditions.append("((mri_ef IS NOT NULL OR echo_ef IS NOT NULL) = :has_imaging)")
+            conditions.append(
+                "((mri_ef IS NOT NULL OR echo_ef IS NOT NULL) = :has_imaging)"
+            )
             params["has_imaging"] = bool(args["has_imaging"])
 
         if args.get("has_labs") is not None:
-            conditions.append("((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = :has_labs)")
+            conditions.append(
+                "((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = :has_labs)"
+            )
             params["has_labs"] = bool(args["has_labs"])
 
         if args.get("has_family_history") is not None:
-            conditions.append("((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = :has_family_history)")
+            conditions.append(
+                "((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = :has_family_history)"
+            )
             params["has_family_history"] = bool(args["has_family_history"])
 
         if args.get("region"):
             # Match region text against nationality or city/category (case-insensitive)
-            conditions.append("(LOWER(nationality) LIKE :region OR LOWER(current_city_category) LIKE :region OR LOWER(current_city) LIKE :region)")
+            conditions.append(
+                "(LOWER(nationality) LIKE :region OR LOWER(current_city_category) LIKE :region OR LOWER(current_city) LIKE :region)"
+            )
             params["region"] = f"%{args.get('region').lower()}%"
 
         if args.get("has_genomics") is not None:
@@ -232,7 +247,9 @@ class ToolRegistry:
         engine = self._engine or _get_engine()
         sql = args.get("sql", "")
         limit = int(args.get("limit", self._max_limit))
-        safe_sql = self._sanitize_select_sql(self._rewrite_sql_columns(sql, engine), limit)
+        safe_sql = self._sanitize_select_sql(
+            self._rewrite_sql_columns(sql, engine), limit
+        )
 
         try:
             with engine.connect() as conn:
@@ -259,7 +276,10 @@ class ToolRegistry:
             "mark": args.get("mark", "bar"),
             "encoding": {
                 "x": {"field": args.get("x"), "type": args.get("x_type", "ordinal")},
-                "y": {"field": args.get("y"), "type": args.get("y_type", "quantitative")},
+                "y": {
+                    "field": args.get("y"),
+                    "type": args.get("y_type", "quantitative"),
+                },
             },
         }
 
@@ -284,7 +304,16 @@ class ToolRegistry:
         if not normalized.startswith("SELECT") and not normalized.startswith("WITH"):
             raise ValueError("Only SELECT queries are allowed")
 
-        forbidden = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE", "COPY"]
+        forbidden = [
+            "DROP",
+            "DELETE",
+            "UPDATE",
+            "INSERT",
+            "ALTER",
+            "CREATE",
+            "TRUNCATE",
+            "COPY",
+        ]
         if any(word in normalized for word in forbidden):
             raise ValueError("Unsafe SQL detected")
 
@@ -306,11 +335,22 @@ class ToolRegistry:
             return sql
 
         rewritten = sql
-        if "current_city" in columns and re.search(r"\bcity\b", rewritten, flags=re.IGNORECASE):
-            rewritten = re.sub(r"\bcity\b", "current_city", rewritten, flags=re.IGNORECASE)
+        if "current_city" in columns and re.search(
+            r"\bcity\b", rewritten, flags=re.IGNORECASE
+        ):
+            rewritten = re.sub(
+                r"\bcity\b", "current_city", rewritten, flags=re.IGNORECASE
+            )
 
-        if "current_city_category" in columns and re.search(r"\bcity_category\b", rewritten, flags=re.IGNORECASE):
-            rewritten = re.sub(r"\bcity_category\b", "current_city_category", rewritten, flags=re.IGNORECASE)
+        if "current_city_category" in columns and re.search(
+            r"\bcity_category\b", rewritten, flags=re.IGNORECASE
+        ):
+            rewritten = re.sub(
+                r"\bcity_category\b",
+                "current_city_category",
+                rewritten,
+                flags=re.IGNORECASE,
+            )
 
         return rewritten
 

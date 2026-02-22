@@ -8,7 +8,9 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger("biolink.audit")
 
 
-def audit_event(event_type: str, payload: Dict[str, Any], request_id: Optional[str] = None) -> None:
+def audit_event(
+    event_type: str, payload: Dict[str, Any], request_id: Optional[str] = None
+) -> None:
     redacted_payload = redact_payload(payload)
     record = {
         "event": event_type,

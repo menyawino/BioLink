@@ -132,8 +132,7 @@ DB_COLUMNS: tuple[str, ...] = (
 )
 
 
-UPSERT_SQL = text(
-    """
+UPSERT_SQL = text("""
 INSERT INTO patients (
     dna_id,
     date_of_birth,
@@ -249,8 +248,7 @@ ON CONFLICT (dna_id) DO UPDATE SET
     history_sudden_death = EXCLUDED.history_sudden_death,
     history_premature_cad = EXCLUDED.history_premature_cad,
     updated_at = NOW();
-"""
-)
+""")
 
 
 def row_to_record(row: dict[str, str]) -> dict[str, Any] | None:
@@ -299,9 +297,13 @@ def row_to_record(row: dict[str, str]) -> dict[str, Any] | None:
         "ever_smoked": ever_smoked,
         "smoking_years": parse_float(row.get("smoking_years"))
         or parse_float(row.get("how_long_have_you_been_smoking_")),
-        "cigarettes_per_day": parse_int(row.get("how_many_cigarettes_have_you_been_smoking_a_day_")),
+        "cigarettes_per_day": parse_int(
+            row.get("how_many_cigarettes_have_you_been_smoking_a_day_")
+        ),
         "drinks_alcohol": parse_bool(row.get("do_you_drink_alcohol_")),
-        "takes_medication": parse_bool(row.get("do_you_take_any_medication_currently_")),
+        "takes_medication": parse_bool(
+            row.get("do_you_take_any_medication_currently_")
+        ),
         "diabetes_mellitus": parse_bool(row.get("diabetes_mellitus")),
         "high_blood_pressure": parse_bool(row.get("high_blood_pressure")),
         "dyslipidemia": parse_bool(row.get("dyslipidemia")),
@@ -318,7 +320,9 @@ def row_to_record(row: dict[str, str]) -> dict[str, Any] | None:
     return record
 
 
-def chunks(items: Iterable[dict[str, Any]], batch_size: int) -> Iterable[list[dict[str, Any]]]:
+def chunks(
+    items: Iterable[dict[str, Any]], batch_size: int
+) -> Iterable[list[dict[str, Any]]]:
     batch: list[dict[str, Any]] = []
     for item in items:
         batch.append(item)
@@ -329,7 +333,9 @@ def chunks(items: Iterable[dict[str, Any]], batch_size: int) -> Iterable[list[di
         yield batch
 
 
-def import_csv(csv_path: Path, *, batch_size: int, limit: int | None, dry_run: bool) -> ImportStats:
+def import_csv(
+    csv_path: Path, *, batch_size: int, limit: int | None, dry_run: bool
+) -> ImportStats:
     ensure_schema(engine)
 
     processed = 0
@@ -363,15 +369,21 @@ def import_csv(csv_path: Path, *, batch_size: int, limit: int | None, dry_run: b
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Import the standardized CSV into Postgres patients table")
+    parser = argparse.ArgumentParser(
+        description="Import the standardized CSV into Postgres patients table"
+    )
     parser.add_argument(
         "--csv",
         default="../db/100925_Cleaned_EHVol_Data_STANDARDIZED.csv",
         help="Path to CSV file (default: ../db/100925_Cleaned_EHVol_Data_STANDARDIZED.csv)",
     )
     parser.add_argument("--batch-size", type=int, default=1000)
-    parser.add_argument("--limit", type=int, default=None, help="Only import first N rows")
-    parser.add_argument("--dry-run", action="store_true", help="Parse rows but do not write to DB")
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Only import first N rows"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Parse rows but do not write to DB"
+    )
 
     args = parser.parse_args()
     csv_path = Path(args.csv).expanduser().resolve()
@@ -379,7 +391,9 @@ def main() -> None:
     if not csv_path.exists():
         raise SystemExit(f"CSV not found: {csv_path}")
 
-    stats = import_csv(csv_path, batch_size=args.batch_size, limit=args.limit, dry_run=args.dry_run)
+    stats = import_csv(
+        csv_path, batch_size=args.batch_size, limit=args.limit, dry_run=args.dry_run
+    )
 
     with engine.connect() as conn:
         count = conn.execute(text("SELECT COUNT(*) FROM patients"))

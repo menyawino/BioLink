@@ -29,9 +29,13 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
     table_name = req.table_name or settings.superset_default_table
     schema = req.schema or settings.superset_default_schema
     if not table_name:
-        raise HTTPException(status_code=400, detail="Missing table_name and no default configured")
+        raise HTTPException(
+            status_code=400, detail="Missing table_name and no default configured"
+        )
 
-    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
+    async with aiohttp.ClientSession(
+        cookie_jar=aiohttp.CookieJar(unsafe=True)
+    ) as session:
         try:
             tokens = await client.bootstrap()
             access_token = tokens["access_token"]
@@ -59,7 +63,7 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
                 "metrics": [req.metric],
                 "row_limit": 1000,
                 "show_legend": True,
-                "color_scheme": "supersetColors"
+                "color_scheme": "supersetColors",
             }
 
             chart_id = await client.create_chart(
@@ -105,10 +109,11 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
                     "dashboard_id": dashboard_id,
                     "guest_token": guest_token,
                     "superset_domain": settings.superset_public_url,
-                }
+                },
             }
         except Exception as exc:
             import traceback
+
             traceback_str = traceback.format_exc()
             print("Superset programmatic error:\n", traceback_str)
             raise HTTPException(status_code=500, detail=str(exc))
@@ -118,7 +123,9 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
 async def create_dashboard_embed(req: SupersetDashboardEmbedRequest):
     client = SupersetClient.from_settings()
 
-    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
+    async with aiohttp.ClientSession(
+        cookie_jar=aiohttp.CookieJar(unsafe=True)
+    ) as session:
         try:
             tokens = await client.bootstrap()
             access_token = tokens["access_token"]
@@ -138,10 +145,11 @@ async def create_dashboard_embed(req: SupersetDashboardEmbedRequest):
                     "dashboard_id": req.dashboard_id,
                     "guest_token": guest_token,
                     "superset_domain": settings.superset_public_url,
-                }
+                },
             }
         except Exception as exc:
             import traceback
+
             traceback_str = traceback.format_exc()
             print("Superset dashboard embed error:\n", traceback_str)
             raise HTTPException(status_code=500, detail=str(exc))

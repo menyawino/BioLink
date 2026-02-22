@@ -6,7 +6,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 BACKEND_ROOT = TESTS_DIR.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.audit import redact_payload
+from app.services.audit import redact_payload  # noqa: E402
 
 
 class AuditTests(unittest.TestCase):

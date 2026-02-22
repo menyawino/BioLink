@@ -36,13 +36,11 @@ def build_connection_url() -> str:
 
 
 def read_schema(conn) -> List[dict]:
-    query = text(
-        """
+    query = text("""
         SELECT COLUMN_NAME
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_NAME = 'patients'
-        """
-    )
+        """)
     rows = conn.execute(query).fetchall()
     return [row[0] for row in rows]
 
@@ -54,19 +52,21 @@ def run():
     with engine.connect() as conn:
         columns = read_schema(conn)
         if not columns:
-            raise RuntimeError("No columns found for patients table. Check schema or table name.")
+            raise RuntimeError(
+                "No columns found for patients table. Check schema or table name."
+            )
 
         missing = REQUIRED_COLUMNS.difference({c.lower() for c in columns})
         if missing:
-            raise RuntimeError(f"Missing expected columns in patients table: {sorted(missing)}")
+            raise RuntimeError(
+                f"Missing expected columns in patients table: {sorted(missing)}"
+            )
 
-        schema_query = text(
-            """
+        schema_query = text("""
             SELECT TOP 10 id, age, gender, ef, hypertension
             FROM patients
             ORDER BY id
-            """
-        )
+            """)
         rows = conn.execute(schema_query).fetchall()
 
     print("SQL Server patients table schema (columns):")

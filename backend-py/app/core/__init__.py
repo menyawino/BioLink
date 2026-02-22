@@ -1,6 +1,7 @@
 """
 Core utilities and configurations.
 """
+
 from app.core.security import (
     Token,
     TokenData,

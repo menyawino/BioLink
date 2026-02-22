@@ -78,7 +78,9 @@ def _load_vcf(path: Path) -> List[Dict[str, Optional[str]]]:
     return variants
 
 
-def _upsert_variants(dna_id: str, vcf_path: Path, variants: List[Dict[str, Optional[str]]], replace: bool) -> Tuple[int, int]:
+def _upsert_variants(
+    dna_id: str, vcf_path: Path, variants: List[Dict[str, Optional[str]]], replace: bool
+) -> Tuple[int, int]:
     inserted = 0
     skipped = 0
 
@@ -86,7 +88,7 @@ def _upsert_variants(dna_id: str, vcf_path: Path, variants: List[Dict[str, Optio
         if replace:
             conn.execute(
                 text("DELETE FROM patient_genomic_variants WHERE dna_id = :dna_id"),
-                {"dna_id": dna_id}
+                {"dna_id": dna_id},
             )
 
         for variant in variants:
@@ -101,13 +103,14 @@ def _upsert_variants(dna_id: str, vcf_path: Path, variants: List[Dict[str, Optio
                 "genotype": variant["genotype"],
                 "clinical_significance": variant["clinical_significance"],
                 "condition": variant["condition"],
-                "frequency": float(variant["frequency"]) if variant["frequency"] else None,
+                "frequency": (
+                    float(variant["frequency"]) if variant["frequency"] else None
+                ),
                 "source_vcf": vcf_path.name,
             }
 
             result = conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO patient_genomic_variants (
                         dna_id, chrom, pos, ref, alt, variant_id, gene, genotype,
                         clinical_significance, condition, frequency, source_vcf
@@ -116,8 +119,7 @@ def _upsert_variants(dna_id: str, vcf_path: Path, variants: List[Dict[str, Optio
                         :clinical_significance, :condition, :frequency, :source_vcf
                     )
                     ON CONFLICT (dna_id, chrom, pos, ref, alt, genotype) DO NOTHING
-                    """
-                ),
+                    """),
                 params,
             )
             if result.rowcount and result.rowcount > 0:
@@ -131,18 +133,28 @@ def _upsert_variants(dna_id: str, vcf_path: Path, variants: List[Dict[str, Optio
 def _patient_exists(dna_id: str) -> bool:
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT 1 FROM patients WHERE dna_id = :dna_id"),
-            {"dna_id": dna_id}
+            text("SELECT 1 FROM patients WHERE dna_id = :dna_id"), {"dna_id": dna_id}
         ).fetchone()
     return bool(row)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Import mock VCFs into patient_genomic_variants by MRN (dna_id).")
+    parser = argparse.ArgumentParser(
+        description="Import mock VCFs into patient_genomic_variants by MRN (dna_id)."
+    )
     default_vcf_dir = Path(__file__).resolve().parents[2] / "data" / "vcfs"
-    parser.add_argument("--vcf-dir", type=Path, default=default_vcf_dir, help="Directory containing VCF files")
-    parser.add_argument("--replace", action="store_true", help="Replace existing variants for a patient")
-    parser.add_argument("--dry-run", action="store_true", help="Parse and report without inserting")
+    parser.add_argument(
+        "--vcf-dir",
+        type=Path,
+        default=default_vcf_dir,
+        help="Directory containing VCF files",
+    )
+    parser.add_argument(
+        "--replace", action="store_true", help="Replace existing variants for a patient"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Parse and report without inserting"
+    )
     args = parser.parse_args()
 
     vcf_dir = args.vcf_dir
@@ -159,7 +171,9 @@ def main() -> int:
     for vcf_path in vcf_paths:
         dna_id = vcf_path.stem
         if not _patient_exists(dna_id):
-            print(f"Skipping {vcf_path.name}: dna_id '{dna_id}' not found in patients table")
+            print(
+                f"Skipping {vcf_path.name}: dna_id '{dna_id}' not found in patients table"
+            )
             continue
 
         variants = _load_vcf(vcf_path)

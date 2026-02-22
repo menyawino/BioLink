@@ -6,7 +6,7 @@ from biolink_etl/schema_mappings.py and biolink_etl/transformer.py.
 
 It reads CSV records (as JSON FlowFile content), applies field mappings,
 type normalization, city homogenization, BP averaging, and quality scoring,
-then outputs records conforming to the unified_participants schema.
+then outputs records conforming to the participant ingestion schema.
 """
 
 import json
@@ -426,7 +426,7 @@ class BiolinkTransformProcessor(FlowFileTransform):
     from BHS or EHVol datasets into the BioLink unified schema.
 
     Input:  JSON object (one CSV row as key-value pairs)
-    Output: JSON object conforming to unified_participants schema
+    Output: JSON object conforming to participant ingestion schema
     """
 
     class Java:

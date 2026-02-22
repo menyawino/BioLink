@@ -23,7 +23,9 @@ class LangExtractWrapper:
     def __init__(self, model_id: Optional[str] = None, model_url: Optional[str] = None):
         # sensible defaults: use Ollama gemma model if available
         self.model_id = model_id or "gemma2:2b"
-        self.model_url = model_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.model_url = model_url or os.environ.get(
+            "OLLAMA_BASE_URL", "http://localhost:11434"
+        )
 
     def extract_notes(
         self,

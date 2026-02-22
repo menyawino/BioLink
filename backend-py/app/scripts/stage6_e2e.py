@@ -6,7 +6,9 @@ def run():
     start = time.time()
     question = "Low EF males"
 
-    resp = requests.post("http://localhost:3001/api/rag", json={"question": question}, timeout=30)
+    resp = requests.post(
+        "http://localhost:3001/api/rag", json={"question": question}, timeout=30
+    )
     resp.raise_for_status()
     data = resp.json()
 

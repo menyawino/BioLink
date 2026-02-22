@@ -6,7 +6,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 BACKEND_ROOT = TESTS_DIR.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.tool_registry import ToolRegistry
+from app.services.tool_registry import ToolRegistry  # noqa: E402
 
 
 class ToolRegistrySafetyTests(unittest.TestCase):
@@ -19,7 +19,9 @@ class ToolRegistrySafetyTests(unittest.TestCase):
 
     def test_rejects_multiple_statements(self):
         with self.assertRaises(ValueError):
-            self.registry._sanitize_select_sql("SELECT * FROM patients; DROP TABLE patients", 100)
+            self.registry._sanitize_select_sql(
+                "SELECT * FROM patients; DROP TABLE patients", 100
+            )
 
     def test_rejects_disallowed_tables(self):
         with self.assertRaises(ValueError):

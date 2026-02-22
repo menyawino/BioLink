@@ -1,12 +1,13 @@
 import unittest
 import sys
 from pathlib import Path
+
 TESTS_DIR = Path(__file__).resolve().parent
 BACKEND_ROOT = TESTS_DIR.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-import sqlalchemy as sa
-from app.services.tool_registry import ToolRegistry
+import sqlalchemy as sa  # noqa: E402
+from app.services.tool_registry import ToolRegistry  # noqa: E402
 
 
 class ToolRegistryFilterTests(unittest.TestCase):
@@ -46,9 +47,21 @@ class ToolRegistryFilterTests(unittest.TestCase):
                 )
             """))
             # Insert two rows: one with imaging/labs/family history, one without
-            conn.execute(sa.text("INSERT INTO patients (dna_id, age, gender, echo_ef, hba1c, history_sudden_death, nationality, current_city_category, current_city) VALUES ('dna1', 50, 'female', 55.0, 6.1, 1, 'Africa', 'Urban', 'Cairo')"))
-            conn.execute(sa.text("INSERT INTO patients (dna_id, age, gender) VALUES ('dna2', 40, 'male')"))
-            conn.execute(sa.text("INSERT INTO patient_genomic_variants (dna_id, chrom, pos, ref, alt, genotype) VALUES ('dna1', '1', 123, 'A', 'G', '0/1')"))
+            conn.execute(
+                sa.text(
+                    "INSERT INTO patients (dna_id, age, gender, echo_ef, hba1c, history_sudden_death, nationality, current_city_category, current_city) VALUES ('dna1', 50, 'female', 55.0, 6.1, 1, 'Africa', 'Urban', 'Cairo')"
+                )
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO patients (dna_id, age, gender) VALUES ('dna2', 40, 'male')"
+                )
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO patient_genomic_variants (dna_id, chrom, pos, ref, alt, genotype) VALUES ('dna1', '1', 123, 'A', 'G', '0/1')"
+                )
+            )
 
         self.registry = ToolRegistry(engine_override=self.engine)
 

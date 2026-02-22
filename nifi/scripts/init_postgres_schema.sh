@@ -1,58 +1,14 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================================
-# BioLink NiFi Entrypoint
+# BioLink NiFi 2.8.0 - PostgreSQL Schema Initialization
 #
-# Configures NiFi for HTTP mode (no HTTPS/TLS), initializes PostgreSQL schema,
-# then delegates to the standard NiFi startup.
+# Ensures dedicated BHS/EHVol participant tables and supporting metadata tables
+# exist in the target PostgreSQL database before the NiFi flow runs.
+#
+# Usage:  ./init_postgres_schema.sh
+# Env:    DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD (provided by docker)
 # =============================================================================
-set -e
-
-echo "=== BioLink NiFi Entrypoint ==="
-echo "  Configuring NiFi for HTTP-only mode on port ${NIFI_WEB_HTTP_PORT:-8443}"
-
-NIFI_HOME="${NIFI_HOME:-/opt/nifi/nifi-current}"
-PROPS="${NIFI_HOME}/conf/nifi.properties"
-
-# Wait for the properties file to exist (NiFi image may generate it)
-for i in $(seq 1 30); do
-    [ -f "$PROPS" ] && break
-    echo "  Waiting for nifi.properties... ($i/30)"
-    sleep 2
-done
-
-if [ -f "$PROPS" ]; then
-    echo "  Patching nifi.properties for HTTP mode..."
-
-    # Disable HTTPS
-    sed -i 's|^nifi\.web\.https\.host=.*|nifi.web.https.host=|' "$PROPS"
-    sed -i 's|^nifi\.web\.https\.port=.*|nifi.web.https.port=|' "$PROPS"
-
-    # Enable HTTP
-    sed -i "s|^nifi\.web\.http\.host=.*|nifi.web.http.host=0.0.0.0|" "$PROPS"
-    sed -i "s|^nifi\.web\.http\.port=.*|nifi.web.http.port=${NIFI_WEB_HTTP_PORT:-8443}|" "$PROPS"
-
-    # Disable login identity providers (allow anonymous)
-    sed -i 's|^nifi\.security\.user\.login\.identity\.provider=.*|nifi.security.user.login.identity.provider=|' "$PROPS"
-    sed -i 's|^nifi\.security\.user\.authorizer=.*|nifi.security.user.authorizer=|' "$PROPS"
-
-    # Clear keystore/truststore so NiFi doesn't try TLS
-    sed -i 's|^nifi\.security\.keystore=.*|nifi.security.keystore=|' "$PROPS"
-    sed -i 's|^nifi\.security\.keystoreType=.*|nifi.security.keystoreType=|' "$PROPS"
-    sed -i 's|^nifi\.security\.keystorePasswd=.*|nifi.security.keystorePasswd=|' "$PROPS"
-    sed -i 's|^nifi\.security\.keyPasswd=.*|nifi.security.keyPasswd=|' "$PROPS"
-    sed -i 's|^nifi\.security\.truststore=.*|nifi.security.truststore=|' "$PROPS"
-    sed -i 's|^nifi\.security\.truststoreType=.*|nifi.security.truststoreType=|' "$PROPS"
-    sed -i 's|^nifi\.security\.truststorePasswd=.*|nifi.security.truststorePasswd=|' "$PROPS"
-
-    echo "  NiFi properties patched successfully."
-else
-    echo "  WARNING: nifi.properties not found at $PROPS"
-fi
-
-# -------------------------------------------------------
-# Initialize PostgreSQL Schema
-# -------------------------------------------------------
-echo "=== Initializing PostgreSQL schema ==="
+set -euo pipefail
 
 DB_HOST="${DB_HOST:-postgres}"
 DB_PORT="${DB_PORT:-5432}"
@@ -60,24 +16,27 @@ DB_NAME="${DB_NAME:-biolink}"
 DB_USER="${DB_USER:-biolink}"
 DB_PASSWORD="${DB_PASSWORD:-biolink_secret}"
 
-# Check if psql is available in the container; if not, skip
-if command -v psql >/dev/null 2>&1; then
-    export PGPASSWORD="$DB_PASSWORD"
-    MAX_RETRIES=30
-    RETRY=0
-    until psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" > /dev/null 2>&1; do
-        RETRY=$((RETRY + 1))
-        if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
-            echo "  WARNING: PostgreSQL not reachable after $MAX_RETRIES attempts (will try via NiFi later)"
-            break
-        fi
-        echo "  Waiting for PostgreSQL... ($RETRY/$MAX_RETRIES)"
-        sleep 2
-    done
+export PGPASSWORD="$DB_PASSWORD"
 
-    if [ "$RETRY" -lt "$MAX_RETRIES" ]; then
-        echo "  PostgreSQL is ready. Creating schema..."
-        psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<'SQL'
+echo "=== BioLink NiFi: Initializing PostgreSQL schema ==="
+echo "  Host: $DB_HOST:$DB_PORT  DB: $DB_NAME  User: $DB_USER"
+
+# Wait for Postgres to be ready
+MAX_RETRIES=30
+RETRY=0
+until psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" > /dev/null 2>&1; do
+    RETRY=$((RETRY + 1))
+    if [ "$RETRY" -ge "$MAX_RETRIES" ]; then
+        echo "ERROR: PostgreSQL not reachable after $MAX_RETRIES attempts"
+        exit 1
+    fi
+    echo "  Waiting for PostgreSQL... ($RETRY/$MAX_RETRIES)"
+    sleep 2
+done
+echo "  PostgreSQL is ready."
+
+# Apply schema
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<'SQL'
 -- =====================================================
 -- DATASET PARTICIPANT TABLES
 -- =====================================================
@@ -156,7 +115,7 @@ CREATE TABLE IF NOT EXISTS ehvol_participants (
 );
 
 -- =====================================================
--- ETL RUN HISTORY
+-- ETL RUN HISTORY (for NiFi provenance tracking)
 -- =====================================================
 CREATE TABLE IF NOT EXISTS etl_run_history (
     run_id          SERIAL PRIMARY KEY,
@@ -198,15 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_ehvol_current_city ON ehvol_participants(current_
 CREATE INDEX IF NOT EXISTS idx_ehvol_age ON ehvol_participants(age);
 CREATE INDEX IF NOT EXISTS idx_ehvol_quality ON ehvol_participants(data_quality_score);
 CREATE INDEX IF NOT EXISTS idx_ehvol_ingested ON ehvol_participants(ingested_at);
-SQL
-        echo "  Schema initialization complete."
-    fi
-else
-    echo "  psql not found in container; schema must be initialized externally."
-fi
 
-# -------------------------------------------------------
-# Start NiFi
-# -------------------------------------------------------
-echo "=== Starting Apache NiFi ==="
-exec "${NIFI_HOME}/bin/nifi.sh" run
+SQL
+
+echo "=== Schema initialization complete (tables/indexes created) ==="

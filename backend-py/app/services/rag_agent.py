@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import logging
-from typing import Optional
 
 from langchain_ollama import ChatOllama
 from fastapi.concurrency import run_in_threadpool
@@ -21,7 +20,7 @@ class RagAgentService:
         self.llm = ChatOllama(
             base_url=settings.ollama_base_url,
             model=settings.ollama_model,
-            temperature=0
+            temperature=0,
         )
 
     async def _extract_filters(self, question: str) -> dict:
@@ -49,6 +48,7 @@ class RagAgentService:
         filters = await self._extract_filters(question)
         query = filters.get("query") or question
         question_lower = question.lower()
+
         def _to_int(value):
             try:
                 return int(float(value))
@@ -65,7 +65,10 @@ class RagAgentService:
         age_max = _to_int(filters.get("age_max"))
         gender_raw = filters.get("gender")
         gender = None
-        if isinstance(gender_raw, str) and gender_raw.strip().lower() in {"male", "female"}:
+        if isinstance(gender_raw, str) and gender_raw.strip().lower() in {
+            "male",
+            "female",
+        }:
             gender = gender_raw.strip().lower()
 
         ef_min = _to_float(filters.get("ef_min"))
@@ -76,16 +79,23 @@ class RagAgentService:
         else:
             city = None
 
-        between_match = re.search(r"ef\s*(?:between|from)\s*(\d+(?:\.\d+)?)\s*(?:and|to)\s*(\d+(?:\.\d+)?)", question_lower)
+        between_match = re.search(
+            r"ef\s*(?:between|from)\s*(\d+(?:\.\d+)?)\s*(?:and|to)\s*(\d+(?:\.\d+)?)",
+            question_lower,
+        )
         if between_match:
             ef_min = float(between_match.group(1))
             ef_max = float(between_match.group(2))
 
-        under_match = re.search(r"ef\s*(?:<=|<|under|below)\s*(\d+(?:\.\d+)?)", question_lower)
+        under_match = re.search(
+            r"ef\s*(?:<=|<|under|below)\s*(\d+(?:\.\d+)?)", question_lower
+        )
         if under_match:
             ef_max = float(under_match.group(1))
 
-        over_match = re.search(r"ef\s*(?:>=|>|over|above)\s*(\d+(?:\.\d+)?)", question_lower)
+        over_match = re.search(
+            r"ef\s*(?:>=|>|over|above)\s*(\d+(?:\.\d+)?)", question_lower
+        )
         if over_match:
             ef_min = float(over_match.group(1))
 
@@ -111,7 +121,9 @@ class RagAgentService:
             return "No matching patients were found for the requested filters."
 
         if filters_applied:
-            patient_details = await run_in_threadpool(fetch_patients_by_ids, patient_ids)
+            patient_details = await run_in_threadpool(
+                fetch_patients_by_ids, patient_ids
+            )
             ordered_ids = [pid for pid in patient_ids if pid in patient_details]
             sample_ids = ordered_ids[: settings.rag_top_k]
             lines = []
@@ -133,7 +145,7 @@ class RagAgentService:
             similarity_search,
             query_embedding,
             settings.rag_top_k,
-            patient_ids if filters_applied else None
+            patient_ids if filters_applied else None,
         )
 
         if not chunks:

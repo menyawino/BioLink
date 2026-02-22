@@ -1,6 +1,7 @@
 """
 Pytest configuration and fixtures for BioLink API tests.
 """
+
 import pytest
 import asyncio
 from typing import AsyncGenerator, Generator
@@ -57,5 +58,5 @@ def sample_patient_data() -> dict:
         "age": 45,
         "gender": "M",
         "current_city": "Cairo",
-        "enrollment_date": "2024-01-15"
+        "enrollment_date": "2024-01-15",
     }

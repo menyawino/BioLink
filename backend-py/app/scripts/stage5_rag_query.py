@@ -11,8 +11,12 @@ def run():
     question = "low EF cadio male"  # sample query
     query_embedding = embed_query(question)
 
-    patient_ids = fetch_patient_ids_by_filters(age_min=None, age_max=None, gender="male", limit=200)
-    results = similarity_search(query_embedding, k=settings.rag_top_k, patient_ids=patient_ids)
+    patient_ids = fetch_patient_ids_by_filters(
+        age_min=None, age_max=None, gender="male", limit=200
+    )
+    results = similarity_search(
+        query_embedding, k=settings.rag_top_k, patient_ids=patient_ids
+    )
 
     elapsed = time.time() - start
     assert elapsed < 5, f"Stage 5 latency too high: {elapsed:.2f}s"

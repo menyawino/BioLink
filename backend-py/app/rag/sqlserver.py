@@ -24,15 +24,11 @@ def get_engine():
 def get_patient_columns():
     engine = get_engine()
     with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
+        rows = conn.execute(text("""
                 SELECT COLUMN_NAME
                 FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_NAME = 'patients'
-                """
-            )
-        ).fetchall()
+                """)).fetchall()
     return {row[0].lower() for row in rows}
 
 
@@ -40,14 +36,12 @@ def fetch_patients(limit: int = 10):
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(
-            text(
-                """
+            text("""
                 SELECT TOP (:limit) id, age, gender, ef, hypertension, notes
                 FROM patients
                 WHERE notes IS NOT NULL
                 ORDER BY id
-                """
-            ),
+                """),
             {"limit": limit},
         ).fetchall()
     return rows
@@ -70,13 +64,11 @@ def fetch_patients_by_ids(patient_ids: list[str]):
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(
-            text(
-                f"""
+            text(f"""
                 SELECT {", ".join(select_cols)}
                 FROM patients
                 WHERE id IN ({placeholders})
-                """
-            ),
+                """),
             params,
         ).fetchall()
 
@@ -145,14 +137,12 @@ def fetch_patient_ids_by_filters(
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(
-            text(
-                f"""
+            text(f"""
                 SELECT TOP (:limit) id
                 FROM patients
                 {where}
                 ORDER BY id
-                """
-            ),
+                """),
             params,
         ).fetchall()
 

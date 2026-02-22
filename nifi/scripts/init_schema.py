@@ -3,13 +3,6 @@
 import subprocess, sys
 
 SQL = """
--- Unified view across both datasets
-DROP VIEW IF EXISTS unified_participants CASCADE;
-CREATE VIEW unified_participants AS
-SELECT * FROM bhs_participants
-UNION ALL
-SELECT * FROM ehvol_participants;
-
 -- BHS indexes
 CREATE INDEX IF NOT EXISTS idx_bhs_source_dataset ON bhs_participants(source_dataset);
 CREATE INDEX IF NOT EXISTS idx_bhs_age ON bhs_participants(age);

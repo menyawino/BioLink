@@ -11,13 +11,21 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Allowed columns for sorting to prevent SQL injection
-ALLOWED_SORT_COLUMNS = {"dna_id", "age", "gender", "nationality", "enrollment_date", "data_completeness"}
-ALLOWED_DATASETS = {"combined", "ehvol", "bhs"}
+ALLOWED_SORT_COLUMNS = {
+    "dna_id",
+    "age",
+    "gender",
+    "nationality",
+    "enrollment_date",
+    "data_completeness",
+}
+ALLOWED_DATASETS = {"ehvol", "bhs"}
+DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
 
 
 def _normalized_dataset(dataset: str | None) -> str:
-    value = (dataset or "combined").lower()
-    return value if value in ALLOWED_DATASETS else "combined"
+    value = (dataset or "ehvol").lower()
+    return value if value in ALLOWED_DATASETS else "ehvol"
 
 
 def _stable_unit_float(seed: str) -> float:
@@ -34,15 +42,18 @@ def _normalize(values: List[float]) -> List[float]:
     return [v / total for v in values]
 
 
-def _unified_participants_columns(db) -> set[str]:
+def _dataset_table(dataset: str | None) -> str:
+    return DATASET_TABLES[_normalized_dataset(dataset)]
+
+
+def _table_columns(db, table_name: str) -> set[str]:
     rows = db.execute(
-        text(
-            """
+        text("""
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'unified_participants'
-            """
-        )
+            WHERE table_schema = 'public' AND table_name = :table_name
+            """),
+        {"table_name": table_name},
     ).fetchall()
     return {row[0] for row in rows}
 
@@ -52,12 +63,13 @@ def _mri_sql_expr(columns: set[str]) -> tuple[str, str]:
         return "mri_ef", "(mri_ef IS NOT NULL)"
     return "NULL::double precision", "FALSE"
 
+
 @router.get("")
 async def get_patients(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=1000),
-    search: str = None,
-    gender: str = None,
+    search: str | None = None,
+    gender: str | None = None,
     ageMin: int = Query(None, alias="ageMin"),
     ageMax: int = Query(None, alias="ageMax"),
     sortBy: str = Query("dna_id", alias="sortBy"),
@@ -70,8 +82,8 @@ async def get_patients(
     hasImaging: bool = Query(None, alias="hasImaging"),
     minDataCompleteness: int = Query(None, alias="minDataCompleteness"),
     # Geographic filters
-    nationality: str = None,
-    region: str = None,
+    nationality: str | None = None,
+    region: str | None = None,
     # Temporal filters
     enrollmentDateFrom: str = Query(None, alias="enrollmentDateFrom"),
     enrollmentDateTo: str = Query(None, alias="enrollmentDateTo"),
@@ -81,22 +93,18 @@ async def get_patients(
     hasSmoking: bool = Query(None, alias="hasSmoking"),
     hasObesity: bool = Query(None, alias="hasObesity"),
     hasFamilyHistory: bool = Query(None, alias="hasFamilyHistory"),
-    dataset: str = Query("combined"),
-    db = Depends(get_db)
+    dataset: str = Query("ehvol"),
+    db=Depends(get_db),
 ):
     """Search and filter patients in the registry"""
     try:
-        columns = _unified_participants_columns(db)
+        source_table = _dataset_table(dataset)
+        columns = _table_columns(db, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
 
         # Build a safe, parameterized filter query
         conditions = ["1=1"]
         params = {}
-
-        dataset_value = _normalized_dataset(dataset)
-        if dataset_value != "combined":
-            conditions.append("source_dataset = :dataset")
-            params["dataset"] = dataset_value
 
         completeness_expr = (
             "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) "
@@ -107,7 +115,9 @@ async def get_patients(
         )
 
         if search:
-            conditions.append("(participant_id ILIKE :search OR source_record_id ILIKE :search OR nationality ILIKE :search)")
+            conditions.append(
+                "(participant_id ILIKE :search OR source_record_id ILIKE :search OR nationality ILIKE :search)"
+            )
             params["search"] = f"%{search}%"
 
         if gender:
@@ -133,17 +143,23 @@ async def get_patients(
 
         # Imaging (any imaging modality: echo OR mri)
         if hasImaging is not None:
-            conditions.append(f"(({mri_present_expr} OR echo_ef IS NOT NULL) = :has_imaging)")
+            conditions.append(
+                f"(({mri_present_expr} OR echo_ef IS NOT NULL) = :has_imaging)"
+            )
             params["has_imaging"] = hasImaging
 
         # Laboratory data availability (best-effort based on stored lab columns)
         if hasLabs is not None:
-            conditions.append("((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = :has_labs)")
+            conditions.append(
+                "((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = :has_labs)"
+            )
             params["has_labs"] = hasLabs
 
         # Family history (derived from available family-history flags)
         if hasFamilyHistory is not None:
-            conditions.append("(COALESCE(family_history_cad, false) = :has_family_history)")
+            conditions.append(
+                "(COALESCE(family_history_cad, false) = :has_family_history)"
+            )
             params["has_family_history"] = hasFamilyHistory
 
         # Genomics availability (not yet in unified table)
@@ -162,7 +178,9 @@ async def get_patients(
 
         # Region (freeform match against nationality/current_city/current_city_category)
         if region:
-            conditions.append("(LOWER(nationality) LIKE :region OR LOWER(current_city_category) LIKE :region OR LOWER(current_city) LIKE :region)")
+            conditions.append(
+                "(LOWER(nationality) LIKE :region OR LOWER(current_city_category) LIKE :region OR LOWER(current_city) LIKE :region)"
+            )
             params["region"] = f"%{region.lower()}%"
 
         # Temporal filters
@@ -188,7 +206,11 @@ async def get_patients(
             params["has_smoking"] = hasSmoking
 
         if hasObesity is not None:
-            conditions.append("COALESCE(bmi, 0) >= 30") if hasObesity else conditions.append("(bmi IS NULL OR bmi < 30)")
+            (
+                conditions.append("COALESCE(bmi, 0) >= 30")
+                if hasObesity
+                else conditions.append("(bmi IS NULL OR bmi < 30)")
+            )
 
         # Validate and sanitize sort parameters
         sort_column_map = {
@@ -199,7 +221,9 @@ async def get_patients(
             "enrollment_date": "enrollment_date",
             "data_completeness": completeness_expr,
         }
-        sort_column = sort_column_map.get(sortBy if sortBy in ALLOWED_SORT_COLUMNS else "dna_id", "participant_id")
+        sort_column = sort_column_map.get(
+            sortBy if sortBy in ALLOWED_SORT_COLUMNS else "dna_id", "participant_id"
+        )
         sort_direction = "DESC" if sortOrder.lower() == "desc" else "ASC"
 
         # Calculate offset for pagination
@@ -209,7 +233,7 @@ async def get_patients(
 
         # Get total count for pagination
         count_stmt = text(
-            f"SELECT COUNT(*) as total FROM unified_participants WHERE {' AND '.join(conditions)}"
+            f"SELECT COUNT(*) as total FROM {source_table} WHERE {' AND '.join(conditions)}"
         )
         total_result = db.execute(count_stmt, params).fetchone()
         total = total_result[0] if total_result else 0
@@ -222,16 +246,16 @@ async def get_patients(
             f"({mri_present_expr}) AS has_mri, "
             "(echo_ef IS NOT NULL) AS has_echo, "
             f"{completeness_expr} AS data_completeness "
-            "FROM unified_participants "
+            f"FROM {source_table} "
             f"WHERE {' AND '.join(conditions)} "
             f"ORDER BY {sort_column} {sort_direction} "
             "LIMIT :limit OFFSET :offset"
         )
 
         patients = db.execute(stmt, params).mappings().fetchall()
-        
+
         total_pages = (total + limit - 1) // limit if limit > 0 else 1
-        
+
         return {
             "success": True,
             "data": [dict(row) for row in patients],
@@ -239,8 +263,8 @@ async def get_patients(
                 "page": page,
                 "limit": limit,
                 "total": total,
-                "totalPages": total_pages
-            }
+                "totalPages": total_pages,
+            },
         }
     except Exception as e:
         logger.error(f"Error fetching patients: {e}")
@@ -251,20 +275,16 @@ async def get_patients(
 async def search_patients(
     query: str,
     limit: int = Query(20, ge=1, le=100),
-    dataset: str = Query("combined"),
-    db = Depends(get_db)
+    dataset: str = Query("ehvol"),
+    db=Depends(get_db),
 ):
     """Search patients by DNA ID or nationality"""
     try:
-        columns = _unified_participants_columns(db)
+        source_table = _dataset_table(dataset)
+        columns = _table_columns(db, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
 
         params = {"search": f"%{query}%", "limit": limit}
-        dataset_value = _normalized_dataset(dataset)
-        dataset_clause = ""
-        if dataset_value != "combined":
-            dataset_clause = " AND source_dataset = :dataset"
-            params["dataset"] = dataset_value
 
         completeness_expr = (
             "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) "
@@ -280,24 +300,20 @@ async def search_patients(
             f"({mri_present_expr}) AS has_mri, "
             "(echo_ef IS NOT NULL) AS has_echo, "
             f"{completeness_expr} AS data_completeness "
-            "FROM unified_participants "
+            f"FROM {source_table} "
             "WHERE (participant_id ILIKE :search OR source_record_id ILIKE :search OR nationality ILIKE :search)"
-            f"{dataset_clause} "
             "ORDER BY participant_id ASC "
             "LIMIT :limit"
         )
         patients = db.execute(stmt, params).mappings().fetchall()
-        return {
-            "success": True,
-            "data": [dict(row) for row in patients]
-        }
+        return {"success": True, "data": [dict(row) for row in patients]}
     except Exception as e:
         logger.error(f"Error searching patients: {e}")
         return {"success": False, "error": str(e)}
 
 
 @router.get("/{dna_id}")
-async def get_patient(dna_id: str, db = Depends(get_db)):
+async def get_patient(dna_id: str, db=Depends(get_db)):
     """Get detailed patient information by DNA ID"""
     try:
         normalized_id = (dna_id or "").strip()
@@ -307,19 +323,28 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
             FROM patients
             WHERE TRIM(dna_id) = :dna_id
         """)
-        patient = db.execute(patient_stmt, {"dna_id": normalized_id}).mappings().fetchone()
+        patient = (
+            db.execute(patient_stmt, {"dna_id": normalized_id}).mappings().fetchone()
+        )
 
         if not patient:
-            unified_stmt = text("""
-                SELECT *, participant_id AS dna_id
-                FROM unified_participants
-                WHERE TRIM(participant_id) = :dna_id
-            """)
-            patient = db.execute(unified_stmt, {"dna_id": normalized_id}).mappings().fetchone()
-        
+            for source_table in DATASET_TABLES.values():
+                fallback_stmt = text(f"""
+                    SELECT *, participant_id AS dna_id
+                    FROM {source_table}
+                    WHERE TRIM(participant_id) = :dna_id
+                    """)
+                patient = (
+                    db.execute(fallback_stmt, {"dna_id": normalized_id})
+                    .mappings()
+                    .fetchone()
+                )
+                if patient:
+                    break
+
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
-        
+
         patient_data = dict(patient)
         diagnoses = build_patient_diagnoses(patient_data)
 
@@ -338,8 +363,12 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
         family = None
 
         medical = {
-            "heart_attack_or_angina": bool(patient_data.get("heart_attack_or_angina") or False),
-            "high_blood_pressure": bool(patient_data.get("high_blood_pressure") or False),
+            "heart_attack_or_angina": bool(
+                patient_data.get("heart_attack_or_angina") or False
+            ),
+            "high_blood_pressure": bool(
+                patient_data.get("high_blood_pressure") or False
+            ),
             "dyslipidemia": bool(patient_data.get("dyslipidemia") or False),
             "rheumatic_fever": False,
             "anaemia": False,
@@ -347,7 +376,9 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
             "kidney_problems": False,
             "liver_problems": False,
             "diabetes_mellitus": bool(patient_data.get("diabetes_mellitus") or False),
-            "prior_heart_failure": bool(patient_data.get("prior_heart_failure") or False),
+            "prior_heart_failure": bool(
+                patient_data.get("prior_heart_failure") or False
+            ),
             "neurological_problems": False,
             "musculoskeletal_problems": False,
             "autoimmune_problems": False,
@@ -437,7 +468,7 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
             "rv_ejection_fraction": patient_data.get("rv_ef"),
             "missing_mri": patient_data.get("mri_ef") is None,
         }
-        
+
         # Build response
         result = {
             "id": patient_data.get("id"),
@@ -482,9 +513,9 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
                 "current_city_category": patient_data.get("current_city_category"),
                 "childhood_city_category": patient_data.get("childhood_city_category"),
                 "migration_pattern": patient_data.get("migration_pattern"),
-            }
+            },
         }
-        
+
         return {"success": True, "data": result}
     except HTTPException:
         raise
@@ -494,21 +525,26 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
 
 
 @router.get("/{dna_id}/genomics")
-async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
+async def get_patient_genomics(dna_id: str, db=Depends(get_db)):
     """Get genomic data for a patient based on ingested VCF variants."""
     try:
         normalized_id = (dna_id or "").strip()
 
         patient_row = db.execute(
             text("SELECT dna_id FROM patients WHERE TRIM(dna_id) = :dna_id"),
-            {"dna_id": normalized_id}
+            {"dna_id": normalized_id},
         ).fetchone()
 
         if not patient_row:
-            patient_row = db.execute(
-                text("SELECT participant_id AS dna_id FROM unified_participants WHERE TRIM(participant_id) = :dna_id"),
-                {"dna_id": normalized_id}
-            ).fetchone()
+            for source_table in DATASET_TABLES.values():
+                patient_row = db.execute(
+                    text(
+                        f"SELECT participant_id AS dna_id FROM {source_table} WHERE TRIM(participant_id) = :dna_id"
+                    ),
+                    {"dna_id": normalized_id},
+                ).fetchone()
+                if patient_row:
+                    break
 
         if not patient_row:
             raise HTTPException(status_code=404, detail="Patient not found")
@@ -530,20 +566,36 @@ async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
             pos = row.get("pos")
             ref = row.get("ref")
             alt = row.get("alt")
-            variant_label = variant_id if variant_id and variant_id != "." else f"{chrom}:{pos}{ref}>{alt}"
+            variant_label = (
+                variant_id
+                if variant_id and variant_id != "."
+                else f"{chrom}:{pos}{ref}>{alt}"
+            )
 
             clnsig = (row.get("clinical_significance") or "uncertain").lower()
-            if clnsig not in {"pathogenic", "likely_pathogenic", "uncertain", "likely_benign", "benign"}:
+            if clnsig not in {
+                "pathogenic",
+                "likely_pathogenic",
+                "uncertain",
+                "likely_benign",
+                "benign",
+            }:
                 clnsig = "uncertain"
 
-            variants.append({
-                "gene": row.get("gene") or "Unknown",
-                "variant": variant_label,
-                "genotype": row.get("genotype") or "0/0",
-                "clinicalSignificance": clnsig,
-                "condition": row.get("condition") or "Cardiovascular risk",
-                "frequency": float(row.get("frequency")) if row.get("frequency") is not None else 0.0,
-            })
+            variants.append(
+                {
+                    "gene": row.get("gene") or "Unknown",
+                    "variant": variant_label,
+                    "genotype": row.get("genotype") or "0/0",
+                    "clinicalSignificance": clnsig,
+                    "condition": row.get("condition") or "Cardiovascular risk",
+                    "frequency": (
+                        float(row.get("frequency"))
+                        if row.get("frequency") is not None
+                        else 0.0
+                    ),
+                }
+            )
 
         pharmacogenomics_map = {
             "CYP2C19": {
@@ -578,14 +630,16 @@ async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
             else:
                 metabolizer = "normal"
 
-            pharmacogenomics.append({
-                "drug": pharmacogenomics_map[gene]["drug"],
-                "gene": gene,
-                "genotype": genotype,
-                "metabolizer": metabolizer,
-                "recommendation": pharmacogenomics_map[gene]["recommendation"],
-                "confidence": "moderate",
-            })
+            pharmacogenomics.append(
+                {
+                    "drug": pharmacogenomics_map[gene]["drug"],
+                    "gene": gene,
+                    "genotype": genotype,
+                    "metabolizer": metabolizer,
+                    "recommendation": pharmacogenomics_map[gene]["recommendation"],
+                    "confidence": "moderate",
+                }
+            )
 
         polygenic = {
             "coronaryArteryDisease": _stable_range(f"{dna_id}:cad"),
@@ -594,13 +648,15 @@ async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
             "atrialFibrillation": _stable_range(f"{dna_id}:afib"),
         }
 
-        ancestry_values = _normalize([
-            _stable_unit_float(f"{dna_id}:eu"),
-            _stable_unit_float(f"{dna_id}:af"),
-            _stable_unit_float(f"{dna_id}:as"),
-            _stable_unit_float(f"{dna_id}:na"),
-            _stable_unit_float(f"{dna_id}:ot"),
-        ])
+        ancestry_values = _normalize(
+            [
+                _stable_unit_float(f"{dna_id}:eu"),
+                _stable_unit_float(f"{dna_id}:af"),
+                _stable_unit_float(f"{dna_id}:as"),
+                _stable_unit_float(f"{dna_id}:na"),
+                _stable_unit_float(f"{dna_id}:ot"),
+            ]
+        )
         ancestry = {
             "european": ancestry_values[0],
             "african": ancestry_values[1],
@@ -616,7 +672,7 @@ async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
                 "variants": variants,
                 "pharmacogenomics": pharmacogenomics,
                 "ancestry": ancestry,
-            }
+            },
         }
     except HTTPException:
         raise
@@ -626,7 +682,7 @@ async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
 
 
 @router.get("/{dna_id}/vitals")
-async def get_patient_vitals(dna_id: str, db = Depends(get_db)):
+async def get_patient_vitals(dna_id: str, db=Depends(get_db)):
     """Get patient vital signs"""
     try:
         stmt = text("""
@@ -670,7 +726,7 @@ async def get_patient_vitals(dna_id: str, db = Depends(get_db)):
 
 
 @router.get("/{dna_id}/imaging")
-async def get_patient_imaging(dna_id: str, db = Depends(get_db)):
+async def get_patient_imaging(dna_id: str, db=Depends(get_db)):
     """Get patient imaging data (Echo and MRI)"""
     try:
         stmt = text("""
@@ -731,7 +787,7 @@ async def get_patient_imaging(dna_id: str, db = Depends(get_db)):
 
 
 @router.get("/{dna_id}/risk-factors")
-async def get_patient_risk_factors(dna_id: str, db = Depends(get_db)):
+async def get_patient_risk_factors(dna_id: str, db=Depends(get_db)):
     """Get patient risk factors"""
     try:
         stmt = text("""

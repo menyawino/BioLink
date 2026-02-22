@@ -14,7 +14,7 @@ import type { DatasetFilter } from "../api/patients";
 const COLORS = ['#e9322b', '#efb01b', '#00a2dd', '#22c55e', '#8b5cf6', '#6b7280', '#ec4899', '#f97316'];
 
 export function RegistryAnalytics() {
-  const [dataset, setDataset] = useState<DatasetFilter>("combined");
+  const [dataset, setDataset] = useState<DatasetFilter>("ehvol");
 
   // Fetch enrollment trends data
   const { data: enrollmentTrends, isLoading: enrollmentLoading } = useEnrollmentTrends(dataset);
@@ -92,7 +92,6 @@ export function RegistryAnalytics() {
                 <SelectValue placeholder="Dataset" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="combined">Combined</SelectItem>
                 <SelectItem value="ehvol">EHVol</SelectItem>
                 <SelectItem value="bhs">BHS</SelectItem>
               </SelectContent>
@@ -119,7 +118,7 @@ export function RegistryAnalytics() {
             <div className="mt-2 flex items-center text-sm">
               <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
               <span className="text-green-600">
-                {dataset === 'combined' ? 'Combined Registry' : dataset === 'ehvol' ? 'EHVol Registry' : 'BHS Registry'}
+                {dataset === 'ehvol' ? 'EHVol Registry' : 'BHS Registry'}
               </span>
             </div>
           </CardContent>

@@ -11,7 +11,9 @@ from app.config import settings
 
 def redact_phi(text: str) -> str:
     text = re.sub(r"\b\d{7,}\b", "[REDACTED_ID]", text)
-    text = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", text)
+    text = re.sub(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", text
+    )
     return text
 
 

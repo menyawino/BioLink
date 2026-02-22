@@ -14,7 +14,9 @@ def build_master_url():
     port = os.getenv("SQLSERVER_PORT", "1433")
     user = os.getenv("SQLSERVER_USER", "sa")
     password = os.getenv("SQLSERVER_PASSWORD", "Strong!Passw0rd")
-    driver = os.getenv("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server").replace(" ", "+")
+    driver = os.getenv("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server").replace(
+        " ", "+"
+    )
     trust_raw = os.getenv("SQLSERVER_TRUST_CERT", "true")
     trust = "yes" if str(trust_raw).lower() in {"true", "1", "yes"} else "no"
     return f"mssql+pyodbc://{user}:{password}@{host}:{port}/master?driver={driver}&TrustServerCertificate={trust}"
@@ -26,7 +28,9 @@ def build_db_url():
     user = os.getenv("SQLSERVER_USER", "sa")
     password = os.getenv("SQLSERVER_PASSWORD", "Strong!Passw0rd")
     db = os.getenv("SQLSERVER_DB", "EHVol")
-    driver = os.getenv("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server").replace(" ", "+")
+    driver = os.getenv("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server").replace(
+        " ", "+"
+    )
     trust_raw = os.getenv("SQLSERVER_TRUST_CERT", "true")
     trust = "yes" if str(trust_raw).lower() in {"true", "1", "yes"} else "no"
     return f"mssql+pyodbc://{user}:{password}@{host}:{port}/{db}?driver={driver}&TrustServerCertificate={trust}"
@@ -41,9 +45,7 @@ def ensure_database():
 def ensure_table():
     engine = create_engine(build_db_url())
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
+        conn.execute(text("""
                 IF OBJECT_ID('patients', 'U') IS NULL
                 CREATE TABLE patients (
                     id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -53,9 +55,7 @@ def ensure_table():
                     hypertension BIT NULL,
                     notes NVARCHAR(MAX) NULL
                 )
-                """
-            )
-        )
+                """))
 
 
 def load_csv(limit: int = 1000):
@@ -98,12 +98,20 @@ def load_csv(limit: int = 1000):
                     return None
 
             notes_parts = []
-            city = row.get("current_city_of_residence") or row.get("current_city_category")
+            city = row.get("current_city_of_residence") or row.get(
+                "current_city_category"
+            )
             if city:
                 notes_parts.append(f"city: {city}")
             if ef is not None and ef != "":
                 notes_parts.append(f"ef: {ef}")
-            for key in ["comorbidity", "ecg_conclusion", "procedure_details", "what_is_this_these_condition_s_", "who_and_what_disease_"]:
+            for key in [
+                "comorbidity",
+                "ecg_conclusion",
+                "procedure_details",
+                "what_is_this_these_condition_s_",
+                "who_and_what_disease_",
+            ]:
                 if row.get(key):
                     notes_parts.append(f"{key}: {row.get(key)}")
             notes = " | ".join(notes_parts) if notes_parts else None
@@ -125,12 +133,10 @@ def load_csv(limit: int = 1000):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM patients"))
         conn.execute(
-            text(
-                """
+            text("""
                 INSERT INTO patients (id, age, gender, ef, hypertension, notes)
                 VALUES (:id, :age, :gender, :ef, :hypertension, :notes)
-                """
-            ),
+                """),
             rows,
         )
 

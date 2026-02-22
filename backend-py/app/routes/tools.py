@@ -10,9 +10,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 tool_registry = ToolRegistry()
 
+
 class ToolRequest(BaseModel):
     tool: str
     arguments: Optional[dict] = None
+
 
 @router.post("/")
 async def call_tool(request: ToolRequest):

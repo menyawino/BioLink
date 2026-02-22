@@ -8,7 +8,7 @@ import type {
   GenomicData,
 } from './types';
 
-export type DatasetFilter = 'combined' | 'ehvol' | 'bhs';
+export type DatasetFilter = 'ehvol' | 'bhs';
 
 export interface PatientsQueryParams {
   page?: number;

@@ -6,32 +6,55 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-ALLOWED_DATASETS = {"combined", "ehvol", "bhs"}
-COMPLETENESS_EXPR = "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN mri_ef IS NOT NULL THEN 20 ELSE 0 END))"
+ALLOWED_DATASETS = {"ehvol", "bhs"}
+DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
+COMPLETENESS_EXPR = "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END))"
 
 
-def _dataset_filter(dataset: str | None) -> tuple[str, dict]:
-    normalized = (dataset or "combined").lower()
+def _dataset_table(dataset: str | None) -> str:
+    normalized = (dataset or "ehvol").lower()
     if normalized not in ALLOWED_DATASETS:
-        normalized = "combined"
-    if normalized == "combined":
-        return "1=1", {}
-    return "source_dataset = :dataset", {"dataset": normalized}
+        normalized = "ehvol"
+    return DATASET_TABLES[normalized]
 
 
 @router.get("/overview")
-async def registry_overview(dataset: str = Query("combined"), db=Depends(get_db)):
+async def registry_overview(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
 
-        total = db.execute(text(f"SELECT COUNT(*) FROM unified_participants WHERE {where_clause}"), params).scalar() or 0
-        male = db.execute(text(f"SELECT COUNT(*) FROM unified_participants WHERE {where_clause} AND LOWER(gender) IN ('male','m')"), params).scalar() or 0
-        female = db.execute(text(f"SELECT COUNT(*) FROM unified_participants WHERE {where_clause} AND LOWER(gender) IN ('female','f')"), params).scalar() or 0
-        avg_age = db.execute(text(f"SELECT AVG(age) FROM unified_participants WHERE {where_clause} AND age IS NOT NULL"), params).scalar()
-        with_echo = db.execute(text(f"SELECT COUNT(*) FROM unified_participants WHERE {where_clause} AND echo_ef IS NOT NULL"), params).scalar() or 0
-        with_mri = db.execute(text(f"SELECT COUNT(*) FROM unified_participants WHERE {where_clause} AND mri_ef IS NOT NULL"), params).scalar() or 0
-        with_both_echo_mri = db.execute(text(f"SELECT COUNT(*) FROM unified_participants WHERE {where_clause} AND echo_ef IS NOT NULL AND mri_ef IS NOT NULL"), params).scalar() or 0
-        avg_completeness = db.execute(text(f"SELECT AVG({COMPLETENESS_EXPR}) FROM unified_participants WHERE {where_clause}"), params).scalar() or 0
+        total = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+        male = (
+            db.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {table} WHERE LOWER(gender) IN ('male','m')"
+                )
+            ).scalar()
+            or 0
+        )
+        female = (
+            db.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {table} WHERE LOWER(gender) IN ('female','f')"
+                )
+            ).scalar()
+            or 0
+        )
+        avg_age = db.execute(
+            text(f"SELECT AVG(age) FROM {table} WHERE age IS NOT NULL")
+        ).scalar()
+        with_echo = (
+            db.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE echo_ef IS NOT NULL")
+            ).scalar()
+            or 0
+        )
+        with_mri = 0
+        with_both_echo_mri = 0
+        avg_completeness = (
+            db.execute(text(f"SELECT AVG({COMPLETENESS_EXPR}) FROM {table}")).scalar()
+            or 0
+        )
 
         return {
             "success": True,
@@ -53,9 +76,9 @@ async def registry_overview(dataset: str = Query("combined"), db=Depends(get_db)
 
 
 @router.get("/demographics")
-async def demographics(dataset: str = Query("combined"), db=Depends(get_db)):
+async def demographics(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
 
         age_gender_results = db.execute(text(f"""
             SELECT
@@ -69,26 +92,32 @@ async def demographics(dataset: str = Query("combined"), db=Depends(get_db)):
                 END as age_group,
                 COUNT(CASE WHEN LOWER(gender) IN ('male', 'm') THEN 1 END) as male,
                 COUNT(CASE WHEN LOWER(gender) IN ('female', 'f') THEN 1 END) as female
-            FROM unified_participants
-            WHERE {where_clause} AND age IS NOT NULL
+            FROM {table}
+            WHERE age IS NOT NULL
             GROUP BY age_group
             ORDER BY age_group
-        """), params).fetchall()
+        """)).fetchall()
 
         nationality_results = db.execute(text(f"""
             SELECT nationality, COUNT(*) as count
-            FROM unified_participants
-            WHERE {where_clause} AND nationality IS NOT NULL AND nationality != ''
+            FROM {table}
+            WHERE nationality IS NOT NULL AND nationality != ''
             GROUP BY nationality
             ORDER BY count DESC
             LIMIT 10
-        """), params).fetchall()
+        """)).fetchall()
 
         return {
             "success": True,
             "data": {
-                "ageGender": [{"age_group": row[0], "male": row[1], "female": row[2]} for row in age_gender_results],
-                "nationality": [{"nationality": row[0], "count": row[1]} for row in nationality_results],
+                "ageGender": [
+                    {"age_group": row[0], "male": row[1], "female": row[2]}
+                    for row in age_gender_results
+                ],
+                "nationality": [
+                    {"nationality": row[0], "count": row[1]}
+                    for row in nationality_results
+                ],
                 "maritalStatus": [],
             },
         }
@@ -98,7 +127,7 @@ async def demographics(dataset: str = Query("combined"), db=Depends(get_db)):
 
 
 @router.get("/clinical")
-async def clinical_metrics(dataset: str = Query("combined"), db=Depends(get_db)):
+async def clinical_metrics(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
         return {
             "success": True,
@@ -115,9 +144,9 @@ async def clinical_metrics(dataset: str = Query("combined"), db=Depends(get_db))
 
 
 @router.get("/comorbidities")
-async def comorbidities(dataset: str = Query("combined"), db=Depends(get_db)):
+async def comorbidities(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
 
         row = db.execute(text(f"""
             SELECT
@@ -126,9 +155,8 @@ async def comorbidities(dataset: str = Query("combined"), db=Depends(get_db)):
                 COUNT(*) FILTER (WHERE COALESCE(has_dyslipidemia, false)) AS dyslipidemia,
                 COUNT(*) FILTER (WHERE COALESCE(family_history_cad, false)) AS cad,
                 COUNT(*) FILTER (WHERE COALESCE(has_heart_failure, false)) AS heart_failure
-            FROM unified_participants
-            WHERE {where_clause}
-        """), params).fetchone()
+            FROM {table}
+        """)).fetchone()
 
         distribution_results = db.execute(text(f"""
             SELECT comorbidity_count, COUNT(*) AS patient_count
@@ -140,12 +168,11 @@ async def comorbidities(dataset: str = Query("combined"), db=Depends(get_db)):
                     CASE WHEN COALESCE(family_history_cad, false) THEN 1 ELSE 0 END +
                     CASE WHEN COALESCE(has_heart_failure, false) THEN 1 ELSE 0 END
                 ) AS comorbidity_count
-                FROM unified_participants
-                WHERE {where_clause}
+                FROM {table}
             ) c
             GROUP BY comorbidity_count
             ORDER BY comorbidity_count
-        """), params).fetchall()
+        """)).fetchall()
 
         return {
             "success": True,
@@ -161,7 +188,8 @@ async def comorbidities(dataset: str = Query("combined"), db=Depends(get_db)):
                     "anaemia": 0,
                 },
                 "comorbidityDistribution": [
-                    {"comorbidities": r[0], "patients": r[1]} for r in distribution_results
+                    {"comorbidities": r[0], "patients": r[1]}
+                    for r in distribution_results
                 ],
             },
         }
@@ -171,17 +199,16 @@ async def comorbidities(dataset: str = Query("combined"), db=Depends(get_db)):
 
 
 @router.get("/lifestyle")
-async def lifestyle(dataset: str = Query("combined"), db=Depends(get_db)):
+async def lifestyle(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
         smoking_result = db.execute(text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE COALESCE(is_smoker, false)) AS current_smokers,
                 0 AS former_smokers,
                 COUNT(*) FILTER (WHERE NOT COALESCE(is_smoker, false)) AS never_smoked
-            FROM unified_participants
-            WHERE {where_clause}
-        """), params).fetchone()
+            FROM {table}
+        """)).fetchone()
 
         return {
             "success": True,
@@ -200,25 +227,27 @@ async def lifestyle(dataset: str = Query("combined"), db=Depends(get_db)):
 
 
 @router.get("/geographic")
-async def geographic(dataset: str = Query("combined"), db=Depends(get_db)):
+async def geographic(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
 
         city_results = db.execute(text(f"""
             SELECT current_city, COUNT(*) as count
-            FROM unified_participants
-            WHERE {where_clause} AND current_city IS NOT NULL AND current_city != ''
+            FROM {table}
+            WHERE current_city IS NOT NULL AND current_city != ''
             GROUP BY current_city
             ORDER BY count DESC
             LIMIT 10
-        """), params).fetchall()
+        """)).fetchall()
 
         return {
             "success": True,
             "data": {
                 "cityCategory": [],
                 "migration": [],
-                "cityDistribution": [{"city": row[0], "count": row[1]} for row in city_results],
+                "cityDistribution": [
+                    {"city": row[0], "count": row[1]} for row in city_results
+                ],
             },
         }
     except Exception as e:
@@ -227,9 +256,9 @@ async def geographic(dataset: str = Query("combined"), db=Depends(get_db)):
 
 
 @router.get("/geographic-governorates")
-async def geographic_governorates(dataset: str = Query("combined"), db=Depends(get_db)):
+async def geographic_governorates(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
 
         results = db.execute(text(f"""
             SELECT current_city as governorate,
@@ -243,12 +272,12 @@ async def geographic_governorates(dataset: str = Query("combined"), db=Depends(g
                    AVG(bmi) as avg_bmi,
                    AVG(systolic_bp) as avg_systolic_bp,
                    AVG(hba1c) as avg_hba1c
-            FROM unified_participants
-            WHERE {where_clause} AND current_city IS NOT NULL AND current_city != ''
+            FROM {table}
+            WHERE current_city IS NOT NULL AND current_city != ''
             GROUP BY current_city
             ORDER BY patient_count DESC
             LIMIT 50
-        """), params).fetchall()
+        """)).fetchall()
 
         governorate_data = []
         for row in results:
@@ -258,33 +287,47 @@ async def geographic_governorates(dataset: str = Query("combined"), db=Depends(g
             female_count = row[4] or 0
             total_gender = male_count + female_count
             gender_ratio = male_count / total_gender if total_gender > 0 else 0
-            hypertension_rate = (row[5] or 0) / patient_count * 100 if patient_count > 0 else 0
-            diabetes_rate = (row[6] or 0) / patient_count * 100 if patient_count > 0 else 0
-            smoking_rate = (row[7] or 0) / patient_count * 100 if patient_count > 0 else 0
-            prevalence = min(25, hypertension_rate * 0.3 + diabetes_rate * 0.4 + smoking_rate * 0.2 + (avg_age - 40) * 0.1)
+            hypertension_rate = (
+                (row[5] or 0) / patient_count * 100 if patient_count > 0 else 0
+            )
+            diabetes_rate = (
+                (row[6] or 0) / patient_count * 100 if patient_count > 0 else 0
+            )
+            smoking_rate = (
+                (row[7] or 0) / patient_count * 100 if patient_count > 0 else 0
+            )
+            prevalence = min(
+                25,
+                hypertension_rate * 0.3
+                + diabetes_rate * 0.4
+                + smoking_rate * 0.2
+                + (avg_age - 40) * 0.1,
+            )
 
-            governorate_data.append({
-                "region": row[0],
-                "coordinates": [31.2357, 30.0444],
-                "patientCount": patient_count,
-                "prevalence": round(prevalence, 1),
-                "demographics": {
-                    "averageAge": round(avg_age, 1),
-                    "genderRatio": round(gender_ratio, 2),
-                    "ethnicityMix": {"arab": 95, "other": 5},
-                },
-                "riskFactors": {
-                    "hypertension": round(hypertension_rate, 1),
-                    "diabetes": round(diabetes_rate, 1),
-                    "smoking": round(smoking_rate, 1),
-                    "obesity": round((row[8] or 25) - 20, 1) if row[8] else 25,
-                },
-                "outcomes": {
-                    "mortality": round(prevalence * 0.05, 1),
-                    "readmission": round(prevalence * 1.2, 1),
-                    "complications": round(prevalence * 2.0, 1),
-                },
-            })
+            governorate_data.append(
+                {
+                    "region": row[0],
+                    "coordinates": [31.2357, 30.0444],
+                    "patientCount": patient_count,
+                    "prevalence": round(prevalence, 1),
+                    "demographics": {
+                        "averageAge": round(avg_age, 1),
+                        "genderRatio": round(gender_ratio, 2),
+                        "ethnicityMix": {"arab": 95, "other": 5},
+                    },
+                    "riskFactors": {
+                        "hypertension": round(hypertension_rate, 1),
+                        "diabetes": round(diabetes_rate, 1),
+                        "smoking": round(smoking_rate, 1),
+                        "obesity": round((row[8] or 25) - 20, 1) if row[8] else 25,
+                    },
+                    "outcomes": {
+                        "mortality": round(prevalence * 0.05, 1),
+                        "readmission": round(prevalence * 1.2, 1),
+                        "complications": round(prevalence * 2.0, 1),
+                    },
+                }
+            )
 
         return {"success": True, "data": governorate_data}
     except Exception as e:
@@ -293,26 +336,28 @@ async def geographic_governorates(dataset: str = Query("combined"), db=Depends(g
 
 
 @router.get("/enrollment-trends")
-async def enrollment_trends(dataset: str = Query("combined"), db=Depends(get_db)):
+async def enrollment_trends(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
         rows = db.execute(text(f"""
             SELECT DATE_TRUNC('month', enrollment_date) as month, COUNT(*) as enrolled
-            FROM unified_participants
-            WHERE {where_clause} AND enrollment_date IS NOT NULL
+            FROM {table}
+            WHERE enrollment_date IS NOT NULL
             GROUP BY DATE_TRUNC('month', enrollment_date)
             ORDER BY month
-        """), params).fetchall()
+        """)).fetchall()
 
         cumulative = 0
         data = []
         for row in rows:
             cumulative += row[1]
-            data.append({
-                "month": row[0].strftime("%Y-%m") if row[0] else "Unknown",
-                "enrolled": row[1],
-                "cumulative": cumulative,
-            })
+            data.append(
+                {
+                    "month": row[0].strftime("%Y-%m") if row[0] else "Unknown",
+                    "enrolled": row[1],
+                    "cumulative": cumulative,
+                }
+            )
 
         return {"success": True, "data": data}
     except Exception as e:
@@ -321,21 +366,20 @@ async def enrollment_trends(dataset: str = Query("combined"), db=Depends(get_db)
 
 
 @router.get("/data-quality")
-async def data_quality(dataset: str = Query("combined"), db=Depends(get_db)):
+async def data_quality(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
-        where_clause, params = _dataset_filter(dataset)
+        table = _dataset_table(dataset)
 
         completeness_result = db.execute(text(f"""
             SELECT
                 ROUND(AVG(CASE WHEN heart_rate IS NOT NULL OR systolic_bp IS NOT NULL OR diastolic_bp IS NOT NULL THEN 100 ELSE 0 END)) as physical_exam,
                 ROUND(AVG(CASE WHEN hba1c IS NOT NULL THEN 100 ELSE 0 END)) as lab_results,
                 ROUND(AVG(CASE WHEN echo_ef IS NOT NULL THEN 100 ELSE 0 END)) as echo,
-                ROUND(AVG(CASE WHEN mri_ef IS NOT NULL THEN 100 ELSE 0 END)) as mri,
+                0 as mri,
                 0 as ecg,
                 ROUND(AVG({COMPLETENESS_EXPR})) as overall
-            FROM unified_participants
-            WHERE {where_clause}
-        """), params).fetchone()
+            FROM {table}
+        """)).fetchone()
 
         distribution_results = db.execute(text(f"""
             SELECT
@@ -347,11 +391,10 @@ async def data_quality(dataset: str = Query("combined"), db=Depends(get_db)):
                     ELSE '0-19%'
                 END as completeness_range,
                 COUNT(*) as count
-            FROM unified_participants
-            WHERE {where_clause}
+            FROM {table}
             GROUP BY completeness_range
             ORDER BY completeness_range
-        """), params).fetchall()
+        """)).fetchall()
 
         return {
             "success": True,
@@ -364,7 +407,9 @@ async def data_quality(dataset: str = Query("combined"), db=Depends(get_db)):
                     "ecg": float(completeness_result[4] or 0),
                     "overall": float(completeness_result[5] or 0),
                 },
-                "distribution": [{"range": r[0], "count": r[1]} for r in distribution_results],
+                "distribution": [
+                    {"range": r[0], "count": r[1]} for r in distribution_results
+                ],
             },
         }
     except Exception as e:
@@ -373,12 +418,18 @@ async def data_quality(dataset: str = Query("combined"), db=Depends(get_db)):
 
 
 @router.get("/imaging")
-async def imaging(dataset: str = Query("combined"), db=Depends(get_db)):
+async def imaging(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
         return {
             "success": True,
             "data": {
-                "echo": {"avg_ef": 0, "min_ef": 0, "max_ef": 0, "std_ef": 0, "total": 0},
+                "echo": {
+                    "avg_ef": 0,
+                    "min_ef": 0,
+                    "max_ef": 0,
+                    "std_ef": 0,
+                    "total": 0,
+                },
                 "mri": {"avg_lv_ef": 0, "avg_lv_mass": 0, "avg_lv_edv": 0, "total": 0},
             },
         }
@@ -388,7 +439,7 @@ async def imaging(dataset: str = Query("combined"), db=Depends(get_db)):
 
 
 @router.get("/ecg")
-async def ecg(dataset: str = Query("combined"), db=Depends(get_db)):
+async def ecg(dataset: str = Query("ehvol"), db=Depends(get_db)):
     try:
         return {
             "success": True,

@@ -1,6 +1,7 @@
 """
 Database index management for optimized queries.
 """
+
 from sqlalchemy import text
 from app.database import engine
 import logging
@@ -12,20 +13,16 @@ INDEXES = {
     # Patient lookup indexes
     "idx_patients_dna_id": "CREATE INDEX IF NOT EXISTS idx_patients_dna_id ON patients(dna_id)",
     "idx_patients_enrollment_date": "CREATE INDEX IF NOT EXISTS idx_patients_enrollment_date ON patients(enrollment_date)",
-    
     # Demographic filters
     "idx_patients_age": "CREATE INDEX IF NOT EXISTS idx_patients_age ON patients(age)",
     "idx_patients_gender": "CREATE INDEX IF NOT EXISTS idx_patients_gender ON patients(gender)",
     "idx_patients_current_city": "CREATE INDEX IF NOT EXISTS idx_patients_current_city ON patients(current_city)",
-    
     # Composite indexes for common filter combinations
     "idx_patients_demo": "CREATE INDEX IF NOT EXISTS idx_patients_demo ON patients(gender, age, current_city)",
     "idx_patients_enrollment_gender": "CREATE INDEX IF NOT EXISTS idx_patients_enrollment_gender ON patients(enrollment_date, gender)",
-    
     # Medical condition indexes (if columns exist)
     "idx_patients_diabetes": "CREATE INDEX IF NOT EXISTS idx_patients_diabetes ON patients(diabetes_mellitus) WHERE diabetes_mellitus IS NOT NULL",
     "idx_patients_hypertension": "CREATE INDEX IF NOT EXISTS idx_patients_hypertension ON patients(high_blood_pressure) WHERE high_blood_pressure IS NOT NULL",
-    
     # Full-text search index (PostgreSQL specific)
     "idx_patients_search": """
         CREATE INDEX IF NOT EXISTS idx_patients_search ON patients 
@@ -57,7 +54,7 @@ def create_indexes():
             except Exception as e:
                 logger.warning(f"✗ Failed to create index {name}: {e}")
                 conn.rollback()
-        
+
         # Create EHVOL view indexes
         logger.info("Creating EHVOL view indexes...")
         for name, sql in EHVOL_INDEXES.items():
@@ -68,14 +65,14 @@ def create_indexes():
             except Exception as e:
                 logger.warning(f"✗ Failed to create index {name}: {e}")
                 conn.rollback()
-        
+
         logger.info("Index creation complete!")
 
 
 def drop_indexes():
     """Drop all custom indexes (useful for migrations)."""
     all_indexes = {**INDEXES, **EHVOL_INDEXES}
-    
+
     with engine.connect() as conn:
         logger.info("Dropping indexes...")
         for name in all_indexes.keys():
@@ -119,12 +116,13 @@ def get_index_stats():
 
 if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
-    
+
     print("Creating database indexes...")
     create_indexes()
     analyze_tables()
-    
+
     print("\nCurrent indexes:")
     for row in get_index_stats():
         print(f"  - {row.indexname} on {row.tablename}")

@@ -1,16 +1,16 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator, Field, AliasChoices
-from typing import Optional
+from pydantic import field_validator
+
 
 class Settings(BaseSettings):
     # Server
     port: int = 3001
     host: str = "0.0.0.0"
     environment: str = "development"
-    
+
     # Database
     database_url: str = "postgresql://biolink:biolink_secret@localhost:5432/biolink"
-    
+
     # Ollama / LangChain SQL agent
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "Qwen2.5:7B-Instruct"
@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     sqlserver_trust_cert: str = "yes"
 
     # RAG / pgvector
-    rag_pg_url: str = "postgresql://biolink:biolink_secret@localhost:5433/biolink_vector"
+    rag_pg_url: str = (
+        "postgresql://biolink:biolink_secret@localhost:5433/biolink_vector"
+    )
     rag_embedding_model: str = "nomic-embed-text"
     rag_embedding_dim: int = 768
     rag_chunk_size: int = 800
@@ -52,7 +54,9 @@ class Settings(BaseSettings):
     superset_admin_firstname: str = "Bio"
     superset_admin_lastname: str = "Link"
     superset_database_name: str = "BioLink"
-    superset_database_uri: str = "postgresql://biolink:biolink_secret@localhost:5432/biolink"
+    superset_database_uri: str = (
+        "postgresql://biolink:biolink_secret@localhost:5432/biolink"
+    )
     superset_default_schema: str = "public"
     superset_default_table: str = "EHVOL"
 
@@ -68,10 +72,11 @@ class Settings(BaseSettings):
         if value.startswith("postgresql://") and "+" not in value.split("://", 1)[0]:
             value = value.replace("postgresql://", "postgresql+psycopg2://", 1)
         return value
-    
+
     class Config:
         env_file = (".env", "../.env")
         case_sensitive = False
         extra = "ignore"
+
 
 settings = Settings()

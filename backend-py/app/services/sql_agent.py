@@ -7,7 +7,7 @@ from typing import List, Optional
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from langchain_community.utilities import SQLDatabase
-from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
+from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
@@ -48,14 +48,12 @@ class SafeSQLDatabaseToolkit(SQLDatabaseToolkit):
 class SqlAgentService:
     def __init__(self):
         self.db = SQLDatabase.from_uri(
-            settings.database_url,
-            sample_rows_in_table_info=2,
-            include_tables=None
+            settings.database_url, sample_rows_in_table_info=2, include_tables=None
         )
         self.llm = ChatOllama(
             base_url=settings.ollama_base_url,
             model=settings.ollama_model,
-            temperature=0
+            temperature=0,
         )
 
     async def run(self, message: str, history: Optional[List[dict]] = None) -> str:
@@ -75,7 +73,7 @@ class SqlAgentService:
         sql = self._rewrite_sql_columns(sql, table_info)
         if not sql.upper().startswith("SELECT"):
             return "Generated query is not a SELECT statement."
-        
+
         # Execute in thread
         result = await run_in_threadpool(self._execute_sql, sql)
         return f"Query executed: {sql}\nResult: {result}"
@@ -92,11 +90,22 @@ class SqlAgentService:
             return sql
 
         rewritten = sql
-        if "current_city" in table_info and re.search(r"\bcity\b", rewritten, flags=re.IGNORECASE):
-            rewritten = re.sub(r"\bcity\b", "current_city", rewritten, flags=re.IGNORECASE)
+        if "current_city" in table_info and re.search(
+            r"\bcity\b", rewritten, flags=re.IGNORECASE
+        ):
+            rewritten = re.sub(
+                r"\bcity\b", "current_city", rewritten, flags=re.IGNORECASE
+            )
 
-        if "current_city_category" in table_info and re.search(r"\bcity_category\b", rewritten, flags=re.IGNORECASE):
-            rewritten = re.sub(r"\bcity_category\b", "current_city_category", rewritten, flags=re.IGNORECASE)
+        if "current_city_category" in table_info and re.search(
+            r"\bcity_category\b", rewritten, flags=re.IGNORECASE
+        ):
+            rewritten = re.sub(
+                r"\bcity_category\b",
+                "current_city_category",
+                rewritten,
+                flags=re.IGNORECASE,
+            )
 
         return rewritten
 

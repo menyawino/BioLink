@@ -9,17 +9,32 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-NIFI_API_URL = os.getenv("ETL_SERVICE_URL", os.getenv("NIFI_API_URL", "http://nifi:8443/nifi-api")).rstrip("/")
-NIFI_USERNAME = os.getenv("NIFI_USERNAME", os.getenv("SINGLE_USER_CREDENTIALS_USERNAME", "admin"))
-NIFI_PASSWORD = os.getenv("NIFI_PASSWORD", os.getenv("SINGLE_USER_CREDENTIALS_PASSWORD", "biolink_nifi_secret_123"))
+NIFI_API_URL = os.getenv(
+    "ETL_SERVICE_URL", os.getenv("NIFI_API_URL", "http://nifi:8443/nifi-api")
+).rstrip("/")
+NIFI_USERNAME = os.getenv(
+    "NIFI_USERNAME", os.getenv("SINGLE_USER_CREDENTIALS_USERNAME", "admin")
+)
+NIFI_PASSWORD = os.getenv(
+    "NIFI_PASSWORD",
+    os.getenv("SINGLE_USER_CREDENTIALS_PASSWORD", "biolink_nifi_secret_123"),
+)
 NIFI_REQUEST_TIMEOUT = int(os.getenv("NIFI_REQUEST_TIMEOUT", "60"))
 NIFI_BHS_PROCESSOR_ID = os.getenv("NIFI_BHS_GETFILE_PROCESSOR_ID", "proc-bhs-getfile")
-NIFI_EHVOL_PROCESSOR_ID = os.getenv("NIFI_EHVOL_GETFILE_PROCESSOR_ID", "proc-ehvol-getfile")
-NIFI_VERIFY_SSL = os.getenv("NIFI_VERIFY_SSL", "false").lower() in {"1", "true", "yes", "on"}
+NIFI_EHVOL_PROCESSOR_ID = os.getenv(
+    "NIFI_EHVOL_GETFILE_PROCESSOR_ID", "proc-ehvol-getfile"
+)
+NIFI_VERIFY_SSL = os.getenv("NIFI_VERIFY_SSL", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 NIFI_STAGE_DIR = Path(os.getenv("NIFI_STAGE_DIR", "/app/db"))
 
 BHS_CANONICAL_FILENAME = "BHS_Full.csv"
 EHVOL_CANONICAL_FILENAME = "EHVol_Full.csv"
+
 
 class ETLParams(BaseModel):
     table: str = "ehvol_full"
@@ -56,7 +71,9 @@ def _stage_csv_for_nifi(csv_path: str | None, dataset: str) -> str | None:
         return csv_path
 
     NIFI_STAGE_DIR.mkdir(parents=True, exist_ok=True)
-    target_name = BHS_CANONICAL_FILENAME if dataset == "bhs" else EHVOL_CANONICAL_FILENAME
+    target_name = (
+        BHS_CANONICAL_FILENAME if dataset == "bhs" else EHVOL_CANONICAL_FILENAME
+    )
     staged_path = NIFI_STAGE_DIR / target_name
     shutil.copy2(source, staged_path)
     return str(staged_path)
@@ -77,7 +94,9 @@ def _get_auth_headers() -> dict[str, str]:
         if token:
             return {"Authorization": f"Bearer {token}"}
     except Exception as exc:
-        logger.warning("NiFi token request failed; trying unauthenticated API call: %s", exc)
+        logger.warning(
+            "NiFi token request failed; trying unauthenticated API call: %s", exc
+        )
     return {}
 
 
@@ -96,7 +115,9 @@ def _resolve_getfile_processor_id(dataset: str, headers: dict[str, str]) -> str:
         response.raise_for_status()
         flow = response.json().get("processGroupFlow", {}).get("flow", {})
         processors = flow.get("processors", [])
-        expected_name = "GetFile - BHS CSV" if dataset == "bhs" else "GetFile - EHVol CSV"
+        expected_name = (
+            "GetFile - BHS CSV" if dataset == "bhs" else "GetFile - EHVol CSV"
+        )
 
         for proc in processors:
             component = proc.get("component", {})
@@ -105,7 +126,9 @@ def _resolve_getfile_processor_id(dataset: str, headers: dict[str, str]) -> str:
                 if proc_id:
                     return proc_id
     except Exception as exc:
-        logger.warning("Failed to auto-discover NiFi processor ID for %s: %s", dataset, exc)
+        logger.warning(
+            "Failed to auto-discover NiFi processor ID for %s: %s", dataset, exc
+        )
 
     return env_default
 

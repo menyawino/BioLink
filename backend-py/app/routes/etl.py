@@ -14,8 +14,13 @@ logger = logging.getLogger(__name__)
 _jobs_lock = Lock()
 _jobs: dict[str, dict] = {}
 
-ETL_UPLOAD_WRITE_DIR = os.getenv("ETL_UPLOAD_WRITE_DIR", os.getenv("ETL_UPLOAD_DIR", "/tmp/biolink_uploaded_csvs"))
-ETL_UPLOAD_READ_DIR = os.getenv("ETL_UPLOAD_READ_DIR", os.getenv("ETL_SERVICE_UPLOAD_DIR", ETL_UPLOAD_WRITE_DIR))
+ETL_UPLOAD_WRITE_DIR = os.getenv(
+    "ETL_UPLOAD_WRITE_DIR", os.getenv("ETL_UPLOAD_DIR", "/tmp/biolink_uploaded_csvs")
+)
+ETL_UPLOAD_READ_DIR = os.getenv(
+    "ETL_UPLOAD_READ_DIR", os.getenv("ETL_SERVICE_UPLOAD_DIR", ETL_UPLOAD_WRITE_DIR)
+)
+
 
 class ETLRequest(BaseModel):
     table: str = "ehvol_full"
@@ -28,6 +33,7 @@ class ETLRequest(BaseModel):
 
 class WebhookPayload(BaseModel):
     """A simple webhook payload to trigger ETL runs from external systems."""
+
     runId: Optional[str] = None
     request: Optional[dict[str, Any]] = None
 
@@ -79,7 +85,7 @@ def _run_wrapper(job_id: str, req: ETLRequest):
         csv=etl_csv_path,
         dataset_name=req.dataset_name,
         dbt_select=req.dbt_select,
-        skip_superset=req.skip_superset
+        skip_superset=req.skip_superset,
     )
     try:
         result = trigger_etl_pipeline(params)
@@ -143,6 +149,7 @@ async def webhook_trigger(payload: WebhookPayload, background_tasks: BackgroundT
             "message": "ETL job enqueued via webhook",
         },
     }
+
 
 @router.post("/run")
 async def trigger_etl(req: ETLRequest, background_tasks: BackgroundTasks):

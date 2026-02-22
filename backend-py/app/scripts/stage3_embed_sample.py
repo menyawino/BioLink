@@ -21,7 +21,9 @@ def run():
 
     to_upsert = []
     extractor = default_wrapper()
-    out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "extractions"))
+    out_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "data", "extractions")
+    )
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     for row in rows:
         patient_id = str(row[0])
@@ -44,7 +46,10 @@ def run():
         try:
             out_path = os.path.join(out_dir, f"patient_{patient_id}_extractions.jsonl")
             with open(out_path, "a", encoding="utf-8") as fh:
-                line = json.dumps({"patient_id": patient_id, "extractions": extractions}, ensure_ascii=False)
+                line = json.dumps(
+                    {"patient_id": patient_id, "extractions": extractions},
+                    ensure_ascii=False,
+                )
                 fh.write(line + "\n")
         except Exception:
             # non-fatal: continue to embedding step

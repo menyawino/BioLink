@@ -100,16 +100,18 @@ def build_patient_diagnoses(row: Mapping[str, Any]) -> List[DiagnosisSummary]:
 
     for definition in DIAGNOSIS_DEFINITIONS:
         if row.get(definition["column"]):
-            diagnoses.append({
-                "id": definition["id"],
-                "condition": definition["condition"],
-                "icd10Code": definition["icd10Code"],
-                "category": definition["category"],
-                "diagnosedDate": diagnosed_date,
-                "status": definition["status"],
-                "severity": definition["severity"],
-                "clinicalNotes": definition["clinicalNotes"],
-            })
+            diagnoses.append(
+                {
+                    "id": definition["id"],
+                    "condition": definition["condition"],
+                    "icd10Code": definition["icd10Code"],
+                    "category": definition["category"],
+                    "diagnosedDate": diagnosed_date,
+                    "status": definition["status"],
+                    "severity": definition["severity"],
+                    "clinicalNotes": definition["clinicalNotes"],
+                }
+            )
 
     return diagnoses
 

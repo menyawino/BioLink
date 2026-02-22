@@ -30,12 +30,17 @@ class SupersetClient:
             "username": self.username,
             "password": self.password,
             "provider": "db",
-            "refresh": True
+            "refresh": True,
         }
-        async with session.post(f"{self.base_url}/api/v1/security/login", json=payload) as resp:
+        async with session.post(
+            f"{self.base_url}/api/v1/security/login", json=payload
+        ) as resp:
             data = await resp.json()
             logger.info("Superset login response type=%s", type(data))
-            logger.info("Superset login response keys=%s", list(data.keys()) if isinstance(data, dict) else str(data)[:200])
+            logger.info(
+                "Superset login response keys=%s",
+                list(data.keys()) if isinstance(data, dict) else str(data)[:200],
+            )
             access_token = data.get("access_token") if isinstance(data, dict) else None
             if not access_token:
                 raise RuntimeError(f"Superset login failed: {data}")
@@ -43,14 +48,22 @@ class SupersetClient:
 
     async def _csrf(self, session: aiohttp.ClientSession, access_token: str) -> str:
         headers = {"Authorization": f"Bearer {access_token}"}
-        async with session.get(f"{self.base_url}/api/v1/security/csrf_token/", headers=headers) as resp:
+        async with session.get(
+            f"{self.base_url}/api/v1/security/csrf_token/", headers=headers
+        ) as resp:
             data = await resp.json()
             logger.info("Superset csrf response type=%s", type(data))
-            logger.info("Superset csrf response keys=%s", list(data.keys()) if isinstance(data, dict) else str(data)[:200])
+            logger.info(
+                "Superset csrf response keys=%s",
+                list(data.keys()) if isinstance(data, dict) else str(data)[:200],
+            )
             # Debug cookies present in session after csrf call
             try:
                 cookies = session.cookie_jar.filter_cookies(self.base_url)
-                logger.info("Superset session cookies after csrf: %s", {k: v.value for k, v in cookies.items()})
+                logger.info(
+                    "Superset session cookies after csrf: %s",
+                    {k: v.value for k, v in cookies.items()},
+                )
                 if "session" in cookies:
                     self._csrf_cookie = f"session={cookies['session'].value}"
             except Exception:
@@ -82,24 +95,39 @@ class SupersetClient:
         try:
             if self._csrf_cookie:
                 headers["Cookie"] = self._csrf_cookie
-                logger.info("Superset request will include csrf cookie: %s", self._csrf_cookie)
+                logger.info(
+                    "Superset request will include csrf cookie: %s", self._csrf_cookie
+                )
             else:
                 cookies = session.cookie_jar.filter_cookies(self.base_url)
                 if cookies:
-                    cookie_header = "; ".join(f"{k}={v.value}" for k, v in cookies.items())
+                    cookie_header = "; ".join(
+                        f"{k}={v.value}" for k, v in cookies.items()
+                    )
                     headers.setdefault("Cookie", cookie_header)
-                    logger.info("Superset request will include cookies: %s", cookie_header)
+                    logger.info(
+                        "Superset request will include cookies: %s", cookie_header
+                    )
         except Exception:
             logger.exception("Failed to build cookie header for Superset request")
 
         # Sanitize Authorization header for logging
-        log_headers = {k: ("REDACTED" if k.lower() == "authorization" else v) for k, v in headers.items()}
-        logger.info("Superset request: %s %s headers=%s body=%s", method, path, log_headers, json_body)
+        log_headers = {
+            k: ("REDACTED" if k.lower() == "authorization" else v)
+            for k, v in headers.items()
+        }
+        logger.info(
+            "Superset request: %s %s headers=%s body=%s",
+            method,
+            path,
+            log_headers,
+            json_body,
+        )
 
         # Ensure Referer is provided to satisfy CSRF checks
-        headers.setdefault('Referer', f"{self.base_url}/")
+        headers.setdefault("Referer", f"{self.base_url}/")
         # X-Requested-With is often required by servers to identify AJAX requests for CSRF checks
-        headers.setdefault('X-Requested-With', 'XMLHttpRequest')
+        headers.setdefault("X-Requested-With", "XMLHttpRequest")
         async with session.request(
             method,
             f"{self.base_url}{path}",
@@ -122,16 +150,29 @@ class SupersetClient:
         if isinstance(payload, dict):
             if isinstance(payload.get("id"), int):
                 return payload["id"]
-            if isinstance(payload.get("result"), dict) and isinstance(payload["result"].get("id"), int):
+            if isinstance(payload.get("result"), dict) and isinstance(
+                payload["result"].get("id"), int
+            ):
                 return payload["result"]["id"]
         return None
 
-    async def _list_resource(self, session: aiohttp.ClientSession, access_token: str, resource: str) -> list[dict]:
+    async def _list_resource(
+        self, session: aiohttp.ClientSession, access_token: str, resource: str
+    ) -> list[dict]:
         params = {"q": "(page:0,page_size:200)"}
-        data = await self._request(session, "GET", f"/api/v1/{resource}/", access_token, params=params)
+        data = await self._request(
+            session, "GET", f"/api/v1/{resource}/", access_token, params=params
+        )
         return data.get("result") or []
 
-    async def get_or_create_database(self, session: aiohttp.ClientSession, access_token: str, csrf_token: str, name: str, uri: str) -> int:
+    async def get_or_create_database(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        csrf_token: str,
+        name: str,
+        uri: str,
+    ) -> int:
         existing = await self._list_resource(session, access_token, "database")
         for item in existing:
             if item.get("database_name") == name:
@@ -143,9 +184,16 @@ class SupersetClient:
             "expose_in_sqllab": True,
             "allow_ctas": False,
             "allow_dml": False,
-            "allow_cvas": False
+            "allow_cvas": False,
         }
-        created = await self._request(session, "POST", "/api/v1/database/", access_token, csrf_token, json_body=payload)
+        created = await self._request(
+            session,
+            "POST",
+            "/api/v1/database/",
+            access_token,
+            csrf_token,
+            json_body=payload,
+        )
         db_id = self._extract_id(created)
         if db_id is None:
             raise RuntimeError(f"Failed to create Superset database: {created}")
@@ -165,12 +213,15 @@ class SupersetClient:
             if item.get("table_name") == table_name and item.get("schema") == schema:
                 return int(item["id"])
 
-        payload = {
-            "database": database_id,
-            "schema": schema,
-            "table_name": table_name
-        }
-        created = await self._request(session, "POST", "/api/v1/dataset/", access_token, csrf_token, json_body=payload)
+        payload = {"database": database_id, "schema": schema, "table_name": table_name}
+        created = await self._request(
+            session,
+            "POST",
+            "/api/v1/dataset/",
+            access_token,
+            csrf_token,
+            json_body=payload,
+        )
         dataset_id = self._extract_id(created)
         if dataset_id is None:
             raise RuntimeError(f"Failed to create Superset dataset: {created}")
@@ -191,9 +242,16 @@ class SupersetClient:
             "viz_type": viz_type,
             "params": json.dumps(params),
             "datasource_id": dataset_id,
-            "datasource_type": "table"
+            "datasource_type": "table",
         }
-        created = await self._request(session, "POST", "/api/v1/chart/", access_token, csrf_token, json_body=payload)
+        created = await self._request(
+            session,
+            "POST",
+            "/api/v1/chart/",
+            access_token,
+            csrf_token,
+            json_body=payload,
+        )
         chart_id = self._extract_id(created)
         if chart_id is None:
             raise RuntimeError(f"Failed to create Superset chart: {created}")
@@ -206,11 +264,15 @@ class SupersetClient:
         csrf_token: str,
         title: str,
     ) -> int:
-        payload = {
-            "dashboard_title": title,
-            "published": True
-        }
-        created = await self._request(session, "POST", "/api/v1/dashboard/", access_token, csrf_token, json_body=payload)
+        payload = {"dashboard_title": title, "published": True}
+        created = await self._request(
+            session,
+            "POST",
+            "/api/v1/dashboard/",
+            access_token,
+            csrf_token,
+            json_body=payload,
+        )
         dashboard_id = self._extract_id(created)
         if dashboard_id is None:
             raise RuntimeError(f"Failed to create Superset dashboard: {created}")
@@ -224,7 +286,9 @@ class SupersetClient:
         dashboard_id: int,
         chart_id: int,
     ) -> None:
-        dashboard = await self._request(session, "GET", f"/api/v1/dashboard/{dashboard_id}", access_token)
+        dashboard = await self._request(
+            session, "GET", f"/api/v1/dashboard/{dashboard_id}", access_token
+        )
         result = dashboard.get("result") if isinstance(dashboard, dict) else None
         if not isinstance(result, dict):
             raise RuntimeError(f"Failed to load dashboard details: {dashboard}")
@@ -254,14 +318,22 @@ class SupersetClient:
             json_metadata = "{}"
 
         payload = {
-            "dashboard_title": result.get("dashboard_title") or result.get("dashboard_title"),
+            "dashboard_title": result.get("dashboard_title")
+            or result.get("dashboard_title"),
             "slug": result.get("slug"),
             "position_json": json.dumps(position),
             "json_metadata": json_metadata,
             "published": result.get("published", True),
         }
         payload = {k: v for k, v in payload.items() if v is not None}
-        await self._request(session, "PUT", f"/api/v1/dashboard/{dashboard_id}", access_token, csrf_token, json_body=payload)
+        await self._request(
+            session,
+            "PUT",
+            f"/api/v1/dashboard/{dashboard_id}",
+            access_token,
+            csrf_token,
+            json_body=payload,
+        )
 
     async def create_guest_token(
         self,
@@ -277,9 +349,16 @@ class SupersetClient:
                 "last_name": "User",
             },
             "resources": resources,
-            "rls": []
+            "rls": [],
         }
-        created = await self._request(session, "POST", "/api/v1/security/guest_token", access_token, csrf_token, json_body=payload)
+        created = await self._request(
+            session,
+            "POST",
+            "/api/v1/security/guest_token",
+            access_token,
+            csrf_token,
+            json_body=payload,
+        )
         token = created.get("token") or created.get("result", {}).get("token")
         if not token:
             raise RuntimeError(f"Failed to create Superset guest token: {created}")

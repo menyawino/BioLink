@@ -1,6 +1,5 @@
 import json
 
-import pytest
 
 from app.services import extractor
 
@@ -22,8 +21,18 @@ class FakeResult:
 
 
 class FakeLX:
-    def extract(self, text_or_documents, prompt_description, examples, model_id, model_url, fence_output):
-        return FakeResult({"extractions": [{"class": "entity", "text": text_or_documents}]})
+    def extract(
+        self,
+        text_or_documents,
+        prompt_description,
+        examples,
+        model_id,
+        model_url,
+        fence_output,
+    ):
+        return FakeResult(
+            {"extractions": [{"class": "entity", "text": text_or_documents}]}
+        )
 
 
 def test_extract_notes_success(monkeypatch):

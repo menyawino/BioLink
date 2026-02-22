@@ -38,8 +38,7 @@ class Agent(Protocol):
         message: str,
         history: Optional[List[Dict[str, str]]],
         tool_registry: ToolRegistry,
-    ) -> AgentResult:
-        ...
+    ) -> AgentResult: ...
 
 
 async def _ainvoke_with_retries(
@@ -56,7 +55,7 @@ async def _ainvoke_with_retries(
             last_error = exc
             if attempt >= max_retries:
                 break
-            backoff = settings.llm_retry_backoff_s * (2 ** attempt)
+            backoff = settings.llm_retry_backoff_s * (2**attempt)
             jitter = random.random() * settings.llm_retry_jitter_s
             await asyncio.sleep(backoff + jitter)
     raise last_error or RuntimeError("LLM invocation failed")
@@ -192,7 +191,10 @@ class MedicalAgentAdapter:
         history_block = ""
         if history:
             history_block = "\n".join(
-                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+                [
+                    f"{item.get('role', 'user')}: {item.get('content', '')}"
+                    for item in history[-6:]
+                ]
             )
         return (
             "You are a careful medical assistant. Provide evidence-based guidance, "
@@ -211,16 +213,24 @@ class MedicalAgentAdapter:
         history_block = ""
         if history:
             history_block = "\n".join(
-                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+                [
+                    f"{item.get('role', 'user')}: {item.get('content', '')}"
+                    for item in history[-6:]
+                ]
             )
         tool_call_block = ""
         if agent_result.tool_calls:
             tool_call_block = "\n".join(
-                [f"- {tc.name}: {json.dumps(tc.arguments, ensure_ascii=False)}" for tc in agent_result.tool_calls]
+                [
+                    f"- {tc.name}: {json.dumps(tc.arguments, ensure_ascii=False)}"
+                    for tc in agent_result.tool_calls
+                ]
             )
         metadata_block = ""
         if agent_result.metadata:
-            metadata_block = json.dumps(agent_result.metadata, ensure_ascii=False, indent=2)
+            metadata_block = json.dumps(
+                agent_result.metadata, ensure_ascii=False, indent=2
+            )
         return (
             "You are a medical reasoning assistant. A specialist agent already executed tools and gathered data. "
             "Use the tool results to provide the final response. Be explicit about uncertainty and avoid definitive diagnoses. "
@@ -261,7 +271,9 @@ class DataAgentAdapter:
                 max_retries=settings.llm_max_retries,
             )
         except Exception as exc:
-            logger.warning("Data agent LLM unavailable, falling back to heuristic SQL: %s", exc)
+            logger.warning(
+                "Data agent LLM unavailable, falling back to heuristic SQL: %s", exc
+            )
             sql = SqlAgentAdapter()._heuristic_sql(message)
             if not sql:
                 return AgentResult(
@@ -343,7 +355,10 @@ class DataAgentAdapter:
         history_block = ""
         if history:
             history_block = "\n".join(
-                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+                [
+                    f"{item.get('role', 'user')}: {item.get('content', '')}"
+                    for item in history[-6:]
+                ]
             )
         return (
             "You are a data agent. Decide whether to generate SQL or a chart. "
@@ -406,6 +421,7 @@ class RagAgentAdapter:
         tool_registry: ToolRegistry,
     ) -> AgentResult:
         from app.services.rag_agent import rag_agent_service
+
         if rag_agent_service is None:
             return AgentResult(
                 content="RAG service is unavailable. Please try again later.",
@@ -536,7 +552,10 @@ class ChatOrchestrator:
         history_block = ""
         if history:
             history_block = "\n".join(
-                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in history[-6:]]
+                [
+                    f"{item.get('role', 'user')}: {item.get('content', '')}"
+                    for item in history[-6:]
+                ]
             )
         prompt = (
             "You are an orchestrator. Route the user request to exactly one intent from: "
@@ -577,13 +596,20 @@ class ChatOrchestrator:
             if llm_intent:
                 intent = llm_intent
         intent = self._normalize_intent(intent)
-        audit_event("intent_routed", {"intent": intent, "message": message[:200]}, request_id)
+        audit_event(
+            "intent_routed", {"intent": intent, "message": message[:200]}, request_id
+        )
         agent = self._agents.get(intent, self._agents["general"])
-        audit_event("agent_selected", {"agent": getattr(agent, "name", intent)}, request_id)
+        audit_event(
+            "agent_selected", {"agent": getattr(agent, "name", intent)}, request_id
+        )
         result = await agent.run(message, history, self._tool_registry)
         audit_event(
             "agent_completed",
-            {"agent": result.agent, "tool_calls": [tc.name for tc in result.tool_calls]},
+            {
+                "agent": result.agent,
+                "tool_calls": [tc.name for tc in result.tool_calls],
+            },
             request_id,
         )
         if result.agent != "medical":
@@ -599,7 +625,9 @@ class ChatOrchestrator:
                 f"User question: {message}\n\n"
                 f"Specialist agent ({result.agent}) summary:\n{result.content}"
             )
-            return await medical_agent.run(combined_message, history, self._tool_registry)
+            return await medical_agent.run(
+                combined_message, history, self._tool_registry
+            )
         return result
 
 

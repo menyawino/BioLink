@@ -1,8 +1,9 @@
 """
 Security utilities for authentication and authorization.
 """
+
 from datetime import datetime, timedelta
-from typing import Optional, Union
+from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -12,10 +13,10 @@ from app.config import settings
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # JWT Configuration
-SECRET_KEY = getattr(settings, 'secret_key', 'your-secret-key-change-in-production')
-ALGORITHM = getattr(settings, 'jwt_algorithm', 'HS256')
-ACCESS_TOKEN_EXPIRE_MINUTES = getattr(settings, 'access_token_expire_minutes', 30)
-REFRESH_TOKEN_EXPIRE_DAYS = getattr(settings, 'refresh_token_expire_days', 7)
+SECRET_KEY = getattr(settings, "secret_key", "your-secret-key-change-in-production")
+ALGORITHM = getattr(settings, "jwt_algorithm", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = getattr(settings, "access_token_expire_minutes", 30)
+REFRESH_TOKEN_EXPIRE_DAYS = getattr(settings, "refresh_token_expire_days", 7)
 
 
 class Token(BaseModel):
@@ -58,7 +59,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -91,7 +92,7 @@ USERS_DB = {
         "email": "admin@biolink.local",
         "hashed_password": get_password_hash("admin"),
         "disabled": False,
-        "scopes": ["admin", "read", "write", "delete"]
+        "scopes": ["admin", "read", "write", "delete"],
     },
     "researcher": {
         "username": "researcher",
@@ -99,7 +100,7 @@ USERS_DB = {
         "email": "researcher@biolink.local",
         "hashed_password": get_password_hash("researcher"),
         "disabled": False,
-        "scopes": ["read", "write"]
+        "scopes": ["read", "write"],
     },
     "viewer": {
         "username": "viewer",
@@ -107,8 +108,8 @@ USERS_DB = {
         "email": "viewer@biolink.local",
         "hashed_password": get_password_hash("viewer"),
         "disabled": False,
-        "scopes": ["read"]
-    }
+        "scopes": ["read"],
+    },
 }
 
 

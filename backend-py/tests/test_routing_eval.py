@@ -6,7 +6,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 BACKEND_ROOT = TESTS_DIR.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.intent_router import IntentRouter
+from app.services.intent_router import IntentRouter  # noqa: E402
 
 
 class RoutingEvalTests(unittest.TestCase):

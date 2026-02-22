@@ -18,7 +18,7 @@ interface GeographicMappingProps {
   dataset?: DatasetFilter;
 }
 
-export function GeographicMapping({ dataset = 'combined' }: GeographicMappingProps) {
+export function GeographicMapping({ dataset = 'ehvol' }: GeographicMappingProps) {
   const [selectedLayer, setSelectedLayer] = useState("prevalence");
   const [mapType, setMapType] = useState("choropleth");
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
