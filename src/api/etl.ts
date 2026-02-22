@@ -1,0 +1,43 @@
+import { get, post, type ApiResponse } from './client';
+
+export interface EtlRunRequest {
+  table?: string;
+  schema?: string;
+  csv?: string | null;
+  dataset_name?: string | null;
+  dbt_select?: string | null;
+  skip_superset?: boolean;
+}
+
+export interface EtlRunAccepted {
+  jobId: string;
+  status: 'queued';
+  message: string;
+}
+
+export interface EtlJobStatus {
+  jobId: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  request: EtlRunRequest;
+  result: unknown;
+  error: string | null;
+}
+
+export async function runEtl(payload: EtlRunRequest): Promise<ApiResponse<EtlRunAccepted>> {
+  return post<EtlRunAccepted>('/api/etl/run', payload);
+}
+
+export async function webhookTrigger(payload: { runId?: string | null; request?: EtlRunRequest }): Promise<ApiResponse<EtlRunAccepted & { externalRunId?: string | null }>> {
+  return post('/api/etl/webhook/trigger', payload);
+}
+
+export async function getEtlJobStatus(jobId: string): Promise<ApiResponse<EtlJobStatus>> {
+  return get<EtlJobStatus>(`/api/etl/status/${jobId}`);
+}
+
+export async function listEtlJobs(limit = 20): Promise<ApiResponse<EtlJobStatus[]>> {
+  return get<EtlJobStatus[]>(`/api/etl/status?limit=${limit}`);
+}

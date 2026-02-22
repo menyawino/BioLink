@@ -45,6 +45,11 @@ Server runs on: `http://localhost:3001`
 - `GET /` - API status
 - `GET /health` - Database health check
 
+### ETL
+
+- `POST /api/etl/run` - Trigger NiFi ETL flow (BHS/EHVol) from backend
+- `GET /api/etl/status/{job_id}` - Check ETL job status
+
 ## Key Features
 
 ✅ AI-powered chat system  
@@ -81,6 +86,7 @@ All credentials are in `backend-py/.env` and configured from the main `.env` fil
 Key variables:
 - `DATABASE_URL` - PostgreSQL connection
 - `SQLSERVER_*` - SQL Server connection used for live EHVol registry
+- `ETL_SERVICE_URL` - NiFi API endpoint (default `http://nifi:8443/nifi-api`)
 
 ## Stage 1: SQL Server Smoke Test (EHVol)
 
@@ -104,7 +110,7 @@ Expected output: column list + 10 sample rows (id, age, gender, ef, hypertension
 From repo root:
 
 ```bash
-docker compose -f docker-compose.rag.yml up -d
+docker compose up -d
 ```
 
 ### Stage 2: pgvector setup

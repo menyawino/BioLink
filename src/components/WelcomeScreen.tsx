@@ -53,11 +53,11 @@ export function WelcomeScreen({
     },
     {
       id: "analytics",
-      title: "Enhanced Registry Analytics",
+      title: "Advanced Registry Analytics",
       description:
         "Advanced data visualization with UpSet plots, timeline exploration, geographic mapping, and comprehensive dashboards.",
       icon: BarChart3,
-      badge: "Enhanced",
+      badge: "Updated",
       badgeVariant: "secondary" as const,
       highlights: [
         "Population analytics",

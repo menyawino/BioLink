@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List
 from app.services.orchestrator import get_default_orchestrator
+from app.core import limiter, RateLimits
 import logging
 
 router = APIRouter()
@@ -47,12 +48,14 @@ async def _run_chat(request: ChatRequest):
 
 
 @router.post("")
-async def chat(request: ChatRequest):
+@limiter.limit(RateLimits.CHAT)
+async def chat(request: Request, chat_request: ChatRequest):
     """Chat endpoint using orchestrated agents."""
-    return await _run_chat(request)
+    return await _run_chat(chat_request)
 
 
 @router.post("/sql-agent")
-async def chat_sql_agent(request: ChatRequest):
+@limiter.limit(RateLimits.CHAT)
+async def chat_sql_agent(request: Request, chat_request: ChatRequest):
     """Alias endpoint for chat (backwards compatibility)."""
-    return await _run_chat(request)
+    return await _run_chat(chat_request)

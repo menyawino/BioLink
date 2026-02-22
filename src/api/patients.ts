@@ -8,6 +8,8 @@ import type {
   GenomicData,
 } from './types';
 
+export type DatasetFilter = 'combined' | 'ehvol' | 'bhs';
+
 export interface PatientsQueryParams {
   page?: number;
   limit?: number;
@@ -40,6 +42,9 @@ export interface PatientsQueryParams {
   hasSmoking?: boolean;
   hasObesity?: boolean;
   hasFamilyHistory?: boolean;
+
+  // Dataset filter
+  dataset?: DatasetFilter;
 }
 
 // Get paginated list of patients
@@ -77,6 +82,7 @@ export async function getPatients(params: PatientsQueryParams = {}) {
   if (params.hasSmoking !== undefined) queryParams.set('hasSmoking', params.hasSmoking.toString());
   if (params.hasObesity !== undefined) queryParams.set('hasObesity', params.hasObesity.toString());
   if (params.hasFamilyHistory !== undefined) queryParams.set('hasFamilyHistory', params.hasFamilyHistory.toString());
+  if (params.dataset) queryParams.set('dataset', params.dataset);
   
   const query = queryParams.toString();
   return get<Patient[]>(`/api/patients${query ? `?${query}` : ''}`);
@@ -84,7 +90,7 @@ export async function getPatients(params: PatientsQueryParams = {}) {
 
 // Get single patient by DNA ID
 export async function getPatient(dnaId: string) {
-  return get<PatientDetail>(`/api/patients/${dnaId}`);
+  return get<PatientDetail>(`/api/patients/${encodeURIComponent(dnaId)}`);
 }
 
 // Search patients
@@ -94,20 +100,20 @@ export async function searchPatients(query: string, limit = 20) {
 
 // Get patient vitals
 export async function getPatientVitals(dnaId: string) {
-  return get<PatientVitals>(`/api/patients/${dnaId}/vitals`);
+  return get<PatientVitals>(`/api/patients/${encodeURIComponent(dnaId)}/vitals`);
 }
 
 // Get patient imaging data
 export async function getPatientImaging(dnaId: string) {
-  return get<ImagingData>(`/api/patients/${dnaId}/imaging`);
+  return get<ImagingData>(`/api/patients/${encodeURIComponent(dnaId)}/imaging`);
 }
 
 // Get patient risk factors
 export async function getPatientRiskFactors(dnaId: string) {
-  return get<RiskFactors>(`/api/patients/${dnaId}/risk-factors`);
+  return get<RiskFactors>(`/api/patients/${encodeURIComponent(dnaId)}/risk-factors`);
 }
 
 // Get patient genomics data
 export async function getPatientGenomics(dnaId: string) {
-  return get<GenomicData>(`/api/patients/${dnaId}/genomics`);
+  return get<GenomicData>(`/api/patients/${encodeURIComponent(dnaId)}/genomics`);
 }

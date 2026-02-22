@@ -5,6 +5,7 @@ import re
 from typing import Any, Dict, Optional
 
 import sqlalchemy as sa
+from app.services.etl_service import trigger_etl_pipeline, ETLParams
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class ToolRegistry:
             "search_patients": self.search_patients,
             "build_cohort": self.build_cohort,
             "chart_from_sql": self.chart_from_sql,
+            "run_etl": self.run_etl,
         }
         self._allowed_tables = {"patients", "EHVOL", "patient_genomic_variants"}
         self._max_limit = 500
@@ -36,6 +38,16 @@ class ToolRegistry:
             raise ValueError(f"Unknown tool: {tool}")
         args = arguments or {}
         return self._handlers[tool](args)
+
+    def run_etl(self, args: dict) -> Dict[str, Any]:
+        """Trigger the ETL pipeline."""
+        params = ETLParams(
+            table=args.get("table", "ehvol_full"),
+            schema=args.get("schema", "public"),
+            dataset_name=args.get("dataset_name"),
+            dbt_select=args.get("dbt_select")
+        )
+        return trigger_etl_pipeline(params)
 
     def registry_overview(self, args: dict) -> Dict[str, Any]:
         engine = self._engine or _get_engine()

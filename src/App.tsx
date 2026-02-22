@@ -12,6 +12,7 @@ import { GenomicData } from "./components/GenomicData";
 import { PatientRegistryTable } from "./components/PatientRegistryTable";
 import { RegistryAnalytics } from "./components/RegistryAnalytics";
 import { SupersetWorkspace } from "./components/SupersetWorkspace";
+import { EtlMonitor } from "./components/EtlMonitor";
 import { CohortBuilder } from "./components/CohortBuilder";
 import { DataDictionary } from "./components/DataDictionary";
 import { Settings } from "./components/Settings";
@@ -216,6 +217,9 @@ export default function App() {
       
       case "charts":
         return <SupersetWorkspace />;
+
+      case "etl":
+        return <EtlMonitor />;
       
       case "dictionary":
         return <DataDictionary />;

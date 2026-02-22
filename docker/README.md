@@ -10,7 +10,6 @@ This directory contains Docker-related configuration files.
 
 Docker Compose files are located in the project root:
 - `docker-compose.yml` - Main docker compose configuration
-- `docker-compose.rag.yml` - RAG-specific services
 
 ## Usage
 

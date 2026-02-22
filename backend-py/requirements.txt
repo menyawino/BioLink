@@ -24,4 +24,19 @@ plotly>=5.17
 python-multipart==0.0.6
 aiohttp==3.9.0
 pytest>=7.4
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+httpx>=0.25.0,<0.28
 langextract>=0.2
+
+# Security
+slowapi>=0.1.9
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# Caching
+redis>=5.0.0
+
+# Monitoring
+prometheus-client>=0.19.0
+sentry-sdk>=1.39.0

@@ -56,8 +56,8 @@ class Settings(BaseSettings):
     superset_default_schema: str = "public"
     superset_default_table: str = "EHVOL"
 
-    # ETL service
-    etl_service_url: str = "http://etl:8090"
+    # NiFi ETL API
+    etl_service_url: str = "http://nifi:8443/nifi-api"
 
     @field_validator("database_url")
     @classmethod

@@ -152,7 +152,7 @@ export function PublicationsTracker() {
       abstract: "This comprehensive review examines the role of multi-modal imaging approaches in cardiovascular risk assessment...",
       keyFindings: [
         "CT angiography combined with functional testing improves accuracy",
-        "AI-enhanced imaging analysis shows promise",
+        "AI-assisted imaging analysis shows promise",
         "Cost considerations limit widespread adoption"
       ],
       clinicalImplications: "Strategic implementation of multi-modal imaging could optimize patient selection and improve outcomes.",

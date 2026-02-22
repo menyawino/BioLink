@@ -15,7 +15,7 @@ import type { Patient, PatientDetail, PatientVitals, ImagingData, RiskFactors, G
 export function usePatients(params: PatientsQueryParams = {}) {
   return useQuery<Patient[]>(
     () => getPatients(params),
-    [params.page, params.limit, params.search, params.gender, params.ageMin, params.ageMax, params.sortBy, params.sortOrder]
+    [params.page, params.limit, params.search, params.gender, params.ageMin, params.ageMax, params.sortBy, params.sortOrder, params.dataset]
   );
 }
 

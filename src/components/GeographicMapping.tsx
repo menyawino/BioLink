@@ -12,8 +12,13 @@ import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Respons
 import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as LeafletTooltip } from "react-leaflet";
 import { getGovernorateGeographicStats, getEnrollmentTrends } from '../api/analytics';
 import type { MapData, EnrollmentTrend } from '../api/types';
+import type { DatasetFilter } from "../api/patients";
 
-export function GeographicMapping() {
+interface GeographicMappingProps {
+  dataset?: DatasetFilter;
+}
+
+export function GeographicMapping({ dataset = 'combined' }: GeographicMappingProps) {
   const [selectedLayer, setSelectedLayer] = useState("prevalence");
   const [mapType, setMapType] = useState("choropleth");
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -31,7 +36,7 @@ export function GeographicMapping() {
     const fetchGeographicData = async () => {
       try {
         setLoading(true);
-        const response = await getGovernorateGeographicStats();
+        const response = await getGovernorateGeographicStats(dataset);
         if (response.success && response.data) {
           setRegionData(response.data);
         } else {
@@ -46,14 +51,14 @@ export function GeographicMapping() {
     };
 
     fetchGeographicData();
-  }, []);
+  }, [dataset]);
 
   // Fetch enrollment trends for the recruitment chart
   useEffect(() => {
     const fetchEnrollmentTrends = async () => {
       try {
         setTrendsLoading(true);
-        const response = await getEnrollmentTrends();
+        const response = await getEnrollmentTrends(dataset);
         if (response.success && response.data) {
           setEnrollmentTrends(response.data);
         } else {
@@ -68,7 +73,7 @@ export function GeographicMapping() {
     };
 
     fetchEnrollmentTrends();
-  }, []);
+  }, [dataset]);
 
   const COLORS = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6'];
 

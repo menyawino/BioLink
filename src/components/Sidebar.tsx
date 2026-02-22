@@ -1,6 +1,6 @@
 import { cn } from "./ui/utils";
 import { Button } from "./ui/button";
-import { User, Table, BarChart3, Activity, Database, Users, BookOpen, Settings } from "lucide-react";
+import { User, Table, BarChart3, Activity, Database, Users, BookOpen, Settings, RefreshCw } from "lucide-react";
 import logo from "figma:asset/e26cb8b78ee049387f524876448562f480bca21b.png";
 
 interface SidebarProps {
@@ -46,6 +46,12 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
       label: "Chart Builder",
       icon: Activity,
       description: "Create custom visualizations"
+    },
+    {
+      id: "etl",
+      label: "ETL Monitor",
+      icon: RefreshCw,
+      description: "Track ETL runs and status"
     },
     {
       id: "dictionary",

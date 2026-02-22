@@ -1,0 +1,90 @@
+{
+  "encodingVersion": {
+    "majorVersion": 2,
+    "minorVersion": 0
+  },
+  "maxTimerDrivenThreadCount": 10,
+  "maxEventDrivenThreadCount": 1,
+  "flowRegistryClients": [],
+  "parameterContexts": [
+    {
+      "identifier": "biolink-params",
+      "name": "BioLink Parameters",
+      "parameters": [
+        {
+          "name": "db.host",
+          "description": "PostgreSQL host",
+          "sensitive": false,
+          "value": "postgres"
+        },
+        {
+          "name": "db.port",
+          "description": "PostgreSQL port",
+          "sensitive": false,
+          "value": "5432"
+        },
+        {
+          "name": "db.name",
+          "description": "Database name",
+          "sensitive": false,
+          "value": "biolink"
+        },
+        {
+          "name": "db.user",
+          "description": "Database user",
+          "sensitive": false,
+          "value": "biolink"
+        },
+        {
+          "name": "db.password",
+          "description": "Database password",
+          "sensitive": true,
+          "value": "biolink_secret"
+        },
+        {
+          "name": "db.url",
+          "description": "JDBC URL",
+          "sensitive": false,
+          "value": "jdbc:postgresql://postgres:5432/biolink"
+        },
+        {
+          "name": "jdbc.driver.path",
+          "description": "JDBC driver path",
+          "sensitive": false,
+          "value": "/opt/nifi/jdbc/postgresql-42.7.3.jar"
+        },
+        {
+          "name": "data.directory",
+          "description": "CSV data directory",
+          "sensitive": false,
+          "value": "/opt/nifi/db"
+        }
+      ],
+      "inheritedParameterContexts": []
+    }
+  ],
+  "controllerServices": [],
+  "rootGroup": {
+    "identifier": "biolink-root",
+    "instanceIdentifier": "biolink-root-instance",
+    "name": "BioLink ETL Pipeline",
+    "comments": "Root group - flow created via REST API",
+    "position": {
+      "x": 0,
+      "y": 0
+    },
+    "processGroups": [],
+    "remoteProcessGroups": [],
+    "processors": [],
+    "connections": [],
+    "inputPorts": [],
+    "outputPorts": [],
+    "funnels": [],
+    "labels": [],
+    "controllerServices": [],
+    "defaultFlowFileExpiration": "0 sec",
+    "defaultBackPressureObjectThreshold": 10000,
+    "defaultBackPressureDataSizeThreshold": "1 GB",
+    "parameterContextName": "BioLink Parameters"
+  }
+}

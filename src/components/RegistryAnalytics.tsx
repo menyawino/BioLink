@@ -1,18 +1,23 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ScatterChart, Scatter, ComposedChart, Area, AreaChart } from 'recharts';
 import { TrendingUp, Users, Database, Activity, Heart, Map, Loader2 } from "lucide-react";
 import { GeographicMapping } from "./GeographicMapping";
 import { DataNotAvailable } from "./DataNotAvailable";
 import { useRegistryStats, useDemographics, useDataCompleteness, useComorbidities, useEnrollmentTrends } from "../hooks/useAnalytics";
+import type { DatasetFilter } from "../api/patients";
 
 // Colors for charts
 const COLORS = ['#e9322b', '#efb01b', '#00a2dd', '#22c55e', '#8b5cf6', '#6b7280', '#ec4899', '#f97316'];
 
 export function RegistryAnalytics() {
+  const [dataset, setDataset] = useState<DatasetFilter>("combined");
+
   // Fetch enrollment trends data
-  const { data: enrollmentTrends, isLoading: enrollmentLoading } = useEnrollmentTrends();
+  const { data: enrollmentTrends, isLoading: enrollmentLoading } = useEnrollmentTrends(dataset);
 
   // Transform enrollment trends data for chart
   const enrollmentTrendData = enrollmentTrends ? enrollmentTrends.map((item: any) => ({
@@ -22,10 +27,10 @@ export function RegistryAnalytics() {
   })) : undefined;
 
   // Fetch real data from API
-  const { data: stats, isLoading: statsLoading, error: statsError } = useRegistryStats();
-  const { data: demographics, isLoading: demoLoading } = useDemographics();
-  const { data: completeness, isLoading: compLoading } = useDataCompleteness();
-  const { data: comorbidities, isLoading: comorbidityLoading } = useComorbidities();
+  const { data: stats, isLoading: statsLoading, error: statsError } = useRegistryStats(dataset);
+  const { data: demographics, isLoading: demoLoading } = useDemographics(dataset);
+  const { data: completeness, isLoading: compLoading } = useDataCompleteness(dataset);
+  const { data: comorbidities, isLoading: comorbidityLoading } = useComorbidities(dataset);
 
   // Transform demographics data for age-gender chart (use correct field names from API)
   const demographicsChartData = demographics?.ageGender?.map(item => ({
@@ -79,6 +84,23 @@ export function RegistryAnalytics() {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-end">
+            <Select value={dataset} onValueChange={(value) => setDataset(value as DatasetFilter)}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Dataset" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="combined">Combined</SelectItem>
+                <SelectItem value="ehvol">EHVol</SelectItem>
+                <SelectItem value="bhs">BHS</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -96,7 +118,9 @@ export function RegistryAnalytics() {
             </div>
             <div className="mt-2 flex items-center text-sm">
               <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
-              <span className="text-green-600">EHVol Registry</span>
+              <span className="text-green-600">
+                {dataset === 'combined' ? 'Combined Registry' : dataset === 'ehvol' ? 'EHVol Registry' : 'BHS Registry'}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -539,7 +563,7 @@ export function RegistryAnalytics() {
               <CardTitle>Geographic Mapping</CardTitle>
             </CardHeader>
             <CardContent>
-              <GeographicMapping />
+              <GeographicMapping dataset={dataset} />
             </CardContent>
           </Card>
         </TabsContent>

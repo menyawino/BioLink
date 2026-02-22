@@ -158,3 +158,11 @@ test-results/
 # Temporary files
 tmp/
 *.tmp
+
+# ETL pipeline artifacts (NiFi/legacy)
+.checkpoints/
+.dead_letter/
+.incremental/
+.metrics/
+.schema_registry/
+nifi/data-input/

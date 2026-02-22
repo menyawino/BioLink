@@ -11,7 +11,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Allowed columns for sorting to prevent SQL injection
-ALLOWED_SORT_COLUMNS = {"dna_id", "age", "gender", "nationality"}
+ALLOWED_SORT_COLUMNS = {"dna_id", "age", "gender", "nationality", "enrollment_date", "data_completeness"}
+ALLOWED_DATASETS = {"combined", "ehvol", "bhs"}
+
+
+def _normalized_dataset(dataset: str | None) -> str:
+    value = (dataset or "combined").lower()
+    return value if value in ALLOWED_DATASETS else "combined"
 
 
 def _stable_unit_float(seed: str) -> float:
@@ -26,6 +32,25 @@ def _stable_range(seed: str, min_val: float = 0.1, max_val: float = 0.9) -> floa
 def _normalize(values: List[float]) -> List[float]:
     total = sum(values) or 1.0
     return [v / total for v in values]
+
+
+def _unified_participants_columns(db) -> set[str]:
+    rows = db.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'unified_participants'
+            """
+        )
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _mri_sql_expr(columns: set[str]) -> tuple[str, str]:
+    if "mri_ef" in columns:
+        return "mri_ef", "(mri_ef IS NOT NULL)"
+    return "NULL::double precision", "FALSE"
 
 @router.get("")
 async def get_patients(
@@ -56,16 +81,33 @@ async def get_patients(
     hasSmoking: bool = Query(None, alias="hasSmoking"),
     hasObesity: bool = Query(None, alias="hasObesity"),
     hasFamilyHistory: bool = Query(None, alias="hasFamilyHistory"),
+    dataset: str = Query("combined"),
     db = Depends(get_db)
 ):
     """Search and filter patients in the registry"""
     try:
+        columns = _unified_participants_columns(db)
+        mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
+
         # Build a safe, parameterized filter query
         conditions = ["1=1"]
         params = {}
 
+        dataset_value = _normalized_dataset(dataset)
+        if dataset_value != "combined":
+            conditions.append("source_dataset = :dataset")
+            params["dataset"] = dataset_value
+
+        completeness_expr = (
+            "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) "
+            "+ (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) "
+            "+ (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) "
+            "+ (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {mri_present_expr} THEN 20 ELSE 0 END))"
+        )
+
         if search:
-            conditions.append("(dna_id ILIKE :search OR nationality ILIKE :search)")
+            conditions.append("(participant_id ILIKE :search OR source_record_id ILIKE :search OR nationality ILIKE :search)")
             params["search"] = f"%{search}%"
 
         if gender:
@@ -80,19 +122,18 @@ async def get_patients(
             conditions.append("age <= :age_max")
             params["age_max"] = ageMax
 
-        # Data availability filters (backed by EHVOL flags)
+        # Data availability filters
         if hasEcho is not None:
-            conditions.append("has_echo = :has_echo")
+            conditions.append("((echo_ef IS NOT NULL) = :has_echo)")
             params["has_echo"] = hasEcho
 
         if hasMri is not None:
-            conditions.append("has_mri = :has_mri")
+            conditions.append(f"(({mri_present_expr}) = :has_mri)")
             params["has_mri"] = hasMri
 
         # Imaging (any imaging modality: echo OR mri)
         if hasImaging is not None:
-            # Evaluate (has_mri OR has_echo) and compare to requested boolean
-            conditions.append("((has_mri OR has_echo) = :has_imaging)")
+            conditions.append(f"(({mri_present_expr} OR echo_ef IS NOT NULL) = :has_imaging)")
             params["has_imaging"] = hasImaging
 
         # Laboratory data availability (best-effort based on stored lab columns)
@@ -102,16 +143,16 @@ async def get_patients(
 
         # Family history (derived from available family-history flags)
         if hasFamilyHistory is not None:
-            conditions.append("((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = :has_family_history)")
+            conditions.append("(COALESCE(family_history_cad, false) = :has_family_history)")
             params["has_family_history"] = hasFamilyHistory
 
-        # Genomics availability (backed by EHVOL.has_genomics)
+        # Genomics availability (not yet in unified table)
         if hasGenomics is not None:
-            conditions.append("has_genomics = :has_genomics")
+            conditions.append("(false = :has_genomics)")
             params["has_genomics"] = hasGenomics
 
         if minDataCompleteness is not None:
-            conditions.append("data_completeness >= :min_data_completeness")
+            conditions.append(f"{completeness_expr} >= :min_data_completeness")
             params["min_data_completeness"] = minDataCompleteness
 
         # Geographic filters
@@ -135,22 +176,30 @@ async def get_patients(
 
         # Clinical / risk factor filters (best-effort; nullable columns)
         if hasDiabetes is not None:
-            conditions.append("COALESCE(diabetes_mellitus, false) = :has_diabetes")
+            conditions.append("COALESCE(has_diabetes, false) = :has_diabetes")
             params["has_diabetes"] = hasDiabetes
 
         if hasHypertension is not None:
-            conditions.append("COALESCE(high_blood_pressure, false) = :has_hypertension")
+            conditions.append("COALESCE(has_hypertension, false) = :has_hypertension")
             params["has_hypertension"] = hasHypertension
 
         if hasSmoking is not None:
-            conditions.append("COALESCE(current_smoker, false) = :has_smoking")
+            conditions.append("COALESCE(is_smoker, false) = :has_smoking")
             params["has_smoking"] = hasSmoking
 
         if hasObesity is not None:
             conditions.append("COALESCE(bmi, 0) >= 30") if hasObesity else conditions.append("(bmi IS NULL OR bmi < 30)")
 
         # Validate and sanitize sort parameters
-        sort_column = sortBy if sortBy in ALLOWED_SORT_COLUMNS else "dna_id"
+        sort_column_map = {
+            "dna_id": "participant_id",
+            "age": "age",
+            "gender": "gender",
+            "nationality": "nationality",
+            "enrollment_date": "enrollment_date",
+            "data_completeness": completeness_expr,
+        }
+        sort_column = sort_column_map.get(sortBy if sortBy in ALLOWED_SORT_COLUMNS else "dna_id", "participant_id")
         sort_direction = "DESC" if sortOrder.lower() == "desc" else "ASC"
 
         # Calculate offset for pagination
@@ -160,17 +209,20 @@ async def get_patients(
 
         # Get total count for pagination
         count_stmt = text(
-            f"SELECT COUNT(*) as total FROM EHVOL WHERE {' AND '.join(conditions)}"
+            f"SELECT COUNT(*) as total FROM unified_participants WHERE {' AND '.join(conditions)}"
         )
         total_result = db.execute(count_stmt, params).fetchone()
         total = total_result[0] if total_result else 0
 
-        # Get paginated results using EHVOL view for complete data
+        # Get paginated results using unified table with compatibility aliases
         stmt = text(
-            "SELECT id, dna_id, age, gender, nationality, enrollment_date, current_city, "
-            "heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, mri_ef, "
-            "current_city_category, has_mri, has_echo, data_completeness "
-            "FROM EHVOL "
+            "SELECT participant_id AS dna_id, source_dataset, age, gender, nationality, enrollment_date, current_city, "
+            f"heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, {mri_value_expr} AS mri_ef, "
+            "NULL::text AS current_city_category, "
+            f"({mri_present_expr}) AS has_mri, "
+            "(echo_ef IS NOT NULL) AS has_echo, "
+            f"{completeness_expr} AS data_completeness "
+            "FROM unified_participants "
             f"WHERE {' AND '.join(conditions)} "
             f"ORDER BY {sort_column} {sort_direction} "
             "LIMIT :limit OFFSET :offset"
@@ -199,18 +251,39 @@ async def get_patients(
 async def search_patients(
     query: str,
     limit: int = Query(20, ge=1, le=100),
+    dataset: str = Query("combined"),
     db = Depends(get_db)
 ):
     """Search patients by DNA ID or nationality"""
     try:
+        columns = _unified_participants_columns(db)
+        mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
+
         params = {"search": f"%{query}%", "limit": limit}
+        dataset_value = _normalized_dataset(dataset)
+        dataset_clause = ""
+        if dataset_value != "combined":
+            dataset_clause = " AND source_dataset = :dataset"
+            params["dataset"] = dataset_value
+
+        completeness_expr = (
+            "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) "
+            "+ (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) "
+            "+ (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) "
+            "+ (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {mri_present_expr} THEN 20 ELSE 0 END))"
+        )
         stmt = text(
-            "SELECT id, dna_id, age, gender, nationality, enrollment_date, current_city, "
-            "heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, mri_ef, "
-            "current_city_category, has_mri, has_echo, data_completeness "
-            "FROM EHVOL "
-            "WHERE dna_id ILIKE :search OR nationality ILIKE :search "
-            "ORDER BY dna_id ASC "
+            "SELECT participant_id AS dna_id, source_dataset, age, gender, nationality, enrollment_date, current_city, "
+            f"heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, {mri_value_expr} AS mri_ef, "
+            "NULL::text AS current_city_category, "
+            f"({mri_present_expr}) AS has_mri, "
+            "(echo_ef IS NOT NULL) AS has_echo, "
+            f"{completeness_expr} AS data_completeness "
+            "FROM unified_participants "
+            "WHERE (participant_id ILIKE :search OR source_record_id ILIKE :search OR nationality ILIKE :search)"
+            f"{dataset_clause} "
+            "ORDER BY participant_id ASC "
             "LIMIT :limit"
         )
         patients = db.execute(stmt, params).mappings().fetchall()
@@ -227,12 +300,22 @@ async def search_patients(
 async def get_patient(dna_id: str, db = Depends(get_db)):
     """Get detailed patient information by DNA ID"""
     try:
+        normalized_id = (dna_id or "").strip()
+
         patient_stmt = text("""
             SELECT *
             FROM patients
-            WHERE dna_id = :dna_id
+            WHERE TRIM(dna_id) = :dna_id
         """)
-        patient = db.execute(patient_stmt, {"dna_id": dna_id}).mappings().fetchone()
+        patient = db.execute(patient_stmt, {"dna_id": normalized_id}).mappings().fetchone()
+
+        if not patient:
+            unified_stmt = text("""
+                SELECT *, participant_id AS dna_id
+                FROM unified_participants
+                WHERE TRIM(participant_id) = :dna_id
+            """)
+            patient = db.execute(unified_stmt, {"dna_id": normalized_id}).mappings().fetchone()
         
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
@@ -414,10 +497,18 @@ async def get_patient(dna_id: str, db = Depends(get_db)):
 async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
     """Get genomic data for a patient based on ingested VCF variants."""
     try:
+        normalized_id = (dna_id or "").strip()
+
         patient_row = db.execute(
-            text("SELECT dna_id FROM patients WHERE dna_id = :dna_id"),
-            {"dna_id": dna_id}
+            text("SELECT dna_id FROM patients WHERE TRIM(dna_id) = :dna_id"),
+            {"dna_id": normalized_id}
         ).fetchone()
+
+        if not patient_row:
+            patient_row = db.execute(
+                text("SELECT participant_id AS dna_id FROM unified_participants WHERE TRIM(participant_id) = :dna_id"),
+                {"dna_id": normalized_id}
+            ).fetchone()
 
         if not patient_row:
             raise HTTPException(status_code=404, detail="Patient not found")
@@ -430,7 +521,7 @@ async def get_patient_genomics(dna_id: str, db = Depends(get_db)):
             ORDER BY gene NULLS LAST, chrom, pos
             LIMIT 500
         """)
-        rows = db.execute(stmt, {"dna_id": dna_id}).mappings().fetchall()
+        rows = db.execute(stmt, {"dna_id": normalized_id}).mappings().fetchall()
 
         variants = []
         for row in rows:

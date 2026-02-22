@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Search, Filter, Download, Plus, Eye, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
 import { usePatients } from "../hooks/usePatients";
+import type { DatasetFilter } from "../api/patients";
 import type { Patient } from "../api/types";
 import { downloadCohortCsv } from "../api/cohort";
 
@@ -20,6 +21,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterGender, setFilterGender] = useState<string>("all");
+  const [dataset, setDataset] = useState<DatasetFilter>("combined");
   const [page, setPage] = useState(1);
   const [sortField, setSortField] = useState<string>("dna_id");
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>("asc");
@@ -38,6 +40,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
     limit: 50,
     search: debouncedSearch || undefined,
     gender: filterGender !== "all" ? filterGender : undefined,
+    dataset,
     sortBy: sortField,
     sortOrder: sortDirection,
   });
@@ -159,6 +162,17 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                 <SelectItem value="all">All Genders</SelectItem>
                 <SelectItem value="Male">Male</SelectItem>
                 <SelectItem value="Female">Female</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={dataset} onValueChange={(value) => { setDataset(value as DatasetFilter); setPage(1); }}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Dataset" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="combined">Combined</SelectItem>
+                <SelectItem value="ehvol">EHVol</SelectItem>
+                <SelectItem value="bhs">BHS</SelectItem>
               </SelectContent>
             </Select>
 

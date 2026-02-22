@@ -1,0 +1,149 @@
+"""
+BioLink CSV-to-JSON Processor for Apache NiFi 2.8.0
+
+Converts CSV FlowFile content into JSON records (one JSON object per row).
+Handles header sanitization, encoding issues, and column name mapping
+(ported from biolink_etl/multi_dataset_pipeline.py header sanitization).
+"""
+
+import csv
+import io
+import json
+import re
+from nifiapi.flowfiletransform import FlowFileTransform, FlowFileTransformResult
+from nifiapi.properties import PropertyDescriptor, ExpressionLanguageScope
+
+
+# Column name sanitization map for EHVol (from column_map_etl.csv)
+EHVOL_COLUMN_MAP = {
+    "dna_id": "DNA ID",
+    "heart_rate": "Heart Rate",
+    "bp": "BP",
+    "height_cm_": "Height (cm)",
+    "weight_kg_": "Weight (kg)",
+    "date_of_birth": "Date of Birth",
+    "date_of_enrolment": "Date of Enrolment",
+    "current_city_of_residence": "Current City of Residence",
+    "city_of_residence_during_childhood": "City of Residence during childhood",
+    "father_s_city_of_origin": "Father's City of Origin",
+    "nationality": "Nationality",
+    "age": "Age",
+    "gender": "Gender",
+    "hba1c": "HbA1c",
+    "troponin_i": "Troponin I",
+    "ef": "EF",
+    "echo_date": "Echo Date",
+    "diabetes_mellitus": "Diabetes Mellitus",
+    "high_blood_pressure": "High blood pressure",
+    "dyslipidemia": "Dyslipidemia",
+    "prior_heart_failure_previous_hx_": "Prior Heart Failure (previous Hx)",
+    "current_recent_smoker_1_year_": "Current/Recent Smoker (< 1 year)",
+    "offspring_of_consanguinous_marriage": "Offspring of Consanguinous Marriage",
+    "bmi": "BMI",
+    "record_id": "Record ID",
+}
+
+
+def _sanitize_header(header):
+    """Sanitize a CSV header name (matches biolink_etl pipeline logic)."""
+    h = header.strip()
+    h = re.sub(r"[^\w\s/().<>=-]", "_", h)
+    h = re.sub(r"\s+", " ", h)
+    return h
+
+
+class BiolinkCsvToJsonProcessor(FlowFileTransform):
+    """
+    Reads a CSV FlowFile and outputs a JSON array of row objects.
+    Handles BOM, encoding sniffing, header sanitization, and
+    optional column name remapping for EHVol.
+    """
+
+    class Java:
+        implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
+
+    class ProcessorDetails:
+        version = "1.0.0"
+        description = (
+            "Converts CSV files from BHS or EHVol datasets into JSON arrays. "
+            "Sanitizes headers, handles encoding issues, and optionally "
+            "remaps EHVol column names to canonical form."
+        )
+        tags = ["biolink", "csv", "json", "convert", "etl"]
+
+    DATASET_TYPE = PropertyDescriptor(
+        name="Dataset Type",
+        description="Source dataset type: bhs or ehvol",
+        required=True,
+        default_value="bhs",
+        allowable_values=["bhs", "ehvol"],
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
+    )
+
+    BATCH_SIZE = PropertyDescriptor(
+        name="Batch Size",
+        description="Number of rows per output FlowFile (0 = all rows in one batch)",
+        required=False,
+        default_value="100",
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
+    )
+
+    property_descriptors = [DATASET_TYPE, BATCH_SIZE]
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    def getPropertyDescriptors(self):
+        return self.property_descriptors
+
+    def transform(self, context, flowfile):
+        dataset = context.getProperty(self.DATASET_TYPE).evaluateAttributeExpressions(flowfile).getValue()
+        batch_size_str = context.getProperty(self.BATCH_SIZE).evaluateAttributeExpressions(flowfile).getValue()
+        batch_size = int(batch_size_str) if batch_size_str and batch_size_str != "0" else 0
+
+        raw_bytes = flowfile.getContentsAsBytes()
+        try:
+            # Handle BOM
+            text = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = raw_bytes.decode("latin-1")
+            except Exception as e:
+                return FlowFileTransformResult(
+                    relationship="failure",
+                    contents=json.dumps({"error": f"Encoding error: {e}"}),
+                    attributes={"biolink.error": str(e)},
+                )
+
+        reader = csv.DictReader(io.StringIO(text))
+        rows = []
+        row_count = 0
+
+        for row in reader:
+            # Sanitize keys and remap for EHVol
+            sanitized = {}
+            for k, v in row.items():
+                clean_key = _sanitize_header(k) if k else k
+                # For EHVol, try remapping sanitized key
+                if dataset == "ehvol":
+                    lower_key = clean_key.lower().replace(" ", "_")
+                    canonical = EHVOL_COLUMN_MAP.get(lower_key, clean_key)
+                    sanitized[canonical] = v
+                else:
+                    sanitized[clean_key] = v
+
+            sanitized["_source_row"] = row_count
+            rows.append(sanitized)
+            row_count += 1
+
+        output = json.dumps(rows, default=str)
+
+        return FlowFileTransformResult(
+            relationship="success",
+            contents=output,
+            attributes={
+                "biolink.dataset": dataset,
+                "biolink.row_count": str(row_count),
+                "mime.type": "application/json",
+            },
+        )

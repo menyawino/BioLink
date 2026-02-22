@@ -127,6 +127,7 @@ Create env files from the examples:
 ```env
 # frontend
 VITE_BACKEND_URL=http://localhost:3001
+VITE_NIFI_URL=https://localhost:8443/nifi
 
 # backend
 DATABASE_URL=postgresql://user:password@localhost:5432/biolink
@@ -171,35 +172,40 @@ python -m app.scripts.import_patients_csv
 
 ### Running the Application (Docker)
 
-**Start the full stack (frontend, backend, SQL Server, pgvector, Kafka, Debezium, Ollama):**
+**Start the core stack (frontend, backend, PostgreSQL, SQL Server, pgvector, Redis, NiFi):**
 ```bash
 docker compose up -d --build
+```
+
+**Start optional services (CDC, Superset, Ollama, MCP):**
+```bash
+docker compose --profile optional up -d
 ```
 
 Frontend: http://localhost:3000
 Backend: http://localhost:3001
 Ollama: http://localhost:11434
-NiFi: https://localhost:8443/nifi
+NiFi: http://localhost:8443/nifi
 
 ### NiFi Ingestion (Local)
 
-NiFi reads CSVs from the repo `db/` folder (mounted at `/data/db` inside the container) and can load them into Postgres.
-Login (local): `nifi_admin` / `nifi_admin_12345`
+NiFi reads CSVs from the repo `db/` folder (mounted at `/opt/nifi/db` inside the container) and loads them into Postgres.
+Login (local): `admin` / `biolink_nifi_secret_123`
 Recommended processors:
-- `GetFile` (Input Directory: `/data/db`)
-- `UpdateAttribute` (set `table` to `ehvol_full`)
-- `PutDatabaseRecord` (DBCPConnectionPool pointing to `postgres:5432`)
+- `GetFile` (BHS/EHVol CSV watchers)
+- `BiolinkCsvToJsonProcessor`
+- `BiolinkTransformProcessor`
+- `BiolinkDataQualityProcessor`
+- `BiolinkJsonToSqlProcessor` + `PutSQL`
 
-### ETL (dbt + Superset)
+### ETL Trigger API (NiFi-backed)
 
-To publish the dataset to Superset using the CSV filename as the dataset name (and keep all CSV columns):
+Backend endpoint `/api/etl/run` now triggers NiFi directly (no standalone ETL service):
 
 ```bash
-python3 biolink_etl/pipeline.py \
-	--table ehvol_full \
-	--schema public \
-	--csv db/EHVol_Full.csv \
-	--dbt-select ehvol_full
+curl -X POST http://localhost:3001/api/etl/run \
+  -H "Content-Type: application/json" \
+  -d '{"table":"ehvol_full","csv":"db/EHVol_Full.csv"}'
 ```
 
 **Stop the stack:**
@@ -262,7 +268,7 @@ Live semantic search over EHVol notes/diagnoses, synced from SQL Server into pgv
 Quick start:
 
 ```bash
-docker compose -f docker-compose.rag.yml up -d
+docker compose up -d
 cd backend-py
 python -m app.scripts.sqlserver_smoke_test
 python -m app.scripts.stage2_pgvector_setup

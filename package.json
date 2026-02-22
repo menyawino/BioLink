@@ -67,7 +67,7 @@
             "vite": "6.3.5"
       },
       "scripts": {
-            "dev": "echo 'Use docker-compose for development. Run: docker-compose up -d'",
+            "dev": "vite",
             "build": "vite build",
             "mcp:server": "echo 'MCP server runs in container. Use: docker-compose up -d mcp'",
             "start:backend": "echo 'Backend runs in container. Use: docker-compose up -d backend'",
