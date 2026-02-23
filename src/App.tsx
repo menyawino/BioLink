@@ -454,6 +454,8 @@ function renderContent(
         return <CohortBuilder />;
       case "charts":
         return <SupersetWorkspace />;
+      case "etl":
+        return <EtlMonitor />;
       case "dictionary":
         return <DataDictionary />;
       case "settings":

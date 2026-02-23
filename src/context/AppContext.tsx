@@ -4,7 +4,7 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
 
-export type ViewType = 'welcome' | 'patient' | 'registry' | 'cohort' | 'analytics' | 'charts' | 'dictionary' | 'settings' | 'profile';
+export type ViewType = 'welcome' | 'patient' | 'registry' | 'cohort' | 'analytics' | 'charts' | 'etl' | 'dictionary' | 'settings' | 'profile';
 
 interface AppContextType {
   // Navigation state

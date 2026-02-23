@@ -290,7 +290,7 @@ export interface ComorbidityData {
     kidney_disease: number;
     neurological: number;
   };
-  comorbidityDistribution: Array<{ comorbidity: number; count: number }>;
+  comorbidityDistribution: Array<{ comorbidities: number; patients: number }>;
 }
 
 export interface LifestyleStats {
@@ -341,7 +341,7 @@ export interface DataQuality {
     mri: number;
     overall: number;
   };
-  distribution: Array<{ category: string; count: number }>;
+  distribution: Array<{ range?: string; category?: string; count: number }>;
 }
 
 // Cohort types

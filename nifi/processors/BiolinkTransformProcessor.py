@@ -280,16 +280,47 @@ def _safe_str(value):
 def parse_date(value, dataset):
     if not (s := _safe_str(value)):
         return None
+
+    # Normalize separators and trim time suffixes if present.
+    s = re.split(r"[T ]", s, maxsplit=1)[0].strip()
+    s = re.sub(r"[.]0+$", "", s)
+    s = s.replace("\\", "/")
+
+    # Support common date layouts seen in both registries.
     formats = [
-        "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y",
-        "%d-%m-%Y", "%m-%d-%Y", "%d/%m/%y", "%Y/%m/%d",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d.%m.%Y",
+        "%m/%d/%Y",
+        "%m-%d-%Y",
+        "%m.%d.%Y",
+        "%d/%m/%y",
+        "%d-%m-%y",
+        "%m/%d/%y",
+        "%m-%d-%y",
     ]
+
+    parsed = None
     for fmt in formats:
         try:
-            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+            parsed = datetime.strptime(s, fmt)
+            break
         except ValueError:
             continue
-    return None
+
+    if parsed is None:
+        return None
+
+    # Reject clearly invalid years but keep older legitimate history (e.g., 2001).
+    # Lower bound is intentionally broad (1900), upper bound allows slight future drift.
+    min_year = 1900
+    max_year = datetime.utcnow().year + 1
+    if parsed.year < min_year or parsed.year > max_year:
+        return None
+
+    return parsed.strftime("%Y-%m-%d")
 
 
 def parse_numeric(value, dataset):
@@ -353,18 +384,40 @@ def normalize_city(value, dataset):
 def normalize_ethnicity(value, dataset):
     if not (s := _safe_str(value)):
         return None
-    eth = s.lower()
-    if eth in ("fedutchi", "fedicci", "fedici"):
+    eth = s.strip()
+    elow = eth.lower()
+
+    # Nubian variants (keep legacy keys)
+    if elow in ("fedutchi", "fedicci", "fedici"):
         return "Nubian_Fedutchi"
-    if eth in ("ballana", "ballena"):
+    if elow in ("ballana", "ballena"):
         return "Nubian_Ballana"
-    if eth in ("dahmit", "dahmeet"):
+    if elow in ("dahmit", "dahmeet"):
         return "Nubian_Dahmit"
-    if "nubian" in eth:
+    if "nubian" in elow:
         return "Nubian_Other"
-    if eth in ("egyptian", "egypt", "egy"):
+
+    # Egyptian — catch many misspellings and Arabic/French variants
+    # common latin-script misspellings
+    egyptian_aliases = {
+        "egyptian", "egyption", "egyptain", "egyptien", "egyptient",
+        "egyptan", "egyptan", "egy", "egyp", "egiptian", "eg", "egp", "eyp"
+    }
+    token = re.sub(r"[^\w\u0600-\u06FF]+", "", elow)  # keep arabic letters too
+    token_latin = re.sub(r"[^a-z]+", "", elow)
+    if (
+        any(a in token for a in ("egypt", "egyptian"))
+        or token in egyptian_aliases
+        or re.search(r"e[gq]y?p+t", token_latin)
+    ):
         return "Egyptian"
-    return s.title()
+
+    # Arabic script: look for root مصر / مصري / مصريه variants
+    if re.search(r"مصر|مصري|مصرية|مصريه|مصريين|مصريين", eth):
+        return "Egyptian"
+
+    # Fallback: Title-case the original cleaned string
+    return eth.title()
 
 
 def normalize_bp(value, dataset):

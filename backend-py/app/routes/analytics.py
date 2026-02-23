@@ -6,28 +6,53 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-ALLOWED_DATASETS = {"ehvol", "bhs"}
+ALLOWED_DATASETS = {"all", "ehvol", "bhs"}
 DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
-COMPLETENESS_EXPR = "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END))"
+COMPLETENESS_EXPR = "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN hba1c IS NOT NULL THEN 20 ELSE 0 END))"
 
 
-def _dataset_table(dataset: str | None) -> str:
-    normalized = (dataset or "ehvol").lower()
+def _dataset_key(dataset: str | None) -> str:
+    normalized = (dataset or "all").lower()
     if normalized not in ALLOWED_DATASETS:
-        normalized = "ehvol"
-    return DATASET_TABLES[normalized]
+        normalized = "all"
+    return normalized
+
+
+def _dataset_source(dataset: str | None) -> str:
+    key = _dataset_key(dataset)
+    if key == "all":
+        return "(SELECT * FROM ehvol_participants UNION ALL SELECT * FROM bhs_participants) registry"
+    return f"{DATASET_TABLES[key]} registry"
+
+
+def _mri_column_exists(db, dataset: str | None) -> bool:
+    key = _dataset_key(dataset)
+    table_names = [DATASET_TABLES[key]] if key in DATASET_TABLES else list(DATASET_TABLES.values())
+    rows = db.execute(
+        text(
+            """
+            SELECT table_name
+            FROM information_schema.columns
+            WHERE table_schema='public'
+              AND column_name='mri_ef'
+              AND table_name = ANY(:table_names)
+            """
+        ),
+        {"table_names": table_names},
+    ).fetchall()
+    return len(rows) > 0
 
 
 @router.get("/overview")
-async def registry_overview(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
 
-        total = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+        total = db.execute(text(f"SELECT COUNT(*) FROM {source}")).scalar() or 0
         male = (
             db.execute(
                 text(
-                    f"SELECT COUNT(*) FROM {table} WHERE LOWER(gender) IN ('male','m')"
+                    f"SELECT COUNT(*) FROM {source} WHERE LOWER(gender) IN ('male','m')"
                 )
             ).scalar()
             or 0
@@ -35,24 +60,41 @@ async def registry_overview(dataset: str = Query("ehvol"), db=Depends(get_db)):
         female = (
             db.execute(
                 text(
-                    f"SELECT COUNT(*) FROM {table} WHERE LOWER(gender) IN ('female','f')"
+                    f"SELECT COUNT(*) FROM {source} WHERE LOWER(gender) IN ('female','f')"
                 )
             ).scalar()
             or 0
         )
         avg_age = db.execute(
-            text(f"SELECT AVG(age) FROM {table} WHERE age IS NOT NULL")
+            text(f"SELECT AVG(age) FROM {source} WHERE age IS NOT NULL")
         ).scalar()
         with_echo = (
             db.execute(
-                text(f"SELECT COUNT(*) FROM {table} WHERE echo_ef IS NOT NULL")
+                text(f"SELECT COUNT(*) FROM {source} WHERE echo_ef IS NOT NULL")
             ).scalar()
             or 0
         )
-        with_mri = 0
-        with_both_echo_mri = 0
+        mri_col_exists = _mri_column_exists(db, dataset)
+        if mri_col_exists:
+            with_mri = (
+                db.execute(
+                    text(f"SELECT COUNT(*) FROM {source} WHERE mri_ef IS NOT NULL")
+                ).scalar()
+                or 0
+            )
+            with_both_echo_mri = (
+                db.execute(
+                    text(
+                        f"SELECT COUNT(*) FROM {source} WHERE echo_ef IS NOT NULL AND mri_ef IS NOT NULL"
+                    )
+                ).scalar()
+                or 0
+            )
+        else:
+            with_mri = 0
+            with_both_echo_mri = 0
         avg_completeness = (
-            db.execute(text(f"SELECT AVG({COMPLETENESS_EXPR}) FROM {table}")).scalar()
+            db.execute(text(f"SELECT AVG({COMPLETENESS_EXPR}) FROM {source}")).scalar()
             or 0
         )
 
@@ -76,9 +118,9 @@ async def registry_overview(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/demographics")
-async def demographics(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
 
         age_gender_results = db.execute(text(f"""
             SELECT
@@ -92,19 +134,35 @@ async def demographics(dataset: str = Query("ehvol"), db=Depends(get_db)):
                 END as age_group,
                 COUNT(CASE WHEN LOWER(gender) IN ('male', 'm') THEN 1 END) as male,
                 COUNT(CASE WHEN LOWER(gender) IN ('female', 'f') THEN 1 END) as female
-            FROM {table}
+            FROM {source}
             WHERE age IS NOT NULL
             GROUP BY age_group
             ORDER BY age_group
         """)).fetchall()
 
         nationality_results = db.execute(text(f"""
-            SELECT nationality, COUNT(*) as count
-            FROM {table}
-            WHERE nationality IS NOT NULL AND nationality != ''
-            GROUP BY nationality
+            SELECT
+                CASE
+                    WHEN nationality IS NULL OR BTRIM(nationality) = '' THEN 'Unknown'
+                    WHEN LOWER(nationality) LIKE '%egypt%'
+                      OR LOWER(nationality) LIKE '%egyption%'
+                      OR LOWER(nationality) LIKE '%egyptain%'
+                      OR LOWER(nationality) LIKE '%egyptien%'
+                                            OR REGEXP_REPLACE(LOWER(nationality), '[^a-z]', '', 'g') IN (
+                                                    'egy', 'egyp', 'egp', 'eg', 'eyp',
+                                                    'egypt', 'egyptian', 'egyption', 'egyptain', 'egyptien', 'egyptient',
+                                                    'egiptian', 'egeptian', 'egyept', 'egytptian', 'egytptan',
+                                                    'egyptioan', 'egyptions', 'egyptianj', 'egyptians', 'egptient'
+                                            )
+                      OR nationality ~ 'مصر|مصري|مصرية|مصريه'
+                    THEN 'Egyptian'
+                    ELSE INITCAP(BTRIM(nationality))
+                END AS nationality,
+                COUNT(*) AS count
+            FROM {source}
+            GROUP BY 1
             ORDER BY count DESC
-            LIMIT 10
+            LIMIT 12
         """)).fetchall()
 
         return {
@@ -144,9 +202,9 @@ async def clinical_metrics(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/comorbidities")
-async def comorbidities(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def comorbidities(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
 
         row = db.execute(text(f"""
             SELECT
@@ -155,7 +213,7 @@ async def comorbidities(dataset: str = Query("ehvol"), db=Depends(get_db)):
                 COUNT(*) FILTER (WHERE COALESCE(has_dyslipidemia, false)) AS dyslipidemia,
                 COUNT(*) FILTER (WHERE COALESCE(family_history_cad, false)) AS cad,
                 COUNT(*) FILTER (WHERE COALESCE(has_heart_failure, false)) AS heart_failure
-            FROM {table}
+            FROM {source}
         """)).fetchone()
 
         distribution_results = db.execute(text(f"""
@@ -168,7 +226,7 @@ async def comorbidities(dataset: str = Query("ehvol"), db=Depends(get_db)):
                     CASE WHEN COALESCE(family_history_cad, false) THEN 1 ELSE 0 END +
                     CASE WHEN COALESCE(has_heart_failure, false) THEN 1 ELSE 0 END
                 ) AS comorbidity_count
-                FROM {table}
+                FROM {source}
             ) c
             GROUP BY comorbidity_count
             ORDER BY comorbidity_count
@@ -199,15 +257,15 @@ async def comorbidities(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/lifestyle")
-async def lifestyle(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def lifestyle(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
         smoking_result = db.execute(text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE COALESCE(is_smoker, false)) AS current_smokers,
                 0 AS former_smokers,
                 COUNT(*) FILTER (WHERE NOT COALESCE(is_smoker, false)) AS never_smoked
-            FROM {table}
+            FROM {source}
         """)).fetchone()
 
         return {
@@ -227,13 +285,13 @@ async def lifestyle(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/geographic")
-async def geographic(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def geographic(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
 
         city_results = db.execute(text(f"""
             SELECT current_city, COUNT(*) as count
-            FROM {table}
+            FROM {source}
             WHERE current_city IS NOT NULL AND current_city != ''
             GROUP BY current_city
             ORDER BY count DESC
@@ -256,9 +314,9 @@ async def geographic(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/geographic-governorates")
-async def geographic_governorates(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
 
         results = db.execute(text(f"""
             SELECT current_city as governorate,
@@ -272,7 +330,7 @@ async def geographic_governorates(dataset: str = Query("ehvol"), db=Depends(get_
                    AVG(bmi) as avg_bmi,
                    AVG(systolic_bp) as avg_systolic_bp,
                    AVG(hba1c) as avg_hba1c
-            FROM {table}
+            FROM {source}
             WHERE current_city IS NOT NULL AND current_city != ''
             GROUP BY current_city
             ORDER BY patient_count DESC
@@ -336,13 +394,15 @@ async def geographic_governorates(dataset: str = Query("ehvol"), db=Depends(get_
 
 
 @router.get("/enrollment-trends")
-async def enrollment_trends(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def enrollment_trends(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
         rows = db.execute(text(f"""
             SELECT DATE_TRUNC('month', enrollment_date) as month, COUNT(*) as enrolled
-            FROM {table}
+            FROM {source}
             WHERE enrollment_date IS NOT NULL
+              AND enrollment_date >= DATE '1900-01-01'
+              AND enrollment_date < (CURRENT_DATE + INTERVAL '1 year')
             GROUP BY DATE_TRUNC('month', enrollment_date)
             ORDER BY month
         """)).fetchall()
@@ -366,9 +426,9 @@ async def enrollment_trends(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/data-quality")
-async def data_quality(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def data_quality(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        table = _dataset_table(dataset)
+        source = _dataset_source(dataset)
 
         completeness_result = db.execute(text(f"""
             SELECT
@@ -378,7 +438,7 @@ async def data_quality(dataset: str = Query("ehvol"), db=Depends(get_db)):
                 0 as mri,
                 0 as ecg,
                 ROUND(AVG({COMPLETENESS_EXPR})) as overall
-            FROM {table}
+            FROM {source}
         """)).fetchone()
 
         distribution_results = db.execute(text(f"""
@@ -391,7 +451,7 @@ async def data_quality(dataset: str = Query("ehvol"), db=Depends(get_db)):
                     ELSE '0-19%'
                 END as completeness_range,
                 COUNT(*) as count
-            FROM {table}
+            FROM {source}
             GROUP BY completeness_range
             ORDER BY completeness_range
         """)).fetchall()
@@ -418,7 +478,7 @@ async def data_quality(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/imaging")
-async def imaging(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def imaging(dataset: str = Query("all"), db=Depends(get_db)):
     try:
         return {
             "success": True,
@@ -439,7 +499,7 @@ async def imaging(dataset: str = Query("ehvol"), db=Depends(get_db)):
 
 
 @router.get("/ecg")
-async def ecg(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def ecg(dataset: str = Query("all"), db=Depends(get_db)):
     try:
         return {
             "success": True,
