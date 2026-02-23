@@ -31,25 +31,8 @@ export function EtlMonitor() {
   const [error, setError] = useState<string | null>(null);
   const [csvText, setCsvText] = useState<string | null>(null);
   const [nifiFrameStatus, setNifiFrameStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
-  const [nifiUrlIndex, setNifiUrlIndex] = useState(0);
-
-  const nifiUrls = useMemo(() => {
-    const configured = import.meta.env.VITE_NIFI_URL as string | undefined;
-    if (configured && configured.trim().length > 0) {
-      return [configured.trim()];
-    }
-    if (typeof window === 'undefined') {
-      return ['https://localhost:8443/nifi', 'http://localhost:8443/nifi'];
-    }
-    const host = window.location.hostname || 'localhost';
-    return [`https://${host}:8443/nifi`, `http://${host}:8443/nifi`];
-  }, []);
-
-  const nifiUrl = nifiUrls[Math.min(nifiUrlIndex, nifiUrls.length - 1)];
-
-  useEffect(() => {
-    setNifiFrameStatus('loading');
-  }, [nifiUrl]);
+  const configuredNifiUrl = (import.meta.env.VITE_NIFI_URL as string | undefined)?.trim();
+  const nifiUrl = configuredNifiUrl && configuredNifiUrl.length > 0 ? configuredNifiUrl : '/nifi/';
 
   const activeJob = useMemo(
     () => jobs.find((job) => job.jobId === activeJobId) ?? null,
@@ -241,14 +224,7 @@ export function EtlMonitor() {
               className="w-full h-full"
               referrerPolicy="no-referrer"
               onLoad={() => setNifiFrameStatus('loaded')}
-              onError={() => {
-                const hasFallback = nifiUrlIndex < nifiUrls.length - 1;
-                if (hasFallback) {
-                  setNifiUrlIndex((prev) => prev + 1);
-                  return;
-                }
-                setNifiFrameStatus('error');
-              }}
+              onError={() => setNifiFrameStatus('error')}
             />
           </div>
 
@@ -271,7 +247,7 @@ export function EtlMonitor() {
           ) : null}
 
           <p className="text-xs text-muted-foreground">
-            If this panel stays blank, open NiFi in a new tab once and accept the local HTTPS certificate, then refresh this page.
+            This embedded panel uses the container proxy path `/nifi/`.
           </p>
         </CardContent>
       </Card>

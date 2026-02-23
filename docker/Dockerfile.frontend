@@ -39,7 +39,7 @@ FROM nginx:1.27-alpine
 RUN apk add --no-cache curl
 
 # Copy built assets
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/build /usr/share/nginx/html
 
 # Copy custom nginx configuration
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
@@ -50,8 +50,6 @@ RUN adduser -D -u 1000 biolink && \
     chown -R biolink:biolink /var/cache/nginx && \
     chown -R biolink:biolink /var/log/nginx && \
     chown -R biolink:biolink /etc/nginx/conf.d
-
-USER biolink
 
 EXPOSE 80
 
