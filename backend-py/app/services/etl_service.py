@@ -10,7 +10,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 NIFI_API_URL = os.getenv(
-    "ETL_SERVICE_URL", os.getenv("NIFI_API_URL", "http://nifi:8443/nifi-api")
+    "ETL_SERVICE_URL", os.getenv("NIFI_API_URL", "https://nifi:8443/nifi-api")
 ).rstrip("/")
 NIFI_USERNAME = os.getenv(
     "NIFI_USERNAME", os.getenv("SINGLE_USER_CREDENTIALS_USERNAME", "admin")
@@ -80,7 +80,8 @@ def _stage_csv_for_nifi(csv_path: str | None, dataset: str) -> str | None:
 
 
 def _get_auth_headers() -> dict[str, str]:
-    token_url = f"{_nifi_base_url()}/access/token"
+    # Use the configured API base so token endpoint is correct (e.g. /nifi-api/access/token)
+    token_url = f"{NIFI_API_URL}/access/token"
     try:
         response = requests.post(
             token_url,
@@ -115,13 +116,11 @@ def _resolve_getfile_processor_id(dataset: str, headers: dict[str, str]) -> str:
         response.raise_for_status()
         flow = response.json().get("processGroupFlow", {}).get("flow", {})
         processors = flow.get("processors", [])
-        expected_name = (
-            "GetFile - BHS CSV" if dataset == "bhs" else "GetFile - EHVol CSV"
-        )
-
+        dataset_token = "bhs" if dataset == "bhs" else "ehvol"
         for proc in processors:
             component = proc.get("component", {})
-            if component.get("name") == expected_name:
+            name = (component.get("name") or "").lower()
+            if "getfile" in name and dataset_token in name:
                 proc_id = component.get("id")
                 if proc_id:
                     return proc_id
@@ -134,9 +133,25 @@ def _resolve_getfile_processor_id(dataset: str, headers: dict[str, str]) -> str:
 
 
 def _run_once_getfile(processor_id: str, headers: dict[str, str]) -> dict:
+    processor_response = requests.get(
+        f"{NIFI_API_URL}/processors/{processor_id}",
+        headers=headers,
+        timeout=NIFI_REQUEST_TIMEOUT,
+        verify=NIFI_VERIFY_SSL,
+    )
+    if processor_response.status_code != 200:
+        return {
+            "ok": False,
+            "error": f"HTTP {processor_response.status_code}: {processor_response.text}",
+        }
+
+    revision_version = (
+        processor_response.json().get("revision", {}).get("version", 0)
+    )
+
     url = f"{NIFI_API_URL}/processors/{processor_id}/run-status"
     payload = {
-        "revision": {"version": 0, "clientId": str(uuid.uuid4())},
+        "revision": {"version": revision_version, "clientId": str(uuid.uuid4())},
         "state": "RUN_ONCE",
         "disconnectedNodeAcknowledged": True,
     }
@@ -147,6 +162,8 @@ def _run_once_getfile(processor_id: str, headers: dict[str, str]) -> dict:
         timeout=NIFI_REQUEST_TIMEOUT,
         verify=NIFI_VERIFY_SSL,
     )
+    if response.status_code == 409 and "Current state is RUNNING" in response.text:
+        return {"ok": True, "status_code": response.status_code, "already_running": True}
     if response.status_code not in (200, 202):
         return {"ok": False, "error": f"HTTP {response.status_code}: {response.text}"}
     return {"ok": True, "status_code": response.status_code}

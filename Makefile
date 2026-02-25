@@ -177,6 +177,11 @@ db-reset:
 	$(MAKE) db-migrate
 	$(MAKE) db-seed
 
+stage-data:
+	@echo "Staging CSV chunks for NiFi ingestion..."
+	python3 scripts/stage_nifi_chunks.py
+	@echo "Chunks written to nifi/data-input/ — NiFi will consume them automatically."
+
 # ============================================
 # Utilities
 # ============================================
@@ -192,6 +197,8 @@ clean:
 	find . -type d -name "build" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name "coverage" -exec rm -rf {} + 2>/dev/null || true
 	rm -f .coverage coverage.xml 2>/dev/null || true
+	@echo "Cleaning NiFi processor cache..."
+	rm -rf nifi/processors/__pycache__ 2>/dev/null || true
 
 pre-commit:
 	@echo "Setting up pre-commit hooks..."

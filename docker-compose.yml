@@ -210,11 +210,18 @@ services:
       SUPERSET_ADMIN_FIRSTNAME: ${SUPERSET_ADMIN_FIRSTNAME:-Bio}
       SUPERSET_ADMIN_LASTNAME: ${SUPERSET_ADMIN_LASTNAME:-Link}
       SUPERSET_CONFIG_PATH: /app/superset_config.py
+      # BioLink PostgreSQL connection for superset_init.py
+      BIOLINK_PG_HOST: postgres
+      BIOLINK_PG_PORT: "5432"
+      BIOLINK_PG_DB: biolink
+      BIOLINK_PG_USER: biolink
+      BIOLINK_PG_PASSWORD: biolink_secret
     ports:
       - "8088:8088"
     volumes:
       - superset_home:/app/superset_home
       - ./config/superset/superset_config.py:/app/superset_config.py:ro
+      - ./config/superset/superset_init.py:/app/superset_init.py:ro
       - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/biolink-logo.png:ro
       - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/superset-logo-horiz.png:ro
       - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/superset.png:ro
@@ -222,7 +229,10 @@ services:
       - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/custom_logo.png:ro
       - ./src/assets/BioLink_Visualize.png:/app/superset/static/assets/images/custom_img_favicon.png:ro
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     command:
       - /bin/sh
       - -c
@@ -235,6 +245,7 @@ services:
           --email "$${SUPERSET_ADMIN_EMAIL}" \
           --password "$${SUPERSET_ADMIN_PASSWORD}" || true && \
         superset init && \
+        /app/.venv/bin/python /app/superset_init.py || true && \
         superset run -h 0.0.0.0 -p 8088
     profiles:
       - optional
@@ -242,13 +253,17 @@ services:
   nifi:
     image: apache/nifi:2.8.0
     container_name: biolink-nifi
+    hostname: nifi
     environment:
       # --- NiFi 2.x single-user auth (HTTPS) ---
       SINGLE_USER_CREDENTIALS_USERNAME: admin
       SINGLE_USER_CREDENTIALS_PASSWORD: biolink_nifi_secret_123
+      NIFI_WEB_HTTPS_HOST: nifi
+      NIFI_WEB_PROXY_HOST: localhost:3000,frontend,frontend:80
       NIFI_JVM_HEAP_INIT: 2g
       NIFI_JVM_HEAP_MAX: 4g
       NIFI_SENSITIVE_PROPS_KEY: biolink_nifi_sensitive_key_456
+      # --- NiFi flow configuration (initial load for new deployments) ---
       # --- Python extensions ---
       NIFI_PYTHON_EXTENSIONS_SOURCE_DIRECTORY_DEFAULT: /opt/nifi/nifi-current/python_extensions
       # --- Database connection settings ---
@@ -277,15 +292,19 @@ services:
       - etl_uploads:/etl-uploads
       # Source data (read-only reference)
       - ./db:/opt/nifi/db:ro
+      # Schema CSV for BiolinkSchemaStandardizerProcessor
+      # (column maps are now Python modules in nifi/processors/ — no CSV mount needed)
+      # Flow definition (initial load — NiFi uses this on first start before state vol is populated)
+      - ./nifi/flow/flow.json:/opt/nifi/nifi-current/conf/flow.json:ro
       # Chunked CSV input (writable for GetFile)
       - ./nifi/data-input:/opt/nifi/data-input
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -kf https://localhost:8443/nifi-api/system-diagnostics || exit 1"]
+      test: ["CMD-SHELL", "TOKEN=$(curl -sk -X POST https://localhost:8443/nifi-api/access/token -d 'username=admin&password=biolink_nifi_secret_123' -H 'Content-Type: application/x-www-form-urlencoded') && curl -kf -H \"Authorization: Bearer $TOKEN\" https://localhost:8443/nifi-api/system-diagnostics"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 15
       start_period: 120s
 

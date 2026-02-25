@@ -4,6 +4,7 @@ export interface EtlRunRequest {
   table?: string;
   schema?: string;
   csv?: string | null;
+  datasets?: Array<'ehvol' | 'bhs'>;
   dataset_name?: string | null;
   dbt_select?: string | null;
   skip_superset?: boolean;

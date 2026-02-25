@@ -86,7 +86,7 @@ All credentials are in `backend-py/.env` and configured from the main `.env` fil
 Key variables:
 - `DATABASE_URL` - PostgreSQL connection
 - `SQLSERVER_*` - SQL Server connection used for live EHVol registry
-- `ETL_SERVICE_URL` - NiFi API endpoint (default `http://nifi:8443/nifi-api`)
+- `ETL_SERVICE_URL` - NiFi API endpoint (default `https://nifi:8443/nifi-api`)
 
 ## Stage 1: SQL Server Smoke Test (EHVol)
 

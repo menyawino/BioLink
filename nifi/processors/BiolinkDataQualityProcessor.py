@@ -17,45 +17,47 @@ from nifiapi.properties import PropertyDescriptor, ExpressionLanguageScope
 # VALIDATION RULES
 # =============================================================================
 
+# Fields guaranteed to exist after BiolinkSchemaStandardizerProcessor runs.
+# (participant_id does not exist as a unified field in wide tables — BHS uses
+# record_id, EHVol uses dna_id; both are validated by the standardizer itself.)
 REQUIRED_FIELDS = [
-    "participant_id",
-    "source_dataset",
+    "_source_dataset",
 ]
 
 TYPE_RULES = {
-    "age": "integer",
-    "height_cm": "numeric",
-    "weight_kg": "numeric",
-    "bmi": "numeric",
-    "heart_rate": "numeric",
-    "systolic_bp": "numeric",
-    "diastolic_bp": "numeric",
-    "hba1c": "numeric",
-    "troponin_i": "numeric",
-    "echo_ef": "numeric",
-    "smoking_pack_years": "numeric",
-    "data_quality_score": "numeric",
-    "has_diabetes": "boolean",
-    "has_hypertension": "boolean",
-    "has_dyslipidemia": "boolean",
-    "has_heart_failure": "boolean",
-    "is_smoker": "boolean",
-    "family_history_cad": "boolean",
-    "family_history_diabetes": "boolean",
-    "consanguineous_parents": "boolean",
+    "age":                 "integer",
+    "age_at_enrollment":   "integer",
+    "height_cm":           "numeric",
+    "weight_kg":           "numeric",
+    "bmi":                 "numeric",
+    "heart_rate":          "numeric",
+    "systolic_bp":         "numeric",
+    "diastolic_bp":        "numeric",
+    "hba1c":               "numeric",
+    "troponin_i":          "numeric",
+    "echo_lvef":           "numeric",   # BHS standardized name
+    "echo_ef":             "numeric",   # EHVol standardized name
+    "smoking_pack_years":  "numeric",
+    "_data_quality_score": "numeric",
+    "has_diabetes":        "boolean",
+    "has_hypertension":    "boolean",
+    "has_dyslipidemia":    "boolean",
+    "has_heart_failure":   "boolean",
+    "is_smoker":           "boolean",
 }
 
 RANGE_RULES = {
-    "age": (0, 120),
-    "height_cm": (50, 250),
-    "weight_kg": (2, 300),
-    "bmi": (10, 60),
-    "heart_rate": (30, 200),
-    "systolic_bp": (70, 250),
-    "diastolic_bp": (40, 150),
-    "hba1c": (3, 20),
-    "echo_ef": (10, 80),
-    "data_quality_score": (0, 1),
+    "age":               (0, 120),
+    "age_at_enrollment": (0, 120),
+    "height_cm":         (50, 250),
+    "weight_kg":         (2, 300),
+    "bmi":               (10, 60),
+    "heart_rate":        (30, 200),
+    "systolic_bp":       (70, 250),
+    "diastolic_bp":      (40, 150),
+    "hba1c":             (3, 20),
+    "echo_lvef":         (10, 80),
+    "echo_ef":           (10, 80),
 }
 
 # Cross-field consistency rules
@@ -125,7 +127,7 @@ class BiolinkDataQualityProcessor(FlowFileTransform):
         for record in records:
             issues = self._validate_record(record)
             score = self._compute_score(issues)
-            record["data_quality_score"] = round(score, 2)
+            record["_data_quality_score"] = round(score, 2)
 
             if score >= min_score:
                 valid_records.append(record)
