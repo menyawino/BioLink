@@ -198,14 +198,20 @@ Recommended processors:
 - `BiolinkDataQualityProcessor`
 - `BiolinkJsonToSqlProcessor` + `PutSQL`
 
-### ETL Trigger API (NiFi-backed)
+### ETL Trigger API (NiFi-backed, script-aligned)
 
-Backend endpoint `/api/etl/run` now triggers NiFi directly (no standalone ETL service):
+Backend endpoint `/api/etl/run` now triggers a NiFi processor that executes the
+same ETL plan defined in `scripts/README_registry_pipeline.md`:
+
+- `scripts/two_stage_match.py`
+- `scripts/apply_schema.py`
+- `scripts/omop_etl.py`
+- `scripts/omop_quality.py`
 
 ```bash
 curl -X POST http://localhost:3001/api/etl/run \
   -H "Content-Type: application/json" \
-  -d '{"table":"ehvol_full","csv":"db/EHVol_Full.csv"}'
+  -d '{"table":"ehvol_full"}'
 ```
 
 **Stop the stack:**

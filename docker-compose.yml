@@ -252,7 +252,9 @@ services:
       - optional
 
   nifi:
-    image: apache/nifi:2.8.0
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.nifi
     container_name: biolink-nifi
     hostname: nifi
     environment:
@@ -285,6 +287,8 @@ services:
       # Persistent state
       - nifi_data:/opt/nifi/nifi-current/state
       - nifi_logs:/opt/nifi/nifi-current/logs
+      # Full repo mount so NiFi can execute the script-based ETL directly
+      - ./:/opt/nifi/biolink_repo
       # Python processors (NiFi 2.x native support)
       - ./nifi/processors:/opt/nifi/nifi-current/python_extensions
       # JDBC driver

@@ -1,0 +1,27 @@
+FROM apache/nifi:2.8.0
+
+USER root
+
+RUN set -eux; \
+    if command -v apt-get >/dev/null 2>&1; then \
+        apt-get update; \
+        apt-get install -y --no-install-recommends python3 python3-pip; \
+        rm -rf /var/lib/apt/lists/*; \
+    elif command -v microdnf >/dev/null 2>&1; then \
+        microdnf install -y python3 python3-pip; \
+        microdnf clean all; \
+    elif command -v dnf >/dev/null 2>&1; then \
+        dnf install -y python3 python3-pip; \
+        dnf clean all; \
+    else \
+        echo "Unsupported package manager for NiFi image" >&2; \
+        exit 1; \
+    fi
+
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+    numpy \
+    pandas \
+    psycopg2-binary \
+    scikit-learn
+
+USER nifi

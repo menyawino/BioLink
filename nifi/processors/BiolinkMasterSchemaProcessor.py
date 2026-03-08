@@ -29,6 +29,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import string
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -509,11 +510,19 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
     class ProcessorDetails:
         version = "1.0.0"
         description = (
-            "Step 1 of 2-stage harmonisation: runs TF-IDF column matching on "
-            "BHS_Full.csv and EHVol_Full.csv headers, writes master_schema.csv "
-            "to the outputs directory, and emits the schema CSV as a FlowFile."
+            "Step 1 of the script-aligned ETL: executes scripts/two_stage_match.py "
+            "inside the NiFi container to generate outputs/master_schema.csv using "
+            "the same matching logic documented for the registry pipeline."
         )
         tags = ["biolink", "schema", "matching", "etl", "harmonise", "step1"]
+
+    REPOSITORY_ROOT = PropertyDescriptor(
+        name="Repository Root",
+        description="Mounted repository root used to execute the script-based ETL.",
+        required=True,
+        default_value="/opt/nifi/biolink_repo",
+        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+    )
 
     BHS_CSV_PATH = PropertyDescriptor(
         name="BHS CSV Path",
@@ -550,6 +559,21 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         default_value="5",
         expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
     )
+    MIN_FINAL_SCORE = PropertyDescriptor(
+        name="Min Final Score",
+        description="Minimum final composite score to accept a pair (script default 0.50).",
+        required=False,
+        default_value="0.50",
+        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+    )
+    USE_SAPBERT = PropertyDescriptor(
+        name="Use SapBERT",
+        description="Set to true to allow SapBERT if installed; false keeps the TF-IDF-only script path.",
+        required=False,
+        default_value="false",
+        allowable_values=["true", "false"],
+        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+    )
     LEXICON_PATH = PropertyDescriptor(
         name="Lexicon Path",
         description=(
@@ -562,8 +586,9 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
     )
 
     property_descriptors = [
+        REPOSITORY_ROOT,
         BHS_CSV_PATH, EHVOL_CSV_PATH, SCHEMA_OUTPUT_PATH,
-        MATCH_THRESHOLD, TOP_K, LEXICON_PATH,
+        MATCH_THRESHOLD, TOP_K, MIN_FINAL_SCORE, USE_SAPBERT, LEXICON_PATH,
     ]
 
     def __init__(self, **kwargs):
@@ -573,14 +598,26 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         return self.property_descriptors
 
     def transform(self, context, flowfile):
+        repo_root   = context.getProperty(self.REPOSITORY_ROOT).getValue()
         bhs_path    = context.getProperty(self.BHS_CSV_PATH).getValue()
         ehvol_path  = context.getProperty(self.EHVOL_CSV_PATH).getValue()
         out_path    = context.getProperty(self.SCHEMA_OUTPUT_PATH).getValue()
         threshold   = float(context.getProperty(self.MATCH_THRESHOLD).getValue() or "0.35")
         top_k       = int(context.getProperty(self.TOP_K).getValue() or "5")
+        min_final   = float(context.getProperty(self.MIN_FINAL_SCORE).getValue() or "0.50")
+        use_sapbert = (context.getProperty(self.USE_SAPBERT).getValue() or "false").strip().lower() == "true"
         lexicon     = (context.getProperty(self.LEXICON_PATH).getValue() or "").strip() or None
 
         # Validate inputs
+        script_path = os.path.join(repo_root, "scripts", "two_stage_match.py")
+        if not os.path.isfile(script_path):
+            msg = f"BiolinkMasterSchemaProcessor: ETL script not found at '{script_path}'"
+            return FlowFileTransformResult(
+                relationship="failure",
+                contents=json.dumps({"error": msg}),
+                attributes={"biolink.error": msg},
+            )
+
         for label, path in [("BHS CSV", bhs_path), ("EHVol CSV", ehvol_path)]:
             if not os.path.isfile(path):
                 msg = f"BiolinkMasterSchemaProcessor: {label} not found at '{path}'"
@@ -591,13 +628,30 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
                 )
 
         try:
-            total, pii_count = generate_master_schema(
-                bhs_path=bhs_path,
-                ehvol_path=ehvol_path,
-                output_path=out_path,
-                threshold=threshold,
-                top_k=top_k,
-                lexicon_path=lexicon,
+            command = [
+                "python3",
+                script_path,
+                "--threshold",
+                str(threshold),
+                "--top-k",
+                str(top_k),
+                "--min-final-score",
+                str(min_final),
+            ]
+            if not use_sapbert:
+                command.append("--no-sapbert")
+
+            env = os.environ.copy()
+            if lexicon:
+                env["BIOLINK_LEXICON_PATH"] = lexicon
+
+            subprocess.run(
+                command,
+                cwd=repo_root,
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         except Exception as exc:
             msg = f"BiolinkMasterSchemaProcessor: schema generation failed — {exc}"
@@ -605,6 +659,25 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
                 relationship="failure",
                 contents=json.dumps({"error": msg}),
                 attributes={"biolink.error": str(exc)},
+            )
+
+        if not os.path.isfile(out_path):
+            msg = f"BiolinkMasterSchemaProcessor: expected schema output missing at '{out_path}'"
+            return FlowFileTransformResult(
+                relationship="failure",
+                contents=json.dumps({"error": msg}),
+                attributes={"biolink.error": msg},
+            )
+
+        total = 0
+        pii_count = 0
+        with open(out_path, newline="", encoding="utf-8") as schema_file:
+            rows = list(csv.DictReader(schema_file))
+            total = len(rows)
+            pii_count = sum(
+                1
+                for row in rows
+                if str(row.get("pii_flag", "False")).strip().lower() in ("true", "1", "yes")
             )
 
         # Echo schema CSV as FlowFile content
@@ -619,6 +692,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
                 "biolink.schema.total_matched":  str(total),
                 "biolink.schema.pii_columns":    str(pii_count),
                 "biolink.schema.clinical_columns": str(total - pii_count),
+                "biolink.schema.min_final_score": str(min_final),
                 "biolink.schema.output_path":    out_path,
                 "biolink.schema.generated_at":   now_iso,
                 "mime.type":                     "text/csv",

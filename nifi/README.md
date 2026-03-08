@@ -1,30 +1,33 @@
 # BioLink NiFi 2.8.0 ETL Pipeline
 
-Apache NiFi 2.8.0 pipeline with automated REST bootstrap for:
-- **Step 1**: master schema generation (`master_schema.csv`)
-- **Step 2**: per-dataset harmonisation into dedicated PostgreSQL targets
-  (`bhs_harmonised`, `ehvol_harmonised`).
+Apache NiFi 2.8.0 pipeline with automated REST bootstrap for the documented
+script ETL plan:
+- **Step 1**: schema matching via `scripts/two_stage_match.py`
+- **Step 2**: harmonisation and de-identification via `scripts/apply_schema.py`
+- **Step 3**: OMOP-aligned exports via `scripts/omop_etl.py`
+- **Step 4**: quality and characterization via `scripts/omop_quality.py`
 
-> **This pipeline replaces the Python-only ETL** (`biolink_etl/`) with native
-> NiFi processors, giving you visual flow management, provenance tracking,
-> back-pressure, and retry semantics out of the box.
+NiFi remains the execution engine, but the ETL method now follows the scripts
+pipeline rather than the older in-processor transformation logic.
 
 ---
 
 ## Architecture (auto-bootstrapped)
 
 ```
-Step 1 (runs on schedule):
+Step 1 (runs on schedule or RUN_ONCE):
 GenerateFlowFile
   -> BiolinkMasterSchemaProcessor
-  -> /opt/nifi/outputs/master_schema.csv
+  -> outputs/master_schema.csv
 
-Step 2 (separate per dataset):
-BHS:   GetFile -> CsvToJson -> BiolinkHarmoniseProcessor(bhs)
-         -> JsonToSql(table=bhs_harmonised) -> PutSQL
-
-EHVol: GetFile -> CsvToJson -> BiolinkHarmoniseProcessor(ehvol)
-         -> JsonToSql(table=ehvol_harmonised) -> PutSQL
+Steps 2-4 (runs on schedule or RUN_ONCE):
+GenerateFlowFile
+  -> BiolinkRegistryPipelineProcessor
+     -> outputs/unified_registry.csv
+     -> outputs/omop_cdm/*.csv
+     -> outputs/data_quality_report.html
+     -> outputs/cohort_characterization.csv
+     -> PostgreSQL: unified_registry + omop_* tables
 ```
 
 ## Directory Structure
@@ -50,8 +53,8 @@ nifi/
 
 ## Python Processors
 
-All four processors are **NiFi 2.x native Python processors** (FlowFileTransform).
-They are auto-discovered from the `python_extensions` directory.
+The NiFi processors are **NiFi 2.x native Python processors** and now orchestrate
+the same scripts described in `scripts/README_registry_pipeline.md`.
 
 ### 1. BiolinkCsvToJsonProcessor
 
@@ -64,44 +67,15 @@ They are auto-discovered from the `python_extensions` directory.
 - Handles BOM, encoding, header sanitization
 - Remaps EHVol column names to canonical form
 
-### 2. BiolinkTransformProcessor
+### 2. BiolinkRegistryPipelineProcessor
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| Dataset Type | `bhs` | `bhs` or `ehvol` |
+Runs the downstream script pipeline in one NiFi processor:
 
-Ported logic from `biolink_etl/schema_mappings.py` and `biolink_etl/transformer.py`:
-
-- **Field mapping**: Maps source column names (different per dataset) to unified schema
-- **Type normalization**: `parse_date`, `parse_numeric`, `parse_integer`
-- **Value normalization**: `normalize_gender`, `normalize_boolean`, `normalize_ethnicity`
-- **City homogenization**: Egyptian city/governorate normalization with 70+ variants
-- **BP handling**: BHS averages 3 brachial measurements; EHVol splits "120/80" format
-- **Participant ID**: Collision-safe ID construction with dataset prefix
-- **Quality scoring**: Weighted issue severity (critical=0.5, error=0.3, warning=0.1)
-
-### 3. BiolinkDataQualityProcessor
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| Min Quality Score | `0.3` | Reject threshold (0.0–1.0) |
-
-- Required field validation (participant_id, source_dataset)
-- Type checks for all numeric/boolean fields
-- Range validation (age 0–120, BMI 10–60, BP ranges, etc.)
-- Cross-field consistency (systolic > diastolic BP)
-- Routes below-threshold records to `failure`
-
-### 4. BiolinkJsonToSqlProcessor
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| Table Name | `bhs_participants` | Target table |
-| Upsert Mode | `true` | ON CONFLICT DO UPDATE |
-
-- Generates parameterized INSERT or UPSERT SQL
-- Handles NULL, boolean, numeric, and string types
-- Outputs SQL text for downstream PutSQL processor
+- Calls `scripts/apply_schema.py` to build `outputs/unified_registry.csv`
+- Calls `scripts/omop_etl.py` to build OMOP CSV tables under `outputs/omop_cdm/`
+- Calls `scripts/omop_quality.py` to generate the HTML report and cohort characterization
+- Loads the unified registry snapshot and OMOP outputs into PostgreSQL
+- Persists a JSON manifest in `registry_etl_runs`
 
 ## Quick Start
 
@@ -162,7 +136,7 @@ The connection pool uses parameter context `BioLink Parameters` with:
 
 ### 5. Frontend wiring
 
-Frontend ETL Designer reads `VITE_NIFI_URL` (now wired in compose build args),
+Frontend ETL Designer reads `VITE_NIFI_URL` (wired in compose build args),
 defaulting to `/nifi/` for same-origin proxy embedding.
 
 ## Docker Compose Changes

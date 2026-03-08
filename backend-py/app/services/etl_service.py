@@ -20,9 +20,8 @@ NIFI_PASSWORD = os.getenv(
     os.getenv("SINGLE_USER_CREDENTIALS_PASSWORD", "biolink_nifi_secret_123"),
 )
 NIFI_REQUEST_TIMEOUT = int(os.getenv("NIFI_REQUEST_TIMEOUT", "60"))
-NIFI_BHS_PROCESSOR_ID = os.getenv("NIFI_BHS_GETFILE_PROCESSOR_ID", "proc-bhs-getfile")
-NIFI_EHVOL_PROCESSOR_ID = os.getenv(
-    "NIFI_EHVOL_GETFILE_PROCESSOR_ID", "proc-ehvol-getfile"
+NIFI_SCRIPTED_PIPELINE_PROCESSOR_ID = os.getenv(
+    "NIFI_SCRIPTED_PIPELINE_PROCESSOR_ID", "proc-registry-scripted-pipeline"
 )
 NIFI_VERIFY_SSL = os.getenv("NIFI_VERIFY_SSL", "false").lower() in {
     "1",
@@ -101,8 +100,8 @@ def _get_auth_headers() -> dict[str, str]:
     return {}
 
 
-def _resolve_getfile_processor_id(dataset: str, headers: dict[str, str]) -> str:
-    env_default = NIFI_BHS_PROCESSOR_ID if dataset == "bhs" else NIFI_EHVOL_PROCESSOR_ID
+def _resolve_pipeline_processor_id(headers: dict[str, str]) -> str:
+    env_default = NIFI_SCRIPTED_PIPELINE_PROCESSOR_ID
     if env_default and not env_default.startswith("proc-"):
         return env_default
 
@@ -116,23 +115,22 @@ def _resolve_getfile_processor_id(dataset: str, headers: dict[str, str]) -> str:
         response.raise_for_status()
         flow = response.json().get("processGroupFlow", {}).get("flow", {})
         processors = flow.get("processors", [])
-        dataset_token = "bhs" if dataset == "bhs" else "ehvol"
         for proc in processors:
             component = proc.get("component", {})
             name = (component.get("name") or "").lower()
-            if "getfile" in name and dataset_token in name:
+            if "scripted registry pipeline" in name or "run scripted registry pipeline" in name:
                 proc_id = component.get("id")
                 if proc_id:
                     return proc_id
     except Exception as exc:
         logger.warning(
-            "Failed to auto-discover NiFi processor ID for %s: %s", dataset, exc
+            "Failed to auto-discover NiFi scripted pipeline processor: %s", exc
         )
 
     return env_default
 
 
-def _run_once_getfile(processor_id: str, headers: dict[str, str]) -> dict:
+def _run_once_processor(processor_id: str, headers: dict[str, str]) -> dict:
     processor_response = requests.get(
         f"{NIFI_API_URL}/processors/{processor_id}",
         headers=headers,
@@ -173,27 +171,28 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
     dataset = _infer_dataset(params)
     staged_csv = _stage_csv_for_nifi(params.csv, dataset)
     headers = _get_auth_headers()
-    processor_id = _resolve_getfile_processor_id(dataset, headers)
+    processor_id = _resolve_pipeline_processor_id(headers)
 
     logger.info(
-        "Triggering NiFi ETL pipeline dataset=%s processor=%s nifi_api=%s",
+        "Triggering NiFi script-aligned ETL pipeline dataset=%s processor=%s nifi_api=%s",
         dataset,
         processor_id,
         NIFI_API_URL,
     )
 
     try:
-        run_result = _run_once_getfile(processor_id, headers)
+        run_result = _run_once_processor(processor_id, headers)
         if not run_result.get("ok"):
             return run_result
 
         return {
             "ok": True,
             "engine": "nifi",
+            "mode": "script-aligned",
             "dataset": dataset,
             "processor_id": processor_id,
             "staged_csv": staged_csv,
-            "message": "NiFi GetFile processor triggered (RUN_ONCE)",
+            "message": "NiFi script-aligned registry pipeline triggered (RUN_ONCE)",
         }
     except Exception as exc:
         logger.error("Failed to trigger NiFi ETL pipeline: %s", exc)

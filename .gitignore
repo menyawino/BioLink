@@ -32,7 +32,7 @@ backend/
 build/
 outputs/
 
-# Environment files (often contain secrets)
+# Environment files 
 .env
 **/.env
 

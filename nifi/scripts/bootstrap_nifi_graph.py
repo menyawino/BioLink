@@ -334,11 +334,14 @@ def build_step1_group(client: NiFiClient, root_id: str) -> None:
         "BiolinkMasterSchemaProcessor",
         PYTHON_BUNDLE,
         {
+            "Repository Root": "/opt/nifi/biolink_repo",
             "BHS CSV Path": "/opt/nifi/db/BHS_Full.csv",
             "EHVol CSV Path": "/opt/nifi/db/EHVol_Full.csv",
             "Schema Output Path": "/opt/nifi/outputs/master_schema.csv",
             "Match Threshold": "0.35",
             "Top K": "5",
+            "Min Final Score": "0.50",
+            "Use SapBERT": "false",
             "Lexicon Path": "/opt/nifi/biolink_scripts/clinical_lexicon.csv",
         },
         320,
@@ -364,6 +367,71 @@ def build_step1_group(client: NiFiClient, root_id: str) -> None:
     client.ensure_connection(pg_id, master_id, master_id, ["failure"], "MasterSchema failure loop")
 
     for proc_id in [log_id, master_id, trigger_id]:
+        client.start_processor(proc_id)
+
+
+def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
+    pg_id = client.ensure_process_group(root_id, "Registry Pipeline (Steps 2-4)", 100, 1800)
+
+    trigger_id = client.ensure_processor(
+        pg_id,
+        "GenerateFlowFile - Trigger Registry Pipeline",
+        "org.apache.nifi.processors.standard.GenerateFlowFile",
+        STANDARD_BUNDLE,
+        {
+            "File Size": "0B",
+            "Batch Size": "1",
+            "Data Format": "Text",
+            "Unique FlowFiles": "false",
+        },
+        0,
+        0,
+        scheduling_period="24 hours",
+    )
+
+    pipeline_id = client.ensure_processor(
+        pg_id,
+        "Run Scripted Registry Pipeline",
+        "BiolinkRegistryPipelineProcessor",
+        PYTHON_BUNDLE,
+        {
+            "Repository Root": "/opt/nifi/biolink_repo",
+            "Schema Relative Path": "outputs/master_schema.csv",
+            "Unified Output Relative Path": "outputs/unified_registry.csv",
+            "OMOP Output Relative Directory": "outputs/omop_cdm",
+            "Quality Report Relative Path": "outputs/data_quality_report.html",
+            "Characterization Relative Path": "outputs/cohort_characterization.csv",
+            "Load To PostgreSQL": "true",
+            "Database Host": "postgres",
+            "Database Port": "5432",
+            "Database Name": "biolink",
+            "Database User": "biolink",
+            "Database Password": "biolink_secret",
+            "Unified Registry Table": "unified_registry",
+        },
+        340,
+        0,
+    )
+
+    log_id = client.ensure_processor(
+        pg_id,
+        "LogMessage - Registry Pipeline Complete",
+        "org.apache.nifi.processors.standard.LogMessage",
+        STANDARD_BUNDLE,
+        {
+            "Log Level": "info",
+            "Log Message": "Registry pipeline complete: ${biolink.registry.rows} rows, ${biolink.registry.columns} columns",
+        },
+        700,
+        0,
+        auto_terminate=["success"],
+    )
+
+    client.ensure_connection(pg_id, trigger_id, pipeline_id, ["success"], "Trigger -> Scripted Pipeline")
+    client.ensure_connection(pg_id, pipeline_id, log_id, ["success"], "Scripted Pipeline -> Log")
+    client.ensure_connection(pg_id, pipeline_id, pipeline_id, ["failure"], "Scripted Pipeline failure loop")
+
+    for proc_id in [log_id, pipeline_id, trigger_id]:
         client.start_processor(proc_id)
 
 
@@ -482,8 +550,7 @@ def main() -> int:
         print(f"[bootstrap] DBCP ready: {dbcp_id}")
 
         build_step1_group(client, root_id)
-        build_step2_group(client, root_id, dataset="bhs", x=100, y=1800, dbcp_id=dbcp_id)
-        build_step2_group(client, root_id, dataset="ehvol", x=100, y=2400, dbcp_id=dbcp_id)
+        build_registry_pipeline_group(client, root_id)
 
         print("[bootstrap] NiFi graph bootstrap complete")
         return 0

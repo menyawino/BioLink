@@ -68,206 +68,15 @@
     "identifier": "biolink-root",
     "instanceIdentifier": "biolink-root-instance",
     "name": "BioLink ETL Pipeline",
-    "comments": "Two-dataset pipeline: BHS → bhs_participants, EHVol → ehvol_participants",
+    "comments": "Script-aligned NiFi execution of the BioLink registry ETL pipeline.",
     "position": { "x": 0, "y": 0 },
     "parameterContextName": "BioLink Parameters",
     "processGroups": [
       {
-        "identifier": "pg-bhs",
-        "instanceIdentifier": "pg-bhs-instance",
-        "name": "BHS Ingestion Pipeline",
-        "comments": "BHS_Full.csv → bhs_participants",
-        "position": { "x": 100, "y": 100 },
-        "parameterContextName": "BioLink Parameters",
-        "processGroups": [],
-        "remoteProcessGroups": [],
-        "processors": [
-          {
-            "identifier": "bhs-getfile",
-            "name": "GetFile - BHS CSV",
-            "type": "org.apache.nifi.processors.standard.GetFile",
-            "position": { "x": 0, "y": 0 },
-            "config": {
-              "properties": {
-                "Input Directory": "#{data.directory}",
-                "File Filter": "BHS_Full_chunk_.*\\.csv",
-                "Recurse Subdirectories": "false",
-                "Keep Source File": "false"
-              },
-              "schedulingPeriod": "60 sec",
-              "schedulingStrategy": "TIMER_DRIVEN"
-            }
-          },
-          {
-            "identifier": "bhs-csv-to-json",
-            "name": "CsvToJson - BHS",
-            "type": "org.apache.nifi.processors.python.BiolinkCsvToJsonProcessor",
-            "position": { "x": 300, "y": 0 },
-            "config": {
-              "properties": { "Dataset Type": "bhs", "Batch Size": "50" }
-            }
-          },
-          {
-            "identifier": "bhs-standardizer",
-            "name": "SchemaStandardizer - BHS",
-            "type": "org.apache.nifi.processors.python.BiolinkSchemaStandardizerProcessor",
-            "position": { "x": 600, "y": 0 },
-            "config": {
-              "properties": {
-                "Dataset Type": "bhs",
-                "Include Raw JSON": "false"
-              }
-            }
-          },
-          {
-            "identifier": "bhs-data-quality",
-            "name": "DataQuality - BHS",
-            "type": "org.apache.nifi.processors.python.BiolinkDataQualityProcessor",
-            "position": { "x": 900, "y": 0 },
-            "config": { "properties": { "Dataset Type": "bhs" } }
-          },
-          {
-            "identifier": "bhs-json-to-sql",
-            "name": "JsonToSql - BHS",
-            "type": "org.apache.nifi.processors.python.BiolinkJsonToSqlProcessor",
-            "position": { "x": 1200, "y": 0 },
-            "config": {
-              "properties": {
-                "Table Name": "bhs_participants",
-                "Upsert Mode": "true",
-                "Conflict Column": "record_id"
-              }
-            }
-          },
-          {
-            "identifier": "bhs-put-sql",
-            "name": "PutSQL - bhs_participants",
-            "type": "org.apache.nifi.processors.standard.PutSQL",
-            "position": { "x": 1500, "y": 0 },
-            "config": {
-              "properties": {
-                "JDBC Connection Pool": "biolink-postgres-pool",
-                "Auto-Commit": "true"
-              }
-            }
-          }
-        ],
-        "connections": [
-          { "identifier": "c-bhs-1",  "source": { "id": "bhs-getfile",      "type": "PROCESSOR" }, "destination": { "id": "bhs-csv-to-json",  "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bhs-2",  "source": { "id": "bhs-csv-to-json",  "type": "PROCESSOR" }, "destination": { "id": "bhs-standardizer", "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bhs-3",  "source": { "id": "bhs-standardizer", "type": "PROCESSOR" }, "destination": { "id": "bhs-data-quality", "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bhs-4",  "source": { "id": "bhs-data-quality", "type": "PROCESSOR" }, "destination": { "id": "bhs-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bhs-5",  "source": { "id": "bhs-json-to-sql",  "type": "PROCESSOR" }, "destination": { "id": "bhs-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bhs-f1", "source": { "id": "bhs-csv-to-json",  "type": "PROCESSOR" }, "destination": { "id": "bhs-csv-to-json",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-bhs-f2", "source": { "id": "bhs-standardizer", "type": "PROCESSOR" }, "destination": { "id": "bhs-standardizer", "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-bhs-f3", "source": { "id": "bhs-data-quality", "type": "PROCESSOR" }, "destination": { "id": "bhs-data-quality", "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-bhs-f4", "source": { "id": "bhs-json-to-sql",  "type": "PROCESSOR" }, "destination": { "id": "bhs-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-bhs-f5", "source": { "id": "bhs-put-sql",      "type": "PROCESSOR" }, "destination": { "id": "bhs-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["failure"] }
-        ],
-        "controllerServices": [],
-        "inputPorts": [], "outputPorts": [], "funnels": [], "labels": []
-      },
-      {
-        "identifier": "pg-ehvol",
-        "instanceIdentifier": "pg-ehvol-instance",
-        "name": "EHVol Ingestion Pipeline",
-        "comments": "EHVol_Full.csv → ehvol_participants",
-        "position": { "x": 100, "y": 600 },
-        "parameterContextName": "BioLink Parameters",
-        "processGroups": [],
-        "remoteProcessGroups": [],
-        "processors": [
-          {
-            "identifier": "ehvol-getfile",
-            "name": "GetFile - EHVol CSV",
-            "type": "org.apache.nifi.processors.standard.GetFile",
-            "position": { "x": 0, "y": 0 },
-            "config": {
-              "properties": {
-                "Input Directory": "#{data.directory}",
-                "File Filter": "EHVol_Full_chunk_.*\\.csv",
-                "Recurse Subdirectories": "false",
-                "Keep Source File": "false"
-              },
-              "schedulingPeriod": "60 sec",
-              "schedulingStrategy": "TIMER_DRIVEN"
-            }
-          },
-          {
-            "identifier": "ehvol-csv-to-json",
-            "name": "CsvToJson - EHVol",
-            "type": "org.apache.nifi.processors.python.BiolinkCsvToJsonProcessor",
-            "position": { "x": 300, "y": 0 },
-            "config": {
-              "properties": { "Dataset Type": "ehvol", "Batch Size": "100" }
-            }
-          },
-          {
-            "identifier": "ehvol-standardizer",
-            "name": "SchemaStandardizer - EHVol",
-            "type": "org.apache.nifi.processors.python.BiolinkSchemaStandardizerProcessor",
-            "position": { "x": 600, "y": 0 },
-            "config": {
-              "properties": {
-                "Dataset Type": "ehvol",
-                "Include Raw JSON": "false"
-              }
-            }
-          },
-          {
-            "identifier": "ehvol-data-quality",
-            "name": "DataQuality - EHVol",
-            "type": "org.apache.nifi.processors.python.BiolinkDataQualityProcessor",
-            "position": { "x": 900, "y": 0 },
-            "config": { "properties": { "Dataset Type": "ehvol" } }
-          },
-          {
-            "identifier": "ehvol-json-to-sql",
-            "name": "JsonToSql - EHVol",
-            "type": "org.apache.nifi.processors.python.BiolinkJsonToSqlProcessor",
-            "position": { "x": 1200, "y": 0 },
-            "config": {
-              "properties": {
-                "Table Name": "ehvol_participants",
-                "Upsert Mode": "true",
-                "Conflict Column": "dna_id"
-              }
-            }
-          },
-          {
-            "identifier": "ehvol-put-sql",
-            "name": "PutSQL - ehvol_participants",
-            "type": "org.apache.nifi.processors.standard.PutSQL",
-            "position": { "x": 1500, "y": 0 },
-            "config": {
-              "properties": {
-                "JDBC Connection Pool": "biolink-postgres-pool",
-                "Auto-Commit": "true"
-              }
-            }
-          }
-        ],
-        "connections": [
-          { "identifier": "c-ev-1",  "source": { "id": "ehvol-getfile",      "type": "PROCESSOR" }, "destination": { "id": "ehvol-csv-to-json",  "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-ev-2",  "source": { "id": "ehvol-csv-to-json",  "type": "PROCESSOR" }, "destination": { "id": "ehvol-standardizer", "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-ev-3",  "source": { "id": "ehvol-standardizer", "type": "PROCESSOR" }, "destination": { "id": "ehvol-data-quality", "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-ev-4",  "source": { "id": "ehvol-data-quality", "type": "PROCESSOR" }, "destination": { "id": "ehvol-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-ev-5",  "source": { "id": "ehvol-json-to-sql",  "type": "PROCESSOR" }, "destination": { "id": "ehvol-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-ev-f1", "source": { "id": "ehvol-csv-to-json",  "type": "PROCESSOR" }, "destination": { "id": "ehvol-csv-to-json",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-ev-f2", "source": { "id": "ehvol-standardizer", "type": "PROCESSOR" }, "destination": { "id": "ehvol-standardizer", "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-ev-f3", "source": { "id": "ehvol-data-quality", "type": "PROCESSOR" }, "destination": { "id": "ehvol-data-quality", "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-ev-f4", "source": { "id": "ehvol-json-to-sql",  "type": "PROCESSOR" }, "destination": { "id": "ehvol-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-ev-f5", "source": { "id": "ehvol-put-sql",      "type": "PROCESSOR" }, "destination": { "id": "ehvol-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["failure"] }
-        ],
-        "controllerServices": [],
-        "inputPorts": [], "outputPorts": [], "funnels": [], "labels": []
-      },
-
-      {
         "identifier": "pg-schema-gen",
         "instanceIdentifier": "pg-schema-gen-instance",
         "name": "Schema Generation Pipeline (Step 1)",
-        "comments": "Runs BiolinkMasterSchemaProcessor once to produce master_schema.csv",
+        "comments": "Runs scripts/two_stage_match.py via BiolinkMasterSchemaProcessor.",
         "position": { "x": 100, "y": 1200 },
         "parameterContextName": "BioLink Parameters",
         "processGroups": [],
@@ -293,15 +102,18 @@
             "identifier": "schema-gen-processor",
             "name": "MasterSchema - Generate Schema",
             "type": "org.apache.nifi.processors.python.BiolinkMasterSchemaProcessor",
-            "position": { "x": 300, "y": 0 },
+            "position": { "x": 320, "y": 0 },
             "config": {
               "properties": {
-                "BHS CSV Path":       "/opt/nifi/db/BHS_Full.csv",
-                "EHVol CSV Path":     "/opt/nifi/db/EHVol_Full.csv",
+                "Repository Root": "/opt/nifi/biolink_repo",
+                "BHS CSV Path": "/opt/nifi/db/BHS_Full.csv",
+                "EHVol CSV Path": "/opt/nifi/db/EHVol_Full.csv",
                 "Schema Output Path": "/opt/nifi/outputs/master_schema.csv",
-                "Match Threshold":    "0.35",
-                "Top K":              "5",
-                "Lexicon Path":       "/opt/nifi/biolink_scripts/clinical_lexicon.csv"
+                "Match Threshold": "0.35",
+                "Top K": "5",
+                "Min Final Score": "0.50",
+                "Use SapBERT": "false",
+                "Lexicon Path": "/opt/nifi/biolink_scripts/clinical_lexicon.csv"
               }
             }
           },
@@ -309,7 +121,7 @@
             "identifier": "schema-gen-log",
             "name": "LogMessage - Schema Generated",
             "type": "org.apache.nifi.processors.standard.LogMessage",
-            "position": { "x": 600, "y": 0 },
+            "position": { "x": 640, "y": 0 },
             "config": {
               "properties": {
                 "Log Level": "info",
@@ -319,210 +131,128 @@
           }
         ],
         "connections": [
-          { "identifier": "c-sg-1", "source": { "id": "schema-gen-trigger",   "type": "PROCESSOR" }, "destination": { "id": "schema-gen-processor", "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-sg-2", "source": { "id": "schema-gen-processor", "type": "PROCESSOR" }, "destination": { "id": "schema-gen-log",       "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-sg-f", "source": { "id": "schema-gen-processor", "type": "PROCESSOR" }, "destination": { "id": "schema-gen-processor", "type": "PROCESSOR" }, "selectedRelationships": ["failure"] }
+          {
+            "identifier": "c-sg-1",
+            "source": { "id": "schema-gen-trigger", "type": "PROCESSOR" },
+            "destination": { "id": "schema-gen-processor", "type": "PROCESSOR" },
+            "selectedRelationships": ["success"]
+          },
+          {
+            "identifier": "c-sg-2",
+            "source": { "id": "schema-gen-processor", "type": "PROCESSOR" },
+            "destination": { "id": "schema-gen-log", "type": "PROCESSOR" },
+            "selectedRelationships": ["success"]
+          },
+          {
+            "identifier": "c-sg-f",
+            "source": { "id": "schema-gen-processor", "type": "PROCESSOR" },
+            "destination": { "id": "schema-gen-processor", "type": "PROCESSOR" },
+            "selectedRelationships": ["failure"]
+          }
         ],
         "controllerServices": [],
-        "inputPorts": [], "outputPorts": [], "funnels": [], "labels": []
+        "inputPorts": [],
+        "outputPorts": [],
+        "funnels": [],
+        "labels": []
       },
-
       {
-        "identifier": "pg-bhs-harmonise",
-        "instanceIdentifier": "pg-bhs-harmonise-instance",
-        "name": "BHS Harmonise Pipeline (Step 2)",
-        "comments": "BHS_Full_chunk → BiolinkHarmoniseProcessor(bhs) → bhs_harmonised",
+        "identifier": "pg-registry-pipeline",
+        "instanceIdentifier": "pg-registry-pipeline-instance",
+        "name": "Registry Pipeline (Steps 2-4)",
+        "comments": "Runs apply_schema, OMOP export, quality checks, and PostgreSQL load.",
         "position": { "x": 100, "y": 1800 },
         "parameterContextName": "BioLink Parameters",
         "processGroups": [],
         "remoteProcessGroups": [],
         "processors": [
           {
-            "identifier": "bhs-harm-getfile",
-            "name": "GetFile - BHS Harmonise Input",
-            "type": "org.apache.nifi.processors.standard.GetFile",
+            "identifier": "registry-pipeline-trigger",
+            "name": "GenerateFlowFile - Trigger Registry Pipeline",
+            "type": "org.apache.nifi.processors.standard.GenerateFlowFile",
             "position": { "x": 0, "y": 0 },
             "config": {
               "properties": {
-                "Input Directory":        "#{data.directory}",
-                "File Filter":            "BHS_Full_chunk_.*\\.csv",
-                "Recurse Subdirectories": "false",
-                "Keep Source File":       "false"
+                "File Size": "0B",
+                "Batch Size": "1",
+                "Data Format": "Text",
+                "Unique FlowFiles": "false"
               },
-              "schedulingPeriod": "60 sec",
+              "schedulingPeriod": "24 hours",
               "schedulingStrategy": "TIMER_DRIVEN"
             }
           },
           {
-            "identifier": "bhs-harm-csv-to-json",
-            "name": "CsvToJson - BHS Harmonise",
-            "type": "org.apache.nifi.processors.python.BiolinkCsvToJsonProcessor",
-            "position": { "x": 300, "y": 0 },
-            "config": {
-              "properties": { "Dataset Type": "bhs", "Batch Size": "50" }
-            }
-          },
-          {
-            "identifier": "bhs-harmonise",
-            "name": "Harmonise - BHS",
-            "type": "org.apache.nifi.processors.python.BiolinkHarmoniseProcessor",
-            "position": { "x": 600, "y": 0 },
+            "identifier": "registry-scripted-pipeline",
+            "name": "Run Scripted Registry Pipeline",
+            "type": "org.apache.nifi.processors.python.BiolinkRegistryPipelineProcessor",
+            "position": { "x": 340, "y": 0 },
             "config": {
               "properties": {
-                "Dataset Type": "bhs",
-                "Schema Path":  "/opt/nifi/outputs/master_schema.csv"
+                "Repository Root": "/opt/nifi/biolink_repo",
+                "Schema Relative Path": "outputs/master_schema.csv",
+                "Unified Output Relative Path": "outputs/unified_registry.csv",
+                "OMOP Output Relative Directory": "outputs/omop_cdm",
+                "Quality Report Relative Path": "outputs/data_quality_report.html",
+                "Characterization Relative Path": "outputs/cohort_characterization.csv",
+                "Load To PostgreSQL": "true",
+                "Database Host": "postgres",
+                "Database Port": "5432",
+                "Database Name": "biolink",
+                "Database User": "biolink",
+                "Database Password": "biolink_secret",
+                "Unified Registry Table": "unified_registry"
               }
             }
           },
           {
-            "identifier": "bhs-harm-json-to-sql",
-            "name": "JsonToSql - bhs_harmonised",
-            "type": "org.apache.nifi.processors.python.BiolinkJsonToSqlProcessor",
-            "position": { "x": 900, "y": 0 },
+            "identifier": "registry-pipeline-log",
+            "name": "LogMessage - Registry Pipeline Complete",
+            "type": "org.apache.nifi.processors.standard.LogMessage",
+            "position": { "x": 700, "y": 0 },
             "config": {
               "properties": {
-                "Table Name":      "bhs_harmonised",
-                "Upsert Mode":     "false",
-                "Conflict Column": ""
-              }
-            }
-          },
-          {
-            "identifier": "bhs-harm-put-sql",
-            "name": "PutSQL - bhs_harmonised",
-            "type": "org.apache.nifi.processors.standard.PutSQL",
-            "position": { "x": 1200, "y": 0 },
-            "config": {
-              "properties": {
-                "JDBC Connection Pool": "biolink-postgres-pool",
-                "Auto-Commit":          "true"
+                "Log Level": "info",
+                "Log Message": "Registry pipeline complete: ${biolink.registry.rows} rows, ${biolink.registry.columns} columns"
               }
             }
           }
         ],
         "connections": [
-          { "identifier": "c-bh-1",  "source": { "id": "bhs-harm-getfile",      "type": "PROCESSOR" }, "destination": { "id": "bhs-harm-csv-to-json", "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bh-2",  "source": { "id": "bhs-harm-csv-to-json",  "type": "PROCESSOR" }, "destination": { "id": "bhs-harmonise",        "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bh-3",  "source": { "id": "bhs-harmonise",         "type": "PROCESSOR" }, "destination": { "id": "bhs-harm-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bh-4",  "source": { "id": "bhs-harm-json-to-sql",  "type": "PROCESSOR" }, "destination": { "id": "bhs-harm-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-bh-f1", "source": { "id": "bhs-harm-csv-to-json",  "type": "PROCESSOR" }, "destination": { "id": "bhs-harm-csv-to-json",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-bh-f2", "source": { "id": "bhs-harmonise",         "type": "PROCESSOR" }, "destination": { "id": "bhs-harmonise",          "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-bh-f3", "source": { "id": "bhs-harm-json-to-sql",  "type": "PROCESSOR" }, "destination": { "id": "bhs-harm-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-bh-f4", "source": { "id": "bhs-harm-put-sql",      "type": "PROCESSOR" }, "destination": { "id": "bhs-harm-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["failure"] }
-        ],
-        "controllerServices": [],
-        "inputPorts": [], "outputPorts": [], "funnels": [], "labels": []
-      },
-
-      {
-        "identifier": "pg-ehvol-harmonise",
-        "instanceIdentifier": "pg-ehvol-harmonise-instance",
-        "name": "EHVol Harmonise Pipeline (Step 2)",
-        "comments": "EHVol_Full_chunk → BiolinkHarmoniseProcessor(ehvol) → ehvol_harmonised",
-        "position": { "x": 100, "y": 2400 },
-        "parameterContextName": "BioLink Parameters",
-        "processGroups": [],
-        "remoteProcessGroups": [],
-        "processors": [
           {
-            "identifier": "ehvol-harm-getfile",
-            "name": "GetFile - EHVol Harmonise Input",
-            "type": "org.apache.nifi.processors.standard.GetFile",
-            "position": { "x": 0, "y": 0 },
-            "config": {
-              "properties": {
-                "Input Directory":        "#{data.directory}",
-                "File Filter":            "EHVol_Full_chunk_.*\\.csv",
-                "Recurse Subdirectories": "false",
-                "Keep Source File":       "false"
-              },
-              "schedulingPeriod": "60 sec",
-              "schedulingStrategy": "TIMER_DRIVEN"
-            }
+            "identifier": "c-rp-1",
+            "source": { "id": "registry-pipeline-trigger", "type": "PROCESSOR" },
+            "destination": { "id": "registry-scripted-pipeline", "type": "PROCESSOR" },
+            "selectedRelationships": ["success"]
           },
           {
-            "identifier": "ehvol-harm-csv-to-json",
-            "name": "CsvToJson - EHVol Harmonise",
-            "type": "org.apache.nifi.processors.python.BiolinkCsvToJsonProcessor",
-            "position": { "x": 300, "y": 0 },
-            "config": {
-              "properties": { "Dataset Type": "ehvol", "Batch Size": "100" }
-            }
+            "identifier": "c-rp-2",
+            "source": { "id": "registry-scripted-pipeline", "type": "PROCESSOR" },
+            "destination": { "id": "registry-pipeline-log", "type": "PROCESSOR" },
+            "selectedRelationships": ["success"]
           },
           {
-            "identifier": "ehvol-harmonise",
-            "name": "Harmonise - EHVol",
-            "type": "org.apache.nifi.processors.python.BiolinkHarmoniseProcessor",
-            "position": { "x": 600, "y": 0 },
-            "config": {
-              "properties": {
-                "Dataset Type": "ehvol",
-                "Schema Path":  "/opt/nifi/outputs/master_schema.csv"
-              }
-            }
-          },
-          {
-            "identifier": "ehvol-harm-json-to-sql",
-            "name": "JsonToSql - ehvol_harmonised",
-            "type": "org.apache.nifi.processors.python.BiolinkJsonToSqlProcessor",
-            "position": { "x": 900, "y": 0 },
-            "config": {
-              "properties": {
-                "Table Name":      "ehvol_harmonised",
-                "Upsert Mode":     "false",
-                "Conflict Column": ""
-              }
-            }
-          },
-          {
-            "identifier": "ehvol-harm-put-sql",
-            "name": "PutSQL - ehvol_harmonised",
-            "type": "org.apache.nifi.processors.standard.PutSQL",
-            "position": { "x": 1200, "y": 0 },
-            "config": {
-              "properties": {
-                "JDBC Connection Pool": "biolink-postgres-pool",
-                "Auto-Commit":          "true"
-              }
-            }
+            "identifier": "c-rp-f",
+            "source": { "id": "registry-scripted-pipeline", "type": "PROCESSOR" },
+            "destination": { "id": "registry-scripted-pipeline", "type": "PROCESSOR" },
+            "selectedRelationships": ["failure"]
           }
         ],
-        "connections": [
-          { "identifier": "c-eh-1",  "source": { "id": "ehvol-harm-getfile",     "type": "PROCESSOR" }, "destination": { "id": "ehvol-harm-csv-to-json", "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-eh-2",  "source": { "id": "ehvol-harm-csv-to-json", "type": "PROCESSOR" }, "destination": { "id": "ehvol-harmonise",         "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-eh-3",  "source": { "id": "ehvol-harmonise",        "type": "PROCESSOR" }, "destination": { "id": "ehvol-harm-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-eh-4",  "source": { "id": "ehvol-harm-json-to-sql", "type": "PROCESSOR" }, "destination": { "id": "ehvol-harm-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["success"] },
-          { "identifier": "c-eh-f1", "source": { "id": "ehvol-harm-csv-to-json", "type": "PROCESSOR" }, "destination": { "id": "ehvol-harm-csv-to-json",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-eh-f2", "source": { "id": "ehvol-harmonise",        "type": "PROCESSOR" }, "destination": { "id": "ehvol-harmonise",          "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-eh-f3", "source": { "id": "ehvol-harm-json-to-sql", "type": "PROCESSOR" }, "destination": { "id": "ehvol-harm-json-to-sql",  "type": "PROCESSOR" }, "selectedRelationships": ["failure"] },
-          { "identifier": "c-eh-f4", "source": { "id": "ehvol-harm-put-sql",     "type": "PROCESSOR" }, "destination": { "id": "ehvol-harm-put-sql",      "type": "PROCESSOR" }, "selectedRelationships": ["failure"] }
-        ],
         "controllerServices": [],
-        "inputPorts": [], "outputPorts": [], "funnels": [], "labels": []
+        "inputPorts": [],
+        "outputPorts": [],
+        "funnels": [],
+        "labels": []
       }
     ],
     "remoteProcessGroups": [],
     "processors": [],
     "connections": [],
-    "inputPorts": [], "outputPorts": [], "funnels": [], "labels": [],
-    "controllerServices": [
-      {
-        "identifier": "biolink-postgres-pool",
-        "name": "biolink-postgres-pool",
-        "type": "org.apache.nifi.dbcp.DBCPConnectionPool",
-        "comments": "Shared PostgreSQL pool for BHS and EHVol pipelines",
-        "properties": {
-          "Database Connection URL": "#{db.url}",
-          "Database Driver Class Name": "org.postgresql.Driver",
-          "Database Driver Location(s)": "#{jdbc.driver.path}",
-          "Database User": "#{db.user}",
-          "Password": "#{db.password}",
-          "Max Wait Time": "500 millis",
-          "Max Total Connections": "20",
-          "Validation query": "SELECT 1"
-        }
-      }
-    ],
+    "inputPorts": [],
+    "outputPorts": [],
+    "funnels": [],
+    "labels": [],
+    "controllerServices": [],
     "defaultFlowFileExpiration": "0 sec",
     "defaultBackPressureObjectThreshold": 10000,
     "defaultBackPressureDataSizeThreshold": "1 GB"
