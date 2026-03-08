@@ -1,8 +1,9 @@
 # BioLink NiFi 2.8.0 ETL Pipeline
 
-Apache NiFi 2.8.0 pipeline that ingests BHS and EHVol CSV datasets, applies
-cleaning/transformation logic, validates data quality, and loads records into
-dedicated PostgreSQL tables: `bhs_participants` and `ehvol_participants`.
+Apache NiFi 2.8.0 pipeline with automated REST bootstrap for:
+- **Step 1**: master schema generation (`master_schema.csv`)
+- **Step 2**: per-dataset harmonisation into dedicated PostgreSQL targets
+  (`bhs_harmonised`, `ehvol_harmonised`).
 
 > **This pipeline replaces the Python-only ETL** (`biolink_etl/`) with native
 > NiFi processors, giving you visual flow management, provenance tracking,
@@ -10,19 +11,20 @@ dedicated PostgreSQL tables: `bhs_participants` and `ehvol_participants`.
 
 ---
 
-## Architecture
+## Architecture (auto-bootstrapped)
 
 ```
-┌─────────────┐    ┌────────────────┐    ┌────────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────────┐
-│  GetFile    │───▶│ CSV-to-JSON    │───▶│  Transform     │───▶│ Quality      │───▶│ JSON-to-SQL  │───▶│ PutSQL          │
-│ (BHS.csv)  │    │ (BiolinkCsv    │    │ (BiolinkTrans  │    │ (BiolinkData │    │ (BiolinkJson │    │ (→ PostgreSQL)  │
-│            │    │  ToJson)       │    │  form)         │    │  Quality)    │    │  ToSql)      │    │                 │
-└─────────────┘    └────────────────┘    └────────────────┘    └──────────────┘    └──────────────┘    └─────────────────┘
+Step 1 (runs on schedule):
+GenerateFlowFile
+  -> BiolinkMasterSchemaProcessor
+  -> /opt/nifi/outputs/master_schema.csv
 
-┌─────────────┐    ┌────────────────┐    ┌────────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────────┐
-│  GetFile    │───▶│ CSV-to-JSON    │───▶│  Transform     │───▶│ Quality      │───▶│ JSON-to-SQL  │───▶│ PutSQL          │
-│ (EHVol.csv)│    │ (EHVol mode)   │    │ (EHVol mode)   │    │ Check        │    │ (UPSERT)     │    │ (→ PostgreSQL)  │
-└─────────────┘    └────────────────┘    └────────────────┘    └──────────────┘    └──────────────┘    └─────────────────┘
+Step 2 (separate per dataset):
+BHS:   GetFile -> CsvToJson -> BiolinkHarmoniseProcessor(bhs)
+         -> JsonToSql(table=bhs_harmonised) -> PutSQL
+
+EHVol: GetFile -> CsvToJson -> BiolinkHarmoniseProcessor(ehvol)
+         -> JsonToSql(table=ehvol_harmonised) -> PutSQL
 ```
 
 ## Directory Structure
@@ -41,8 +43,9 @@ nifi/
 │   ├── BiolinkDataQualityProcessor.py  # Validation and quality scoring
 │   └── BiolinkJsonToSqlProcessor.py    # JSON → PostgreSQL INSERT/UPSERT SQL
 └── scripts/
-    ├── init_postgres_schema.sh  # Creates tables, views, indexes
-    └── setup_nifi_flow.sh       # REST API flow creation (alternative to flow.json)
+  ├── init_postgres_schema.sh      # Creates participant + harmonised tables/indexes
+  ├── setup_nifi_flow.sh           # Legacy setup wrapper
+  └── bootstrap_nifi_graph.py      # Idempotent REST bootstrap for Step1+Step2 graph
 ```
 
 ## Python Processors
@@ -126,19 +129,30 @@ NiFi 2.8.0 UI will be available at **http://localhost:8443/nifi/**
 
 Login: `admin` / `biolink_nifi_secret_123`
 
-### 3. Flow auto-loads from flow.json
+### 3. Flow bootstrap runs automatically
 
-The flow definition in `nifi/flow/flow.json` is mounted read-only.
-NiFi will import it on first startup. You can also use the REST API script:
+`docker-compose.yml` includes a one-shot `nifi-bootstrap` service that waits for
+NiFi health and runs:
 
 ```bash
-./nifi/scripts/setup_nifi_flow.sh
+python3 /app/nifi/scripts/bootstrap_nifi_graph.py \
+  --nifi-url https://nifi:8443 \
+  --username admin \
+  --password biolink_nifi_secret_123
 ```
 
-### 4. Configure DBCP Connection Pool
+This populates the root flow with Step 1 + Step 2 process groups on every stack startup.
 
-In the NiFi UI, enable the **BioLink PostgreSQL DBCP** controller service
-in each process group (BHS Pipeline, EHVol Pipeline).
+Manual re-run:
+
+```bash
+docker compose run --rm nifi-bootstrap
+```
+
+### 4. Controller service
+
+The bootstrap script creates/enables **BioLink PostgreSQL DBCP** at root.
+No manual controller-service setup is required during normal startup.
 
 The connection pool uses parameter context `BioLink Parameters` with:
 - URL: `jdbc:postgresql://postgres:5432/biolink`
@@ -146,9 +160,10 @@ The connection pool uses parameter context `BioLink Parameters` with:
 - Driver path: `/opt/nifi/jdbc/postgresql-42.7.3.jar`
 - User: `biolink`
 
-### 5. Start the flow
+### 5. Frontend wiring
 
-Start all processors in the NiFi UI or via REST API.
+Frontend ETL Designer reads `VITE_NIFI_URL` (now wired in compose build args),
+defaulting to `/nifi/` for same-origin proxy embedding.
 
 ## Docker Compose Changes
 

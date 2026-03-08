@@ -44,6 +44,11 @@ ICD10_RE = re.compile(r"^[A-TV-Z][0-9][0-9AB](\.[0-9A-TV-Z]{1,4})?$")
 UCUM_RE = re.compile(r"^[A-Za-z0-9\[\]\(\)\./_%\*\-]+$")
 RXNORM_RE = re.compile(r"^\d+$")
 
+LOINC_ALLOWED_DOMAINS = {"DM", "LB", "VS", "EG", "FA", "PC"}
+UCUM_ALLOWED_DOMAINS = {"DM", "CM", "LB", "VS", "EG", "FA", "PC", "EX"}
+ICD10_ALLOWED_DOMAINS = {"AE", "DS", "HO", "MH"}
+RXNORM_ALLOWED_DOMAINS = {"CM", "EX"}
+
 
 def clean(value):
     if value is None:
@@ -94,6 +99,22 @@ def validate_row(row: dict, row_label: str) -> list[str]:
 
     if rxnorm_concept and not RXNORM_RE.fullmatch(rxnorm_concept):
         errors.append(f"{prefix} invalid RxNorm concept: {rxnorm_concept}")
+
+    # Conservative semantic guards (domain/code consistency)
+    if (loinc_code or snomed_code or icd10_code or ucum_unit or rxnorm_concept) and not sdtm_domain:
+        errors.append(f"{prefix} terminology/code present without SDTM domain")
+
+    if sdtm_domain and loinc_code and sdtm_domain not in LOINC_ALLOWED_DOMAINS:
+        errors.append(f"{prefix} LOINC used with unlikely SDTM domain {sdtm_domain}")
+
+    if sdtm_domain and ucum_unit and sdtm_domain not in UCUM_ALLOWED_DOMAINS:
+        errors.append(f"{prefix} UCUM unit used with unlikely SDTM domain {sdtm_domain}")
+
+    if sdtm_domain and icd10_code and sdtm_domain not in ICD10_ALLOWED_DOMAINS:
+        errors.append(f"{prefix} ICD-10 used with unlikely SDTM domain {sdtm_domain}")
+
+    if sdtm_domain and rxnorm_concept and sdtm_domain not in RXNORM_ALLOWED_DOMAINS:
+        errors.append(f"{prefix} RxNorm used with unlikely SDTM domain {sdtm_domain}")
 
     return errors
 

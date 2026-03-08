@@ -280,6 +280,7 @@ def build_dataset_pipeline(pg_id, dataset, dbcp_id, x_offset=0):
     ds = dataset.upper()
     file_filter = f"{ds}_Full_chunk_.*\\.csv" if dataset == "bhs" else "EHVol_Full_chunk_.*\\.csv"
     table_name = f"{dataset}_participants"
+    conflict_column = "record_id" if dataset == "bhs" else "dna_id"
 
     print(f"\n--- Building {ds} Pipeline ---")
 
@@ -313,13 +314,16 @@ def build_dataset_pipeline(pg_id, dataset, dbcp_id, x_offset=0):
         auto_terminate=["failure"],
     )
 
-    # 3. Transform (Python processor)
-    transform_id = create_processor(
+    # 3. Full-width schema standardizer (Python processor)
+    standardizer_id = create_processor(
         pg_id,
-        f"Transform ({ds})",
-        "BiolinkTransformProcessor",
+        f"SchemaStandardizer ({ds})",
+        "BiolinkSchemaStandardizerProcessor",
         PYTHON_BUNDLE,
-        {"Dataset Type": dataset},
+        {
+            "Dataset Type": dataset,
+            "Include Raw JSON": "false",
+        },
         {"x": x_offset, "y": 440},
         auto_terminate=["failure"],
     )
@@ -344,6 +348,7 @@ def build_dataset_pipeline(pg_id, dataset, dbcp_id, x_offset=0):
         {
             "Table Name": table_name,
             "Upsert Mode": "true",
+            "Conflict Column": conflict_column,
         },
         {"x": x_offset, "y": 880},
         auto_terminate=["failure"],
@@ -366,16 +371,16 @@ def build_dataset_pipeline(pg_id, dataset, dbcp_id, x_offset=0):
     # Wire connections
     if getfile_id and csv2json_id:
         create_connection(pg_id, getfile_id, csv2json_id, ["success"], f"GetFile → CSV2JSON ({ds})")
-    if csv2json_id and transform_id:
-        create_connection(pg_id, csv2json_id, transform_id, ["success"], f"CSV2JSON → Transform ({ds})")
-    if transform_id and quality_id:
-        create_connection(pg_id, transform_id, quality_id, ["success"], f"Transform → Quality ({ds})")
+    if csv2json_id and standardizer_id:
+        create_connection(pg_id, csv2json_id, standardizer_id, ["success"], f"CSV2JSON → Standardizer ({ds})")
+    if standardizer_id and quality_id:
+        create_connection(pg_id, standardizer_id, quality_id, ["success"], f"Standardizer → Quality ({ds})")
     if quality_id and json2sql_id:
         create_connection(pg_id, quality_id, json2sql_id, ["success"], f"Quality → JSON2SQL ({ds})")
     if json2sql_id and putsql_id:
         create_connection(pg_id, json2sql_id, putsql_id, ["success"], f"JSON2SQL → PutSQL ({ds})")
 
-    processor_ids = [p for p in [getfile_id, csv2json_id, transform_id, quality_id, json2sql_id, putsql_id] if p]
+    processor_ids = [p for p in [getfile_id, csv2json_id, standardizer_id, quality_id, json2sql_id, putsql_id] if p]
     return processor_ids
 
 

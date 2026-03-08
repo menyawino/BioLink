@@ -17,8 +17,8 @@ COLUMN_MAP = {
     'Acute Rheumatic Fever (choice=(57) Rheumatic chorea)': ('acute_rheumatic_fever_choice_57_rheumatic_chorea', 'to_bool'),  # SDTM FA.MHTERM
     'Address': ('address', 'to_str'),  # SDTM DM.SITEID
     'Age at enrollment': ('age_at_enrollment', 'to_int'),  # SDTM DM.AGE | LOINC:30525-0 | [a]
-    'Age at smoking cessation': ('age_at_smoking_cessation', 'to_int'),  # SDTM SU.DUENDT | [a]
-    'Age at start of smoking': ('age_at_start_of_smoking', 'to_int'),  # SDTM SU.DUSTRT | [a]
+    'Age at smoking cessation': ('age_at_smoking_cessation', 'to_int'),  # SDTM SU.DUENDT
+    'Age at start of smoking': ('age_at_start_of_smoking', 'to_int'),  # SDTM SU.DUSTRT
     'Agree to CMR': ('agree_to_cmr', 'to_str'),  # SDTM SV.ADMIN
     'Agree to CT': ('agree_to_ct', 'to_str'),  # SDTM SV.ADMIN
     'Agree to consent': ('agree_to_consent', 'to_str'),  # SDTM SV.ADMIN
@@ -46,7 +46,7 @@ COLUMN_MAP = {
     'Apical - Septal': ('apical_septal', 'to_int'),  # 
     'Atheromatous plaque - left': ('atheromatous_plaque_left', 'to_bool'),  # SDTM VS.ATHPLQL
     'Atheromatous plaque - right': ('atheromatous_plaque_right', 'to_bool'),  # SDTM VS.ATHPLQR
-    'Average no. of cigarettes per day': ('average_no_of_cigarettes_per_day', 'to_int'),  # SDTM SU.SUCAT | [1/d]
+    'Average no. of cigarettes per day': ('average_no_of_cigarettes_per_day', 'to_int'),  # SDTM SU.SUCAT
     'BMI': ('bmi', 'to_float'),  # SDTM VS.BMI | LOINC:39156-5 | [kg/m2]
     'BNP': ('bnp', 'to_float'),  # SDTM LB.BNP | LOINC:42637-9 | [pg/mL]
     'BP Pressure chart / monitoring conclusion': ('bp_pressure_chart_monitoring_conclusion', 'to_str'),  # SDTM VS.BPCONC
@@ -524,43 +524,43 @@ COLUMN_MAP = {
     'Refer to AHC clinic - TAVI': ('refer_to_ahc_clinic_tavi', 'to_str'),  # SDTM SV.ADMIN
     'Refer to another speciality clinic - Specify': ('refer_to_another_speciality_clinic_specify', 'to_str'),  # SDTM SV.ADMIN
     'Regional wall motion abnormalities': ('regional_wall_motion_abnormalities', 'to_bool'),  # SDTM FA.RWMAYN
-    'Relative 1 age at event': ('relative_1_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 1 age at event': ('relative_1_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 1 event': ('relative_1_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 1 gender': ('relative_1_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 1 relation': ('relative_1_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 10 age at event': ('relative_10_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 10 age at event': ('relative_10_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 10 event': ('relative_10_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 10 gender': ('relative_10_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 10 relation': ('relative_10_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 2 age at event': ('relative_2_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 2 age at event': ('relative_2_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 2 event': ('relative_2_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 2 gender': ('relative_2_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 2 relation': ('relative_2_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 3 age at event': ('relative_3_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 3 age at event': ('relative_3_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 3 event': ('relative_3_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 3 gender': ('relative_3_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 3 relation': ('relative_3_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 4 age at event': ('relative_4_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 4 age at event': ('relative_4_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 4 event': ('relative_4_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 4 gender': ('relative_4_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 4 relation': ('relative_4_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 5 age at event': ('relative_5_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 5 age at event': ('relative_5_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 5 event': ('relative_5_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 5 gender': ('relative_5_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 5 relation': ('relative_5_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 6 age at event': ('relative_6_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 6 age at event': ('relative_6_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 6 event': ('relative_6_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 6 gender': ('relative_6_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 6 relation': ('relative_6_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 7 age at event': ('relative_7_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 7 age at event': ('relative_7_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 7 event': ('relative_7_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 7 gender': ('relative_7_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 7 relation': ('relative_7_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 8 age at event': ('relative_8_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 8 age at event': ('relative_8_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 8 event': ('relative_8_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 8 gender': ('relative_8_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 8 relation': ('relative_8_relation', 'to_str'),  # SDTM MH.MHREL
-    'Relative 9 age at event': ('relative_9_age_at_event', 'to_int'),  # SDTM MH.MHAGE | [a]
+    'Relative 9 age at event': ('relative_9_age_at_event', 'to_int'),  # SDTM MH.MHAGE
     'Relative 9 event': ('relative_9_event', 'to_str'),  # SDTM MH.MHEVENT
     'Relative 9 gender': ('relative_9_gender', 'to_str'),  # SDTM MH.MHSEX
     'Relative 9 relation': ('relative_9_relation', 'to_str'),  # SDTM MH.MHREL
@@ -594,8 +594,8 @@ COLUMN_MAP = {
     'Sino-tubular junction (end diastole)': ('sino_tubular_junction_end_diastole', 'to_float'),  # SDTM FA.SINOTUB | [mm]
     'Sinus of Valsalva (end diastole)': ('sinus_of_valsalva_end_diastole', 'to_float'),  # SDTM FA.SINOVAL | [mm]
     'Smoking Index (Current)': ('smoking_index_current', 'to_float'),  # 
-    'Smoking Index (Former)': ('smoking_index_former', 'to_float'),  # SDTM SU.PKYRFORM | [1]
-    'Smoking years': ('smoking_years', 'to_float'),  # SDTM SU.ENDUR | [a]
+    'Smoking Index (Former)': ('smoking_index_former', 'to_float'),  # SDTM SU.PKYRFORM
+    'Smoking years': ('smoking_years', 'to_float'),  # SDTM SU.ENDUR
     'Specify CT scan region(s) of interest': ('specify_ct_scan_region_s_of_interest', 'to_str'),  # SDTM SV.ADMIN
     'Specify MRI scan region(s) of interest': ('specify_mri_scan_region_s_of_interest', 'to_str'),  # SDTM SV.ADMIN
     'Specify X-Ray region(s) of interest': ('specify_x_ray_region_s_of_interest', 'to_str'),  # SDTM SV.ADMIN

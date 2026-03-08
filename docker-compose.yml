@@ -174,6 +174,7 @@ services:
         VITE_SQL_AGENT_ENABLED: "true"
         VITE_SUPERSET_URL: http://localhost:8088
         VITE_SUPERSET_DASHBOARD_ID: "6"
+        VITE_NIFI_URL: /nifi/
     container_name: biolink-frontend
     depends_on:
       - backend
@@ -294,19 +295,42 @@ services:
       - ./db:/opt/nifi/db:ro
       # Schema CSV for BiolinkSchemaStandardizerProcessor
       # (column maps are now Python modules in nifi/processors/ — no CSV mount needed)
-      # Flow definition (initial load — NiFi uses this on first start before state vol is populated)
+      # Flow definition (initial load for this environment)
       - ./nifi/flow/flow.json:/opt/nifi/nifi-current/conf/flow.json:ro
       # Chunked CSV input (writable for GetFile)
       - ./nifi/data-input:/opt/nifi/data-input
+      # Shared outputs directory (Step 1 writes master_schema.csv; Step 2 reads it)
+      - ./outputs:/opt/nifi/outputs
+      # BioLink scripts (lexicon CSV + helper modules, read-only)
+      - ./scripts:/opt/nifi/biolink_scripts:ro
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "TOKEN=$(curl -sk -X POST https://localhost:8443/nifi-api/access/token -d 'username=admin&password=biolink_nifi_secret_123' -H 'Content-Type: application/x-www-form-urlencoded') && curl -kf -H \"Authorization: Bearer $TOKEN\" https://localhost:8443/nifi-api/system-diagnostics"]
+      test: ["CMD-SHELL", "TOKEN=$$(curl -sk -X POST https://nifi:8443/nifi-api/access/token -d 'username=admin&password=biolink_nifi_secret_123' -H 'Content-Type: application/x-www-form-urlencoded') && curl -kf -H \"Authorization: Bearer $$TOKEN\" https://nifi:8443/nifi-api/system-diagnostics"]
       interval: 30s
       timeout: 15s
       retries: 15
       start_period: 120s
+
+  nifi-bootstrap:
+    image: python:3.12-alpine
+    container_name: biolink-nifi-bootstrap
+    depends_on:
+      nifi:
+        condition: service_healthy
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command:
+      - /bin/sh
+      - -c
+      - |
+        python3 /app/nifi/scripts/bootstrap_nifi_graph.py \
+          --nifi-url https://nifi:8443 \
+          --username admin \
+          --password biolink_nifi_secret_123
+    restart: "no"
 
   redis-commander:
     image: rediscommander/redis-commander:latest

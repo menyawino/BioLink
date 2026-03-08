@@ -105,7 +105,6 @@ class BiolinkCsvToJsonProcessor(FlowFileTransform):
 
         raw_bytes = flowfile.getContentsAsBytes()
         try:
-            # Handle BOM
             text = raw_bytes.decode("utf-8-sig")
         except UnicodeDecodeError:
             try:
@@ -122,13 +121,11 @@ class BiolinkCsvToJsonProcessor(FlowFileTransform):
         row_count = 0
 
         for row in reader:
-            # Minimal header cleanup; preserve exact names so col_map can match them.
             sanitized = {}
             for k, v in row.items():
                 clean_key = _sanitize_header(k) if k else k
                 if not clean_key:
                     continue
-                # For EHVol, resolve snake_case aliases → canonical header names
                 if dataset == "ehvol":
                     lower_key = clean_key.lower().replace(" ", "_")
                     canonical = EHVOL_COLUMN_MAP.get(lower_key, clean_key)
@@ -139,18 +136,14 @@ class BiolinkCsvToJsonProcessor(FlowFileTransform):
             rows.append(sanitized)
             row_count += 1
 
-        # NOTE: FlowFileTransform can only emit one output flowfile per invocation.
-        # All rows are emitted as a single JSON array.  batch_size is kept as a
-        # property for forward-compatibility but is not applied here; use a
-        # RecordTransform-based processor if you need per-batch splitting.
         output = json.dumps(rows, default=str)
 
         return FlowFileTransformResult(
             relationship="success",
             contents=output,
             attributes={
-                "biolink.dataset":   dataset,
+                "biolink.dataset": dataset,
                 "biolink.row_count": str(row_count),
-                "mime.type":         "application/json",
+                "mime.type": "application/json",
             },
         )

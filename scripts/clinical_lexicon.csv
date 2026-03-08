@@ -1,0 +1,42 @@
+acronym,expansion,category,loinc,snomed
+bnp,B-type natriuretic peptide cardiac biomarker,lab,42637-9,55283-6
+bp,blood pressure,vitals,55284-4,75367002
+bsa,body surface area,vitals,8277-6,301898006
+ecg,electrocardiogram,ecg,11524-6,29303009
+echo,echocardiogram cardiac ultrasound,echo,42148-7,40701008
+ef,ejection fraction systolic function,echo,10230-1,250908004
+egfr,estimated glomerular filtration rate kidney,lab,33914-3,80274001
+lvh,left ventricular hypertrophy,echo,18843-3,55827005
+lvm,left ventricular mass,echo,75994-8,
+mr,mitral regurgitation,echo,77902-8,48724000
+mri,magnetic resonance imaging cardiac,mri,24629-0,113091000
+mrn,medical record number patient identifier,admin,,
+qt,QT interval ECG milliseconds,ecg,8625-6,251226000
+qtc,corrected QT interval ECG milliseconds,ecg,8633-0,251226000
+pr,PR interval ECG milliseconds,ecg,8622-3,251213003
+qrs,QRS complex duration ECG milliseconds,ecg,8625-6,251208003
+rr,RR interval heart rate ECG,ecg,,251150003
+tapse,tricuspid annular plane systolic excursion,echo,80059-1,
+troponin,cardiac troponin biomarker,lab,6598-7,105011006
+alt,alanine transaminase liver enzyme,lab,1742-6,34608000
+ast,aspartate transaminase liver enzyme,lab,1920-8,45803000
+ar,aortic regurgitation valve disease,echo,77902-8,60234000
+as,aortic stenosis valve disease,echo,77902-8,60573004
+fs,fractional shortening systolic function,echo,10230-1,
+dna,DNA genetic sample biobank,genetics,,
+tel,telephone contact number,contact,,
+cmr,cardiac magnetic resonance imaging,mri,24629-0,
+ct,computed tomography scan imaging,imaging,24627-4,77477000
+tte,transthoracic echocardiography cardiac ultrasound,echo,42148-7,
+cabg,coronary artery bypass grafting cardiac surgery,procedure,,232717009
+af,atrial fibrillation cardiac arrhythmia,ecg,,49436004
+lvef,left ventricular ejection fraction systolic function,echo,10230-1,
+rvef,right ventricular ejection fraction,echo,,
+hb,haemoglobin blood count,lab,718-7,259680000
+wbc,white blood cell count,lab,6690-2,767002
+rbc,red blood cell count,lab,789-8,14089001
+crp,C-reactive protein inflammatory marker,lab,1988-5,55235003
+hba1c,glycated haemoglobin diabetes,lab,4548-4,43396009
+ldl,low-density lipoprotein cholesterol,lab,2089-1,22244007
+hdl,high-density lipoprotein cholesterol,lab,2085-9,17888004
+ef,ejection fraction,echo,10230-1,250908004

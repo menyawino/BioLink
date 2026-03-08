@@ -218,8 +218,10 @@ security-scan:
 	@echo "JavaScript dependencies..."
 	npm audit || true
 	@echo "Secret detection..."
+	$(MAKE) detect-secrets
 
-detect-secrets scan > .secrets.baseline || true
+detect-secrets:
+	detect-secrets scan > .secrets.baseline || true
 
 # ============================================
 # Deployment

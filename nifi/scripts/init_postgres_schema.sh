@@ -115,6 +115,50 @@ CREATE TABLE IF NOT EXISTS ehvol_participants (
 );
 
 -- =====================================================
+-- HARMONISED TABLES  (Step 2 output — schema-matched)
+-- Columns are derived from master_schema.csv at runtime;
+-- clinical data is stored as JSONB for schema flexibility.
+-- Query example:
+--   SELECT clinical_data->>'heart_rate' AS heart_rate
+--   FROM bhs_harmonised;
+-- =====================================================
+CREATE TABLE IF NOT EXISTS bhs_harmonised (
+    id               BIGSERIAL PRIMARY KEY,
+    _source_dataset  TEXT        NOT NULL DEFAULT 'bhs',
+    _ingested_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    clinical_data    JSONB       NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ehvol_harmonised (
+    id               BIGSERIAL PRIMARY KEY,
+    _source_dataset  TEXT        NOT NULL DEFAULT 'ehvol',
+    _ingested_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    clinical_data    JSONB       NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bhs_harm_source   ON bhs_harmonised(_source_dataset);
+CREATE INDEX IF NOT EXISTS idx_bhs_harm_ingested ON bhs_harmonised(_ingested_at);
+CREATE INDEX IF NOT EXISTS idx_bhs_harm_clinical ON bhs_harmonised USING gin(clinical_data);
+
+CREATE INDEX IF NOT EXISTS idx_ehvol_harm_source   ON ehvol_harmonised(_source_dataset);
+CREATE INDEX IF NOT EXISTS idx_ehvol_harm_ingested ON ehvol_harmonised(_ingested_at);
+CREATE INDEX IF NOT EXISTS idx_ehvol_harm_clinical ON ehvol_harmonised USING gin(clinical_data);
+
+-- =====================================================
+-- MASTER SCHEMA AUDIT  (records each Step 1 run)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS master_schema_audit (
+    id               SERIAL PRIMARY KEY,
+    generated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    total_matched    INTEGER,
+    pii_columns      INTEGER,
+    clinical_columns INTEGER,
+    schema_path      TEXT,
+    threshold        NUMERIC(4,3),
+    schema_snapshot  JSONB
+);
+
+-- =====================================================
 -- ETL RUN HISTORY (for NiFi provenance tracking)
 -- =====================================================
 CREATE TABLE IF NOT EXISTS etl_run_history (

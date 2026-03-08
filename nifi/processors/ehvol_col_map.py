@@ -1,4 +1,4 @@
-# Auto-generated — EHVol column map for NiFi BiolinkSchemaStandardizerProcessor
+    # Auto-generated — EHVol column map for NiFi BiolinkSchemaStandardizerProcessor
 # Source: scripts/generate_schema_sql.py  →  standardized_columns.csv
 # Format: {original_col_name: (pg_col_name, coerce_func_name)}
 # DO NOT EDIT by hand; re-run scripts/generate_schema_sql.py instead.
@@ -74,11 +74,11 @@ COLUMN_MAP = {
     'History of Sudden Death History': ('history_of_sudden_death_history', 'to_bool'),  # SDTM MH.MHTERM
     'Home Tel.': ('home_tel', 'to_str'),  # SDTM SV.ADMIN
     'Home Tel. 2': ('home_tel_2', 'to_str'),  # SDTM SV.ADMIN
-    'How long have you been smoking?': ('how_long_have_you_been_smoking', 'to_float'),  # SDTM SU.ENDUR | [a]
+    'How long have you been smoking?': ('how_long_have_you_been_smoking', 'to_float'),  # SDTM SU.ENDUR
     'How many cigarettes have you been smoking a day before you quit?': ('how_many_cigarettes_have_you_been_smoking_a_day_before_you_quit', 'to_int'),  # SDTM SU.SUCAT
     'How many cigarettes have you been smoking a day?': ('how_many_cigarettes_have_you_been_smoking_a_day', 'to_int'),  # SDTM SU.SUCAT
     'How many siblings you have?': ('how_many_siblings_you_have', 'to_int'),  # SDTM DM.NSIBLING
-    'How many years have you been smoking?': ('how_many_years_have_you_been_smoking', 'to_float'),  # SDTM SU.ENDUR | [a]
+    'How many years have you been smoking?': ('how_many_years_have_you_been_smoking', 'to_float'),  # SDTM SU.ENDUR
     'IVSd': ('ivsd', 'to_float'),  # SDTM FA.IVSD | LOINC:18087-8 | [mm]
     'IVSs': ('ivss', 'to_float'),  # SDTM FA.IVSSYS | LOINC:29430-6 | [mm]
     'Is there any chance you might be pregnant?': ('is_there_any_chance_you_might_be_pregnant', 'to_bool'),  # SDTM IE.IESPCAT

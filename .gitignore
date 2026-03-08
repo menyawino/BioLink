@@ -30,6 +30,7 @@ pgdata/
 db/
 backend/
 build/
+outputs/
 
 # Environment files (often contain secrets)
 .env

@@ -24,6 +24,11 @@ REQUIRED_FIELDS = [
     "_source_dataset",
 ]
 
+DATASET_REQUIRED_KEY = {
+    "BHS": "record_id",
+    "EHVOL": "dna_id",
+}
+
 TYPE_RULES = {
     "age":                 "integer",
     "age_at_enrollment":   "integer",
@@ -176,6 +181,17 @@ class BiolinkDataQualityProcessor(FlowFileTransform):
                     "field": field,
                     "severity": "critical",
                     "message": f"Required field '{field}' is missing or empty",
+                })
+
+        dataset = (record.get("_source_dataset") or "").upper()
+        key_field = DATASET_REQUIRED_KEY.get(dataset)
+        if key_field:
+            key_val = record.get(key_field)
+            if key_val is None or (isinstance(key_val, str) and key_val.strip() == ""):
+                issues.append({
+                    "field": key_field,
+                    "severity": "critical",
+                    "message": f"Required dataset key '{key_field}' is missing or empty for dataset {dataset}",
                 })
 
         # Type checks

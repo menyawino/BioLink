@@ -289,7 +289,7 @@ export function EtlMonitor() {
             ) : null}
 
             <p className="text-xs text-muted-foreground">
-              This embedded panel uses the container proxy path `/nifi/`.
+              NiFi URL source: {configuredNifiUrl && configuredNifiUrl.length > 0 ? 'VITE_NIFI_URL' : 'default /nifi/ proxy path'}.
             </p>
           </CardContent>
         </Card>

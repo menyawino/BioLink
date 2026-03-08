@@ -32,6 +32,11 @@ ICD10_RE = re.compile(r"^[A-TV-Z][0-9][0-9AB](\.[0-9A-TV-Z]{1,4})?$")
 UCUM_RE = re.compile(r"^[A-Za-z0-9\[\]\(\)\./_%\*\-]+$")
 RXNORM_RE = re.compile(r"^\d+$")
 
+LOINC_ALLOWED_DOMAINS = {"DM", "LB", "VS", "EG", "FA", "PC"}
+UCUM_ALLOWED_DOMAINS = {"DM", "CM", "LB", "VS", "EG", "FA", "PC", "EX"}
+ICD10_ALLOWED_DOMAINS = {"AE", "DS", "HO", "MH"}
+RXNORM_ALLOWED_DOMAINS = {"CM", "EX"}
+
 
 def _clean_term_code(value):
     if pd.isna(value):
@@ -128,6 +133,18 @@ def _validate_normalized_row(normalized: dict):
         errors.append(f"Invalid UCUM unit: {ucum_unit}")
     if rxnorm_concept and not _is_valid_rxnorm(rxnorm_concept):
         errors.append(f"Invalid RxNorm concept: {rxnorm_concept}")
+
+    # Conservative semantic guards (domain/code consistency)
+    if (loinc_code or snomed_code or icd10_code or ucum_unit or rxnorm_concept) and not sdtm_domain:
+        errors.append("Terminology/code present without SDTM domain")
+    if sdtm_domain and loinc_code and sdtm_domain not in LOINC_ALLOWED_DOMAINS:
+        errors.append(f"LOINC used with unlikely SDTM domain: {sdtm_domain}")
+    if sdtm_domain and ucum_unit and sdtm_domain not in UCUM_ALLOWED_DOMAINS:
+        errors.append(f"UCUM used with unlikely SDTM domain: {sdtm_domain}")
+    if sdtm_domain and icd10_code and sdtm_domain not in ICD10_ALLOWED_DOMAINS:
+        errors.append(f"ICD-10 used with unlikely SDTM domain: {sdtm_domain}")
+    if sdtm_domain and rxnorm_concept and sdtm_domain not in RXNORM_ALLOWED_DOMAINS:
+        errors.append(f"RxNorm used with unlikely SDTM domain: {sdtm_domain}")
     return errors
 
 
@@ -192,6 +209,43 @@ def _auto_reclassify_and_strip(normalized: dict):
     if row.get("rxnorm_concept") and not _is_valid_rxnorm(row.get("rxnorm_concept")):
         actions.append(f"stripped invalid RxNorm {row['rxnorm_concept']}")
         row["rxnorm_concept"] = None
+
+    domain = row.get("sdtm_domain")
+    if domain:
+        if row.get("loinc_code") and domain not in LOINC_ALLOWED_DOMAINS:
+            actions.append(f"stripped domain-inconsistent LOINC for {domain}")
+            row["loinc_code"] = None
+        if row.get("ucum_unit") and domain not in UCUM_ALLOWED_DOMAINS:
+            actions.append(f"stripped domain-inconsistent UCUM for {domain}")
+            row["ucum_unit"] = None
+        if row.get("icd10_code") and domain not in ICD10_ALLOWED_DOMAINS:
+            actions.append(f"stripped domain-inconsistent ICD-10 for {domain}")
+            row["icd10_code"] = None
+        if row.get("rxnorm_concept") and domain not in RXNORM_ALLOWED_DOMAINS:
+            actions.append(f"stripped domain-inconsistent RxNorm for {domain}")
+            row["rxnorm_concept"] = None
+    elif any([
+        row.get("loinc_code"),
+        row.get("snomed_code"),
+        row.get("icd10_code"),
+        row.get("ucum_unit"),
+        row.get("rxnorm_concept"),
+    ]):
+        if row.get("loinc_code"):
+            actions.append("stripped LOINC without SDTM domain")
+            row["loinc_code"] = None
+        if row.get("snomed_code"):
+            actions.append("stripped SNOMED without SDTM domain")
+            row["snomed_code"] = None
+        if row.get("icd10_code"):
+            actions.append("stripped ICD-10 without SDTM domain")
+            row["icd10_code"] = None
+        if row.get("ucum_unit"):
+            actions.append("stripped UCUM without SDTM domain")
+            row["ucum_unit"] = None
+        if row.get("rxnorm_concept"):
+            actions.append("stripped RxNorm without SDTM domain")
+            row["rxnorm_concept"] = None
 
     return row, actions
 
@@ -359,6 +413,11 @@ DATASETS = {
     "EHVol": ("ehvol_participants", "DNA ID",     "VARCHAR(50)"),
 }
 
+IDEMPOTENT_KEYS = {
+    "BHS": "record_id",
+    "EHVol": "dna_id",
+}
+
 table_col_defs = {}
 
 for ds, (table, pk_orig, pk_type) in DATASETS.items():
@@ -474,6 +533,12 @@ for ds, (table, col_defs) in table_col_defs.items():
     lines.append(");")
     lines.append(f"CREATE INDEX IF NOT EXISTS {table}_dataset_idx ON {table}(_source_dataset);")
     lines.append(f"CREATE INDEX IF NOT EXISTS {table}_ingest_idx  ON {table}(_ingested_at);")
+    key_col = IDEMPOTENT_KEYS.get(ds)
+    if key_col:
+        lines.append(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {table}_{key_col}_uidx "
+            f"ON {table}({key_col}) WHERE {key_col} IS NOT NULL;"
+        )
     lines.append("")
 
 # ─────────────────────────────────────────────────────────────

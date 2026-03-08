@@ -64,6 +64,75 @@ def _mri_sql_expr(columns: set[str]) -> tuple[str, str]:
     return "NULL::double precision", "FALSE"
 
 
+def _first_column(columns: set[str], *candidates: str) -> str | None:
+    for candidate in candidates:
+        if candidate in columns:
+            return candidate
+    return None
+
+
+def _dataset_field_exprs(columns: set[str], dataset: str) -> dict[str, str]:
+    normalized_dataset = _normalized_dataset(dataset).upper()
+
+    id_col = _first_column(columns, "participant_id", "dna_id", "record_id")
+    if not id_col:
+        raise HTTPException(
+            status_code=500,
+            detail="No identifier column found in participant dataset table",
+        )
+
+    source_record_col = _first_column(columns, "source_record_id", "record_id")
+
+    dataset_col = _first_column(columns, "source_dataset", "_source_dataset")
+    dataset_expr = dataset_col if dataset_col else f"'{normalized_dataset}'::text"
+
+    enrollment_col = _first_column(columns, "enrollment_date", "date_of_enrolment")
+    enrollment_expr = enrollment_col if enrollment_col else "NULL::date"
+
+    city_col = _first_column(columns, "current_city", "current_city_of_residence")
+    city_expr = city_col if city_col else "NULL::text"
+
+    echo_col = _first_column(columns, "echo_ef", "ef", "left_ventricular_ef")
+    echo_expr = echo_col if echo_col else "NULL::double precision"
+
+    return {
+        "id_col": id_col,
+        "source_record_col": source_record_col or "",
+        "dataset_expr": dataset_expr,
+        "age_expr": "age" if "age" in columns else "NULL::integer",
+        "gender_expr": "gender" if "gender" in columns else "NULL::text",
+        "nationality_expr": (
+            "nationality" if "nationality" in columns else "NULL::text"
+        ),
+        "enrollment_expr": enrollment_expr,
+        "city_expr": city_expr,
+        "heart_rate_expr": (
+            "heart_rate" if "heart_rate" in columns else "NULL::double precision"
+        ),
+        "systolic_expr": (
+            "systolic_bp"
+            if "systolic_bp" in columns
+            else ("bp" if "bp" in columns else "NULL::double precision")
+        ),
+        "diastolic_expr": (
+            "diastolic_bp" if "diastolic_bp" in columns else "NULL::double precision"
+        ),
+        "bmi_expr": "bmi" if "bmi" in columns else "NULL::double precision",
+        "hba1c_expr": "hba1c" if "hba1c" in columns else "NULL::double precision",
+        "echo_expr": echo_expr,
+        "troponin_expr": (
+            "troponin_i"
+            if "troponin_i" in columns
+            else "NULL::double precision"
+        ),
+        "current_city_category_expr": (
+            "current_city_category"
+            if "current_city_category" in columns
+            else "NULL::text"
+        ),
+    }
+
+
 @router.get("")
 async def get_patients(
     page: int = Query(1, ge=1),
@@ -101,40 +170,49 @@ async def get_patients(
         source_table = _dataset_table(dataset)
         columns = _table_columns(db, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
+        expr = _dataset_field_exprs(columns, dataset)
 
         # Build a safe, parameterized filter query
         conditions = ["1=1"]
         params = {}
 
         completeness_expr = (
-            "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) "
-            "+ (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) "
-            "+ (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) "
-            "+ (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) "
+            f"((CASE WHEN {expr['heart_rate_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {expr['systolic_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {expr['bmi_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {expr['echo_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
             f"+ (CASE WHEN {mri_present_expr} THEN 20 ELSE 0 END))"
         )
 
         if search:
-            conditions.append(
-                "(participant_id ILIKE :search OR source_record_id ILIKE :search OR nationality ILIKE :search)"
-            )
+            search_conditions = [f"CAST({expr['id_col']} AS TEXT) ILIKE :search"]
+            if expr["source_record_col"]:
+                search_conditions.append(
+                    f"CAST({expr['source_record_col']} AS TEXT) ILIKE :search"
+                )
+            if "nationality" in columns:
+                search_conditions.append("CAST(nationality AS TEXT) ILIKE :search")
+            conditions.append(f"({' OR '.join(search_conditions)})")
             params["search"] = f"%{search}%"
 
         if gender:
-            conditions.append("gender = :gender")
+            if "gender" in columns:
+                conditions.append("gender = :gender")
             params["gender"] = gender
 
         if ageMin is not None:
-            conditions.append("age >= :age_min")
+            if "age" in columns:
+                conditions.append("age >= :age_min")
             params["age_min"] = ageMin
 
         if ageMax is not None:
-            conditions.append("age <= :age_max")
+            if "age" in columns:
+                conditions.append("age <= :age_max")
             params["age_max"] = ageMax
 
         # Data availability filters
         if hasEcho is not None:
-            conditions.append("((echo_ef IS NOT NULL) = :has_echo)")
+            conditions.append(f"(({expr['echo_expr']} IS NOT NULL) = :has_echo)")
             params["has_echo"] = hasEcho
 
         if hasMri is not None:
@@ -144,22 +222,31 @@ async def get_patients(
         # Imaging (any imaging modality: echo OR mri)
         if hasImaging is not None:
             conditions.append(
-                f"(({mri_present_expr} OR echo_ef IS NOT NULL) = :has_imaging)"
+                f"(({mri_present_expr} OR {expr['echo_expr']} IS NOT NULL) = :has_imaging)"
             )
             params["has_imaging"] = hasImaging
 
         # Laboratory data availability (best-effort based on stored lab columns)
         if hasLabs is not None:
             conditions.append(
-                "((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = :has_labs)"
+                f"(({expr['hba1c_expr']} IS NOT NULL OR {expr['troponin_expr']} IS NOT NULL) = :has_labs)"
             )
             params["has_labs"] = hasLabs
 
         # Family history (derived from available family-history flags)
         if hasFamilyHistory is not None:
-            conditions.append(
-                "(COALESCE(family_history_cad, false) = :has_family_history)"
+            family_history_col = _first_column(
+                columns,
+                "family_history_cad",
+                "history_premature_cad",
+                "history_of_premature_cad",
             )
+            if family_history_col:
+                conditions.append(
+                    f"(COALESCE({family_history_col}, false) = :has_family_history)"
+                )
+            else:
+                conditions.append("(FALSE = :has_family_history)")
             params["has_family_history"] = hasFamilyHistory
 
         # Genomics availability (not yet in unified table)
@@ -173,56 +260,99 @@ async def get_patients(
 
         # Geographic filters
         if nationality:
-            conditions.append("nationality = :nationality")
+            if "nationality" in columns:
+                conditions.append("nationality = :nationality")
             params["nationality"] = nationality
 
         # Region (freeform match against nationality/current_city/current_city_category)
         if region:
-            conditions.append(
-                "(LOWER(nationality) LIKE :region OR LOWER(current_city_category) LIKE :region OR LOWER(current_city) LIKE :region)"
-            )
+            region_conditions: list[str] = []
+            if "nationality" in columns:
+                region_conditions.append("LOWER(nationality) LIKE :region")
+            if "current_city_category" in columns:
+                region_conditions.append("LOWER(current_city_category) LIKE :region")
+            city_col = _first_column(columns, "current_city", "current_city_of_residence")
+            if city_col:
+                region_conditions.append(f"LOWER({city_col}) LIKE :region")
+            if region_conditions:
+                conditions.append(f"({' OR '.join(region_conditions)})")
             params["region"] = f"%{region.lower()}%"
 
         # Temporal filters
         if enrollmentDateFrom:
-            conditions.append("enrollment_date >= :enrollment_date_from")
+            enrollment_col = _first_column(columns, "enrollment_date", "date_of_enrolment")
+            if enrollment_col:
+                conditions.append(f"{enrollment_col} >= :enrollment_date_from")
             params["enrollment_date_from"] = enrollmentDateFrom
 
         if enrollmentDateTo:
-            conditions.append("enrollment_date <= :enrollment_date_to")
+            enrollment_col = _first_column(columns, "enrollment_date", "date_of_enrolment")
+            if enrollment_col:
+                conditions.append(f"{enrollment_col} <= :enrollment_date_to")
             params["enrollment_date_to"] = enrollmentDateTo
 
         # Clinical / risk factor filters (best-effort; nullable columns)
         if hasDiabetes is not None:
-            conditions.append("COALESCE(has_diabetes, false) = :has_diabetes")
+            diabetes_col = _first_column(
+                columns,
+                "has_diabetes",
+                "diabetes_mellitus",
+                "other_co_morbidities_risk_factors_choice_diabetes_mellitus",
+            )
+            if diabetes_col:
+                conditions.append(f"COALESCE({diabetes_col}, false) = :has_diabetes")
+            else:
+                conditions.append("FALSE = :has_diabetes")
             params["has_diabetes"] = hasDiabetes
 
         if hasHypertension is not None:
-            conditions.append("COALESCE(has_hypertension, false) = :has_hypertension")
+            hypertension_col = _first_column(
+                columns,
+                "has_hypertension",
+                "high_blood_pressure",
+                "do_you_have_hypertension",
+                "other_co_morbidities_risk_factors_choice_hypertension",
+            )
+            if hypertension_col:
+                conditions.append(
+                    f"COALESCE({hypertension_col}, false) = :has_hypertension"
+                )
+            else:
+                conditions.append("FALSE = :has_hypertension")
             params["has_hypertension"] = hasHypertension
 
         if hasSmoking is not None:
-            conditions.append("COALESCE(is_smoker, false) = :has_smoking")
+            smoking_col = _first_column(
+                columns,
+                "is_smoker",
+                "current_smoker",
+                "do_you_smoke_shisha_or_cigarettes_or_both",
+            )
+            if smoking_col:
+                conditions.append(f"COALESCE({smoking_col}, false) = :has_smoking")
+            else:
+                conditions.append("FALSE = :has_smoking")
             params["has_smoking"] = hasSmoking
 
         if hasObesity is not None:
-            (
-                conditions.append("COALESCE(bmi, 0) >= 30")
-                if hasObesity
-                else conditions.append("(bmi IS NULL OR bmi < 30)")
-            )
+            if "bmi" in columns:
+                (
+                    conditions.append("COALESCE(bmi, 0) >= 30")
+                    if hasObesity
+                    else conditions.append("(bmi IS NULL OR bmi < 30)")
+                )
 
         # Validate and sanitize sort parameters
         sort_column_map = {
-            "dna_id": "participant_id",
-            "age": "age",
-            "gender": "gender",
-            "nationality": "nationality",
-            "enrollment_date": "enrollment_date",
+            "dna_id": expr["id_col"],
+            "age": expr["age_expr"],
+            "gender": expr["gender_expr"],
+            "nationality": expr["nationality_expr"],
+            "enrollment_date": expr["enrollment_expr"],
             "data_completeness": completeness_expr,
         }
         sort_column = sort_column_map.get(
-            sortBy if sortBy in ALLOWED_SORT_COLUMNS else "dna_id", "participant_id"
+            sortBy if sortBy in ALLOWED_SORT_COLUMNS else "dna_id", expr["id_col"]
         )
         sort_direction = "DESC" if sortOrder.lower() == "desc" else "ASC"
 
@@ -240,11 +370,14 @@ async def get_patients(
 
         # Get paginated results using unified table with compatibility aliases
         stmt = text(
-            "SELECT participant_id AS dna_id, source_dataset, age, gender, nationality, enrollment_date, current_city, "
-            f"heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, {mri_value_expr} AS mri_ef, "
-            "NULL::text AS current_city_category, "
+            f"SELECT CAST({expr['id_col']} AS TEXT) AS dna_id, {expr['dataset_expr']} AS source_dataset, "
+            f"{expr['age_expr']} AS age, {expr['gender_expr']} AS gender, {expr['nationality_expr']} AS nationality, "
+            f"{expr['enrollment_expr']} AS enrollment_date, {expr['city_expr']} AS current_city, "
+            f"{expr['heart_rate_expr']} AS heart_rate, {expr['systolic_expr']} AS systolic_bp, {expr['diastolic_expr']} AS diastolic_bp, "
+            f"{expr['bmi_expr']} AS bmi, {expr['hba1c_expr']} AS hba1c, {expr['echo_expr']} AS echo_ef, {mri_value_expr} AS mri_ef, "
+            f"{expr['current_city_category_expr']} AS current_city_category, "
             f"({mri_present_expr}) AS has_mri, "
-            "(echo_ef IS NOT NULL) AS has_echo, "
+            f"({expr['echo_expr']} IS NOT NULL) AS has_echo, "
             f"{completeness_expr} AS data_completeness "
             f"FROM {source_table} "
             f"WHERE {' AND '.join(conditions)} "
@@ -283,26 +416,38 @@ async def search_patients(
         source_table = _dataset_table(dataset)
         columns = _table_columns(db, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
+        expr = _dataset_field_exprs(columns, dataset)
+
+        search_conditions = [f"CAST({expr['id_col']} AS TEXT) ILIKE :search"]
+        if expr["source_record_col"]:
+            search_conditions.append(
+                f"CAST({expr['source_record_col']} AS TEXT) ILIKE :search"
+            )
+        if "nationality" in columns:
+            search_conditions.append("CAST(nationality AS TEXT) ILIKE :search")
 
         params = {"search": f"%{query}%", "limit": limit}
 
         completeness_expr = (
-            "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) "
-            "+ (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) "
-            "+ (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) "
-            "+ (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) "
+            f"((CASE WHEN {expr['heart_rate_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {expr['systolic_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {expr['bmi_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
+            f"+ (CASE WHEN {expr['echo_expr']} IS NOT NULL THEN 20 ELSE 0 END) "
             f"+ (CASE WHEN {mri_present_expr} THEN 20 ELSE 0 END))"
         )
         stmt = text(
-            "SELECT participant_id AS dna_id, source_dataset, age, gender, nationality, enrollment_date, current_city, "
-            f"heart_rate, systolic_bp, diastolic_bp, bmi, hba1c, echo_ef, {mri_value_expr} AS mri_ef, "
-            "NULL::text AS current_city_category, "
+            f"SELECT CAST({expr['id_col']} AS TEXT) AS dna_id, {expr['dataset_expr']} AS source_dataset, "
+            f"{expr['age_expr']} AS age, {expr['gender_expr']} AS gender, {expr['nationality_expr']} AS nationality, "
+            f"{expr['enrollment_expr']} AS enrollment_date, {expr['city_expr']} AS current_city, "
+            f"{expr['heart_rate_expr']} AS heart_rate, {expr['systolic_expr']} AS systolic_bp, {expr['diastolic_expr']} AS diastolic_bp, "
+            f"{expr['bmi_expr']} AS bmi, {expr['hba1c_expr']} AS hba1c, {expr['echo_expr']} AS echo_ef, {mri_value_expr} AS mri_ef, "
+            f"{expr['current_city_category_expr']} AS current_city_category, "
             f"({mri_present_expr}) AS has_mri, "
-            "(echo_ef IS NOT NULL) AS has_echo, "
+            f"({expr['echo_expr']} IS NOT NULL) AS has_echo, "
             f"{completeness_expr} AS data_completeness "
             f"FROM {source_table} "
-            "WHERE (participant_id ILIKE :search OR source_record_id ILIKE :search OR nationality ILIKE :search)"
-            "ORDER BY participant_id ASC "
+            f"WHERE ({' OR '.join(search_conditions)}) "
+            f"ORDER BY {expr['id_col']} ASC "
             "LIMIT :limit"
         )
         patients = db.execute(stmt, params).mappings().fetchall()
@@ -329,10 +474,12 @@ async def get_patient(dna_id: str, db=Depends(get_db)):
 
         if not patient:
             for source_table in DATASET_TABLES.values():
+                source_columns = _table_columns(db, source_table)
+                source_expr = _dataset_field_exprs(source_columns, source_table)
                 fallback_stmt = text(f"""
-                    SELECT *, participant_id AS dna_id
+                    SELECT *, CAST({source_expr['id_col']} AS TEXT) AS dna_id
                     FROM {source_table}
-                    WHERE TRIM(participant_id) = :dna_id
+                    WHERE TRIM(CAST({source_expr['id_col']} AS TEXT)) = :dna_id
                     """)
                 patient = (
                     db.execute(fallback_stmt, {"dna_id": normalized_id})
@@ -537,9 +684,11 @@ async def get_patient_genomics(dna_id: str, db=Depends(get_db)):
 
         if not patient_row:
             for source_table in DATASET_TABLES.values():
+                source_columns = _table_columns(db, source_table)
+                source_expr = _dataset_field_exprs(source_columns, source_table)
                 patient_row = db.execute(
                     text(
-                        f"SELECT participant_id AS dna_id FROM {source_table} WHERE TRIM(participant_id) = :dna_id"
+                        f"SELECT CAST({source_expr['id_col']} AS TEXT) AS dna_id FROM {source_table} WHERE TRIM(CAST({source_expr['id_col']} AS TEXT)) = :dna_id"
                     ),
                     {"dna_id": normalized_id},
                 ).fetchone()
