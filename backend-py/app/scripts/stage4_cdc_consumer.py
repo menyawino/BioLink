@@ -12,7 +12,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 def run():
     bootstrap = os.getenv("DEBEZIUM_BOOTSTRAP", "localhost:9092")
-    topic = os.getenv("DEBEZIUM_TOPIC", "EHVol.dbo.patients")
+    topic = os.getenv("DEBEZIUM_TOPIC", "biolink.public.patients")
 
     ensure_schema()
 

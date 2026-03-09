@@ -172,7 +172,7 @@ python -m app.scripts.import_patients_csv
 
 ### Running the Application (Docker)
 
-**Start the core stack (frontend, backend, PostgreSQL, SQL Server, pgvector, Redis, NiFi):**
+**Start the core stack (frontend, backend, PostgreSQL, pgvector, Redis, NiFi):**
 ```bash
 docker compose up -d --build
 ```
@@ -186,6 +186,18 @@ Frontend: http://localhost:3000
 Backend: http://localhost:3001
 Ollama: http://localhost:11434
 NiFi: https://localhost:8443/nifi
+
+### Frontend Dev Container
+
+For immediate UI reflection without rebuilding the nginx image, run the bind-mounted Vite service:
+
+```bash
+docker compose up -d --no-deps frontend-dev
+```
+
+Frontend dev server: http://localhost:5173
+
+This service mounts the workspace into the container and runs Vite directly, so changes under `src/` appear immediately. It is intended for development alongside the regular backend container.
 
 ### NiFi Ingestion (Local)
 
@@ -267,16 +279,16 @@ The MCP server reads DATABASE_URL from backend-py/.env.
 
 ---
 
-## RAG Pipeline (SQL Server → pgvector → Ollama)
+## RAG Pipeline (PostgreSQL → pgvector → Ollama)
 
-Live semantic search over EHVol notes/diagnoses, synced from SQL Server into pgvector.
+Live semantic search over the Postgres patient registry, indexed into pgvector.
 
 Quick start:
 
 ```bash
 docker compose up -d
 cd backend-py
-python -m app.scripts.sqlserver_smoke_test
+python -m app.scripts.registry_smoke_test
 python -m app.scripts.stage2_pgvector_setup
 python -m app.scripts.stage3_embed_sample
 python -m app.scripts.stage5_rag_query

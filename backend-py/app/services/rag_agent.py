@@ -10,7 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from app.config import settings
 from app.rag.embedding import embed_query
 from app.rag.vector_store import similarity_search
-from app.rag.sqlserver import fetch_patient_ids_by_filters, fetch_patients_by_ids
+from app.rag.patient_registry import fetch_patient_ids_by_filters, fetch_patients_by_ids
 
 logger = logging.getLogger(__name__)
 

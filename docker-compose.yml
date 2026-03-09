@@ -2,6 +2,14 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: biolink-postgres
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
     environment:
       POSTGRES_USER: biolink
       POSTGRES_PASSWORD: biolink_secret
@@ -15,27 +23,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: biolink-sqlserver
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Strong!Passw0rdChangeMe}
-    ports:
-      - "1433:1433"
-    volumes:
-      - sqlserver_data:/var/opt/mssql
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"SELECT 1\" >/dev/null 2>&1; elif [ -x /opt/mssql-tools/bin/sqlcmd ]; then /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"SELECT 1\" >/dev/null 2>&1; else exit 1; fi"
-        ]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
 
   pgvector:
     image: pgvector/pgvector:pg16
@@ -135,8 +122,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      sqlserver:
-        condition: service_healthy
       pgvector:
         condition: service_healthy
       redis:
@@ -186,6 +171,37 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  frontend-dev:
+    image: node:20-alpine
+    container_name: biolink-frontend-dev
+    working_dir: /app
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_URL: http://localhost:3001
+      VITE_OLLAMA_BASE_URL: http://localhost:11434
+      VITE_OLLAMA_MODEL: llama3.2:3b
+      VITE_OLLAMA_TOOL_MODEL: llama3.2:3b
+      VITE_OLLAMA_TOOL_MODEL_FALLBACK: llama3.2:3b
+      VITE_SQL_AGENT_ENABLED: "true"
+      VITE_SUPERSET_URL: http://localhost:8088
+      VITE_SUPERSET_DASHBOARD_ID: "6"
+      VITE_NIFI_URL: /nifi/
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./:/app
+      - frontend_dev_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5173:5173"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sSf http://localhost:5173 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    profiles:
+      - dev
 
   mcp:
     image: node:20-alpine
@@ -369,8 +385,8 @@ services:
 volumes:
   postgres_data:
   pgvector_data:
-  sqlserver_data:
   ollama_data:
+  frontend_dev_node_modules:
   superset_home:
   etl_uploads:
   redis_data:

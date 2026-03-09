@@ -1,18 +1,20 @@
 {
-  "name": "ehvol-sqlserver-connector",
+  "name": "biolink-postgres-connector",
   "config": {
-    "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
-    "database.hostname": "${SQLSERVER_CONNECT_HOST}",
-    "database.port": "${SQLSERVER_PORT}",
-    "database.user": "${SQLSERVER_USER}",
-    "database.password": "${SQLSERVER_PASSWORD}",
-    "database.names": "${SQLSERVER_DB}",
-    "database.trustServerCertificate": "${SQLSERVER_TRUST_CERT}",
-    "topic.prefix": "EHVol",
-    "table.include.list": "dbo.patients",
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "${POSTGRES_USER}",
+    "database.password": "${POSTGRES_PASSWORD}",
+    "database.dbname": "${POSTGRES_DB}",
+    "database.server.name": "biolink",
+    "topic.prefix": "biolink",
+    "plugin.name": "pgoutput",
+    "publication.autocreate.mode": "filtered",
+    "slot.name": "biolink_patients_slot",
+    "schema.include.list": "public",
+    "table.include.list": "public.patients",
     "snapshot.mode": "initial",
-    "tombstones.on.delete": "false",
-    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
-    "schema.history.internal.kafka.topic": "schemahistory.ehvol"
+    "tombstones.on.delete": "false"
   }
 }

@@ -21,6 +21,7 @@ ALLOWED_SORT_COLUMNS = {
 }
 ALLOWED_DATASETS = {"ehvol", "bhs"}
 DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
+LEGACY_FALLBACK_VIEW = "ehvol"
 
 
 def _normalized_dataset(dataset: str | None) -> str:
@@ -44,6 +45,28 @@ def _normalize(values: List[float]) -> List[float]:
 
 def _dataset_table(dataset: str | None) -> str:
     return DATASET_TABLES[_normalized_dataset(dataset)]
+
+
+def _table_has_rows(db, table_name: str) -> bool:
+    row = db.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1")).fetchone()
+    return row is not None
+
+
+def _registry_source_table(db, dataset: str | None) -> str:
+    normalized = _normalized_dataset(dataset)
+    source_table = _dataset_table(normalized)
+
+    if _table_has_rows(db, source_table):
+        return source_table
+
+    if normalized == "ehvol" and _table_has_rows(db, "patients"):
+        logger.warning(
+            "Falling back to legacy EHVOL view because %s is empty",
+            source_table,
+        )
+        return LEGACY_FALLBACK_VIEW
+
+    return source_table
 
 
 def _table_columns(db, table_name: str) -> set[str]:
@@ -167,7 +190,7 @@ async def get_patients(
 ):
     """Search and filter patients in the registry"""
     try:
-        source_table = _dataset_table(dataset)
+        source_table = _registry_source_table(db, dataset)
         columns = _table_columns(db, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
         expr = _dataset_field_exprs(columns, dataset)
@@ -413,7 +436,7 @@ async def search_patients(
 ):
     """Search patients by DNA ID or nationality"""
     try:
-        source_table = _dataset_table(dataset)
+        source_table = _registry_source_table(db, dataset)
         columns = _table_columns(db, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
         expr = _dataset_field_exprs(columns, dataset)

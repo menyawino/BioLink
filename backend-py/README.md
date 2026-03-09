@@ -85,22 +85,21 @@ All credentials are in `backend-py/.env` and configured from the main `.env` fil
 
 Key variables:
 - `DATABASE_URL` - PostgreSQL connection
-- `SQLSERVER_*` - SQL Server connection used for live EHVol registry
 - `ETL_SERVICE_URL` - NiFi API endpoint (default `https://nifi:8443/nifi-api`)
 
-## Stage 1: SQL Server Smoke Test (EHVol)
+## Stage 1: Postgres Registry Smoke Test
 
-This verifies connectivity, schema, and sample rows from the SQL Server registry.
+This verifies connectivity, schema, and sample rows from the Postgres patient registry.
 
-1) Configure SQL Server credentials in `backend-py/.env` (see `.env.example`).
+1) Configure PostgreSQL credentials in `backend-py/.env` (see `.env.example`).
 2) Run the smoke test script:
 
 ```bash
 cd backend-py
-python -m app.scripts.sqlserver_smoke_test
+python -m app.scripts.registry_smoke_test
 ```
 
-Expected output: column list + 10 sample rows (id, age, gender, ef, hypertension) and
+Expected output: column list + 10 sample rows (id, age, gender, current_city, ef) and
 `Stage 1 OK` message.
 
 ## RAG Pipeline (pgvector + Debezium + Ollama)

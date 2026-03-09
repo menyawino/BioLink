@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_DATASETS = {"all", "ehvol", "bhs"}
 DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
 COMPLETENESS_EXPR = "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN hba1c IS NOT NULL THEN 20 ELSE 0 END))"
+LEGACY_FALLBACK_SOURCE = "ehvol registry"
 
 
 def _dataset_key(dataset: str | None) -> str:
@@ -18,11 +19,30 @@ def _dataset_key(dataset: str | None) -> str:
     return normalized
 
 
-def _dataset_source(dataset: str | None) -> str:
+def _table_has_rows(db, table_name: str) -> bool:
+    row = db.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1")).fetchone()
+    return row is not None
+
+
+def _dataset_source(db, dataset: str | None) -> str:
     key = _dataset_key(dataset)
     if key == "all":
+        if _table_has_rows(db, DATASET_TABLES["ehvol"]) or _table_has_rows(db, DATASET_TABLES["bhs"]):
+            return "(SELECT * FROM ehvol_participants UNION ALL SELECT * FROM bhs_participants) registry"
+        if _table_has_rows(db, "patients"):
+            logger.warning(
+                "Falling back to legacy EHVOL view for analytics because participant tables are empty"
+            )
+            return LEGACY_FALLBACK_SOURCE
         return "(SELECT * FROM ehvol_participants UNION ALL SELECT * FROM bhs_participants) registry"
-    return f"{DATASET_TABLES[key]} registry"
+
+    source = f"{DATASET_TABLES[key]} registry"
+    if key == "ehvol" and not _table_has_rows(db, DATASET_TABLES[key]) and _table_has_rows(db, "patients"):
+        logger.warning(
+            "Falling back to legacy EHVOL view for analytics because ehvol_participants is empty"
+        )
+        return LEGACY_FALLBACK_SOURCE
+    return source
 
 
 def _mri_column_exists(db, dataset: str | None) -> bool:
@@ -46,7 +66,7 @@ def _mri_column_exists(db, dataset: str | None) -> bool:
 @router.get("/overview")
 async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
 
         total = db.execute(text(f"SELECT COUNT(*) FROM {source}")).scalar() or 0
         male = (

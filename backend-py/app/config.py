@@ -26,15 +26,6 @@ class Settings(BaseSettings):
     data_llm_timeout_s: float = 20.0
     medical_llm_timeout_s: float = 20.0
 
-    # SQL Server (EHVol registry)
-    sqlserver_host: str = "localhost"
-    sqlserver_port: int = 1433
-    sqlserver_db: str = "EHVol"
-    sqlserver_user: str = "readonly_user"
-    sqlserver_password: str = "readonly_password"
-    sqlserver_driver: str = "ODBC Driver 18 for SQL Server"
-    sqlserver_trust_cert: str = "yes"
-
     # RAG / pgvector
     rag_pg_url: str = (
         "postgresql://biolink:biolink_secret@localhost:5433/biolink_vector"

@@ -1,7 +1,7 @@
 import time
 from app.rag.embedding import embed_query
 from app.rag.vector_store import similarity_search
-from app.rag.sqlserver import fetch_patient_ids_by_filters
+from app.rag.patient_registry import fetch_patient_ids_by_filters
 from app.config import settings
 
 

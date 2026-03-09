@@ -3,7 +3,7 @@ import time
 import json
 from pathlib import Path
 
-from app.rag.sqlserver import fetch_patients
+from app.rag.patient_registry import fetch_patients
 from app.rag.embedding import chunk_text, embed_texts, redact_phi
 from app.rag.vector_store import ensure_schema, upsert_embeddings
 from app.services.extractor import default_wrapper
@@ -17,7 +17,7 @@ def run():
 
     limit = int(os.getenv("RAG_EMBED_LIMIT", "1000"))
     rows = fetch_patients(limit=limit)
-    assert rows, "No rows fetched from SQL Server"
+    assert rows, "No rows fetched from Postgres registry"
 
     to_upsert = []
     extractor = default_wrapper()
@@ -76,7 +76,7 @@ def run():
         embeddings = embed_texts(chunks)
 
         for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-            meta = {"source": "sqlserver", "stage": 3}
+            meta = {"source": "postgres", "stage": 3}
             to_upsert.append((patient_id, idx, chunk, meta, emb))
 
     upsert_embeddings(to_upsert)
