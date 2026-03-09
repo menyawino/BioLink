@@ -27,14 +27,16 @@ export function LoginPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const resetForm = () => {
+  const resetForm = (clearSuccess = true) => {
     setUsername('');
     setPassword('');
     setEmail('');
     setFullName('');
     setConfirmPassword('');
     setError(null);
-    setSuccess(null);
+    if (clearSuccess) {
+      setSuccess(null);
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -68,7 +70,7 @@ export function LoginPage() {
       await registerApi({ username, email, password, full_name: fullName || undefined });
       setSuccess('Account created successfully. You can now log in.');
       setMode('login');
-      resetForm();
+      resetForm(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {

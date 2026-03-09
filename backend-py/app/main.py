@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from contextlib import asynccontextmanager
@@ -177,14 +177,54 @@ async def health_detailed(request: Request):
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
-app.include_router(patients.router, prefix="/api/patients", tags=["patients"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
-app.include_router(charts.router, prefix="/api/charts", tags=["charts"])
-app.include_router(tools.router, prefix="/api/tools", tags=["tools"])
-app.include_router(superset.router, prefix="/api/superset", tags=["superset"])
-app.include_router(etl.router, prefix="/api/etl", tags=["etl"])
+app.include_router(
+    chat.router,
+    prefix="/api/chat",
+    tags=["chat"],
+    dependencies=[Depends(auth.require_scopes("read"))],
+)
+app.include_router(
+    rag.router,
+    prefix="/api/rag",
+    tags=["rag"],
+    dependencies=[Depends(auth.require_scopes("read"))],
+)
+app.include_router(
+    patients.router,
+    prefix="/api/patients",
+    tags=["patients"],
+    dependencies=[Depends(auth.require_scopes("read"))],
+)
+app.include_router(
+    analytics.router,
+    prefix="/api/analytics",
+    tags=["analytics"],
+    dependencies=[Depends(auth.require_scopes("read"))],
+)
+app.include_router(
+    charts.router,
+    prefix="/api/charts",
+    tags=["charts"],
+    dependencies=[Depends(auth.require_scopes("write"))],
+)
+app.include_router(
+    tools.router,
+    prefix="/api/tools",
+    tags=["tools"],
+    dependencies=[Depends(auth.require_scopes("write"))],
+)
+app.include_router(
+    superset.router,
+    prefix="/api/superset",
+    tags=["superset"],
+    dependencies=[Depends(auth.require_scopes("read"))],
+)
+app.include_router(
+    etl.router,
+    prefix="/api/etl",
+    tags=["etl"],
+    dependencies=[Depends(auth.require_role("admin"))],
+)
 
 
 # Error handlers

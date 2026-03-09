@@ -3,6 +3,7 @@ import { Button } from "./ui/button";
 import { User, Table, BarChart3, Activity, Database, Users, BookOpen, Settings, RefreshCw, LogOut } from "lucide-react";
 import logo from "figma:asset/e26cb8b78ee049387f524876448562f480bca21b.png";
 import { useAuth } from "../context/AuthContext";
+import { canAccessView } from "../lib/access";
 
 interface SidebarProps {
   currentView: string;
@@ -68,7 +69,7 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
       icon: BookOpen,
       description: "Variables & metadata"
     }
-  ];
+  ].filter((item) => canAccessView(user, item.id as never));
 
   return (
     <div className={cn("w-64 bg-sidebar border-r border-sidebar-border flex flex-col h-screen", className)}>
@@ -142,15 +143,17 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
         </button>
 
         <div className="flex gap-2 mb-4">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="flex-1 justify-start"
-            onClick={() => onViewChange('settings')}
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            <span className="text-sm">Settings</span>
-          </Button>
+          {canAccessView(user, 'settings') ? (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="flex-1 justify-start"
+              onClick={() => onViewChange('settings')}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              <span className="text-sm">Settings</span>
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"

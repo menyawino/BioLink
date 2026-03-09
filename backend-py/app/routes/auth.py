@@ -202,6 +202,19 @@ class UserResponse(BaseModel):
     last_login: Optional[str] = None
 
 
+def serialize_user(user_row: UserModel) -> UserResponse:
+    return UserResponse(
+        username=user_row.username,
+        email=user_row.email,
+        full_name=user_row.full_name,
+        role=user_row.role,
+        scopes=user_row.scopes,
+        disabled=user_row.disabled,
+        created_at=user_row.created_at.isoformat() if user_row.created_at else None,
+        last_login=user_row.last_login.isoformat() if user_row.last_login else None,
+    )
+
+
 # ── Endpoints ───────────────────────────────────────────────────────
 
 
@@ -275,16 +288,15 @@ async def refresh_token(request: Request, token: str = Body(..., embed=True)):
 
 
 @router.get("/me", response_model=UserResponse)
-async def read_users_me(current_user: User = Depends(get_current_active_user)):
+async def read_users_me(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
     """Get current authenticated user information."""
-    return UserResponse(
-        username=current_user.username,
-        email=current_user.email,
-        full_name=current_user.full_name,
-        role=current_user.role,
-        scopes=current_user.scopes,
-        disabled=current_user.disabled,
-    )
+    user_row = db.query(UserModel).filter(UserModel.username == current_user.username).first()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return serialize_user(user_row)
 
 
 @router.post("/logout")
@@ -328,15 +340,7 @@ async def register(request: Request, body: RegisterRequest, db: Session = Depend
 
     logger.info(f"New user registered: {body.username}")
 
-    return UserResponse(
-        username=new_user.username,
-        email=new_user.email,
-        full_name=new_user.full_name,
-        role=new_user.role,
-        scopes=new_user.scopes,
-        disabled=new_user.disabled,
-        created_at=new_user.created_at.isoformat() if new_user.created_at else None,
-    )
+    return serialize_user(new_user)
 
 
 @router.put("/me", response_model=UserResponse)
@@ -365,16 +369,7 @@ async def update_profile(
     db.commit()
     db.refresh(user_row)
 
-    return UserResponse(
-        username=user_row.username,
-        email=user_row.email,
-        full_name=user_row.full_name,
-        role=user_row.role,
-        scopes=user_row.scopes,
-        disabled=user_row.disabled,
-        created_at=user_row.created_at.isoformat() if user_row.created_at else None,
-        last_login=user_row.last_login.isoformat() if user_row.last_login else None,
-    )
+    return serialize_user(user_row)
 
 
 @router.post("/change-password")
@@ -408,19 +403,7 @@ async def list_users(
 ):
     """Admin: list all users."""
     rows = db.query(UserModel).order_by(UserModel.created_at).all()
-    return [
-        UserResponse(
-            username=r.username,
-            email=r.email,
-            full_name=r.full_name,
-            role=r.role,
-            scopes=r.scopes,
-            disabled=r.disabled,
-            created_at=r.created_at.isoformat() if r.created_at else None,
-            last_login=r.last_login.isoformat() if r.last_login else None,
-        )
-        for r in rows
-    ]
+    return [serialize_user(r) for r in rows]
 
 
 @router.put("/users/{username}", response_model=UserResponse)
@@ -465,16 +448,7 @@ async def admin_update_user(
     db.commit()
     db.refresh(user_row)
 
-    return UserResponse(
-        username=user_row.username,
-        email=user_row.email,
-        full_name=user_row.full_name,
-        role=user_row.role,
-        scopes=user_row.scopes,
-        disabled=user_row.disabled,
-        created_at=user_row.created_at.isoformat() if user_row.created_at else None,
-        last_login=user_row.last_login.isoformat() if user_row.last_login else None,
-    )
+    return serialize_user(user_row)
 
 
 @router.delete("/users/{username}")

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppProvider, useApp } from "./context/AppContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Sidebar } from "./components/Sidebar";
@@ -22,6 +22,7 @@ import { DataNotAvailable } from "./components/DataNotAvailable";
 import { LoginPage } from "./components/LoginPage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { usePatient, usePatientGenomics } from "./hooks/usePatients";
+import { canAccessView } from "./lib/access";
 import type { PatientDetail } from "./api/types";
 
 // Transform patient data from API to component format
@@ -399,10 +400,17 @@ function AuthGate() {
 }
 
 function AppContent() {
+  const { user } = useAuth();
   const { currentView, setCurrentView, selectedPatient, setSelectedPatient } = useApp();
   const [currentTab, setCurrentTab] = useState<string>("vitals");
   const { data: patient, error: patientError, isLoading: patientLoading } = usePatient(selectedPatient || '');
   const { data: genomicsData, error: genomicsError, isLoading: genomicsLoading } = usePatientGenomics(selectedPatient || '');
+
+  useEffect(() => {
+    if (!canAccessView(user, currentView as never)) {
+      setCurrentView("welcome");
+    }
+  }, [currentView, setCurrentView, user]);
   
   const handlePatientSelect = (dnaId: string) => {
     setSelectedPatient(dnaId);
@@ -416,6 +424,7 @@ function AppContent() {
       <div className="flex-1 overflow-auto">
         <div className="p-6">
           {renderContent(
+            user,
             currentView,
             selectedPatient,
             setSelectedPatient,
@@ -436,6 +445,7 @@ function AppContent() {
 }
 
 function renderContent(
+  user: import("./types/auth").AuthUser | null,
   currentView: string,
   selectedPatient: string | null,
   setSelectedPatient: (id: string | null) => void,
@@ -450,6 +460,10 @@ function renderContent(
   handlePatientSelect: (dnaId: string) => void
 ) {
   const renderMainContent = () => {
+    if (!canAccessView(user, currentView as never)) {
+      return <ChatInterface />;
+    }
+
     switch (currentView) {
       case "welcome":
         return <ChatInterface />;
