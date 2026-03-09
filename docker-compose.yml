@@ -150,6 +150,7 @@ services:
       DATABASE_URL: postgresql://biolink:biolink_secret@postgres:5432/biolink
       RAG_PG_URL: postgresql://biolink:biolink_secret@pgvector:5432/biolink_vector
       OLLAMA_BASE_URL: http://ollama:11434
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-a-long-random-string}
     volumes:
       - ./db:/app/db
       - etl_uploads:/shared/etl_uploads
