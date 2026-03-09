@@ -40,6 +40,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Database schema bootstrap failed: {e}")
 
+    # Bootstrap auth tables + seed default users
+    try:
+        from app.auth_bootstrap import bootstrap_auth
+
+        bootstrap_auth()
+        logger.info("✓ Auth tables bootstrapped")
+    except Exception as e:
+        logger.warning(f"Auth bootstrap failed: {e}")
+
     # Create database indexes for performance
     try:
         from app.db_indexes import create_indexes, analyze_tables

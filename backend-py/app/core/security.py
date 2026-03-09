@@ -2,12 +2,15 @@
 Security utilities for authentication and authorization.
 """
 
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Password hashing
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
@@ -34,6 +37,7 @@ class User(BaseModel):
     username: str
     email: Optional[str] = None
     full_name: Optional[str] = None
+    role: str = "viewer"
     disabled: bool = False
     scopes: list[str] = []
 
@@ -83,49 +87,53 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
-# Mock user database - Replace with actual database in production
-# This is for demonstration purposes
-USERS_DB = {
-    "admin": {
-        "username": "admin",
-        "full_name": "Administrator",
-        "email": "admin@biolink.local",
-        "hashed_password": get_password_hash("admin"),
-        "disabled": False,
-        "scopes": ["admin", "read", "write", "delete"],
-    },
-    "researcher": {
-        "username": "researcher",
-        "full_name": "Research User",
-        "email": "researcher@biolink.local",
-        "hashed_password": get_password_hash("researcher"),
-        "disabled": False,
-        "scopes": ["read", "write"],
-    },
-    "viewer": {
-        "username": "viewer",
-        "full_name": "View Only User",
-        "email": "viewer@biolink.local",
-        "hashed_password": get_password_hash("viewer"),
-        "disabled": False,
-        "scopes": ["read"],
-    },
-}
-
-
 def get_user(username: str) -> Optional[UserInDB]:
-    """Get user from database."""
-    if username in USERS_DB:
-        user_dict = USERS_DB[username]
-        return UserInDB(**user_dict)
-    return None
+    """Get user from PostgreSQL database."""
+    from app.database import SessionLocal
+    from app.models.user import UserModel
+
+    db = SessionLocal()
+    try:
+        user_row = db.query(UserModel).filter(UserModel.username == username).first()
+        if user_row is None:
+            return None
+        return UserInDB(
+            username=user_row.username,
+            email=user_row.email,
+            full_name=user_row.full_name,
+            role=user_row.role,
+            disabled=user_row.disabled,
+            scopes=user_row.scopes or [],
+            hashed_password=user_row.hashed_password,
+        )
+    except Exception as e:
+        logger.error(f"Error fetching user '{username}': {e}")
+        return None
+    finally:
+        db.close()
 
 
 def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
-    """Authenticate user credentials."""
+    """Authenticate user credentials and update last_login."""
+    from app.database import SessionLocal
+    from app.models.user import UserModel
+
     user = get_user(username)
     if not user:
         return None
     if not verify_password(password, user.hashed_password):
         return None
+
+    # Update last_login timestamp
+    db = SessionLocal()
+    try:
+        db.query(UserModel).filter(UserModel.username == username).update(
+            {"last_login": datetime.utcnow()}
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
     return user

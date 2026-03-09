@@ -262,7 +262,7 @@ services:
       SINGLE_USER_CREDENTIALS_USERNAME: admin
       SINGLE_USER_CREDENTIALS_PASSWORD: biolink_nifi_secret_123
       NIFI_WEB_HTTPS_HOST: nifi
-      NIFI_WEB_PROXY_HOST: localhost:3000,frontend,frontend:80
+      NIFI_WEB_PROXY_HOST: localhost:8443,127.0.0.1:8443,localhost:3000,frontend,frontend:80
       NIFI_JVM_HEAP_INIT: 2g
       NIFI_JVM_HEAP_MAX: 4g
       NIFI_SENSITIVE_PROPS_KEY: biolink_nifi_sensitive_key_456

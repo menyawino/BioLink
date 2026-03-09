@@ -99,7 +99,11 @@ docker compose exec nifi /opt/nifi/scripts/init_postgres_schema.sh
 docker compose up -d nifi
 ```
 
-NiFi 2.8.0 UI will be available at **http://localhost:8443/nifi/**
+NiFi 2.8.0 UI will be available at **https://localhost:8443/nifi/**
+
+NiFi uses HTTPS with a self-signed certificate in this setup, so the browser may
+show a certificate warning on first load. Continue past the warning to reach the
+login screen.
 
 Login: `admin` / `biolink_nifi_secret_123`
 

@@ -1,7 +1,8 @@
 import { cn } from "./ui/utils";
 import { Button } from "./ui/button";
-import { User, Table, BarChart3, Activity, Database, Users, BookOpen, Settings, RefreshCw } from "lucide-react";
+import { User, Table, BarChart3, Activity, Database, Users, BookOpen, Settings, RefreshCw, LogOut } from "lucide-react";
 import logo from "figma:asset/e26cb8b78ee049387f524876448562f480bca21b.png";
+import { useAuth } from "../context/AuthContext";
 
 interface SidebarProps {
   currentView: string;
@@ -10,6 +11,14 @@ interface SidebarProps {
 }
 
 export function Sidebar({ currentView, onViewChange, className }: SidebarProps) {
+  const { user, logout } = useAuth();
+
+  const initials = user?.full_name
+    ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : user?.username?.slice(0, 2).toUpperCase() ?? '??';
+
+  const displayName = user?.full_name || user?.username || 'User';
+
   const navigationItems = [
     {
       id: "welcome",
@@ -123,24 +132,35 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
         >
           <div className="flex items-center space-x-3">
             <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#00a2ddff] to-[#efb01bff] flex items-center justify-center text-white font-medium flex-shrink-0">
-              DR
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">Dr. Ahmed Hassan</p>
-              <p className="text-xs text-sidebar-foreground/60">View Profile</p>
+              <p className="text-sm font-medium text-sidebar-foreground truncate">{displayName}</p>
+              <p className="text-xs text-sidebar-foreground/60 capitalize">{user?.role || 'User'}</p>
             </div>
           </div>
         </button>
 
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="w-full justify-start mb-4"
-          onClick={() => onViewChange('settings')}
-        >
-          <Settings className="h-4 w-4 mr-3" />
-          <span className="text-sm">Settings</span>
-        </Button>
+        <div className="flex gap-2 mb-4">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="flex-1 justify-start"
+            onClick={() => onViewChange('settings')}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            <span className="text-sm">Settings</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-center text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={logout}
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
         
         <div className="text-xs text-sidebar-foreground/60 space-y-1">
           <p>Registry Version 2.1.0</p>

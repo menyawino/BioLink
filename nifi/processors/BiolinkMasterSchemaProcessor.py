@@ -521,7 +521,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         description="Mounted repository root used to execute the script-based ETL.",
         required=True,
         default_value="/opt/nifi/biolink_repo",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
 
     BHS_CSV_PATH = PropertyDescriptor(
@@ -529,42 +529,42 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         description="Absolute path to the full BHS CSV file inside the container.",
         required=True,
         default_value="/opt/nifi/db/BHS_Full.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     EHVOL_CSV_PATH = PropertyDescriptor(
         name="EHVol CSV Path",
         description="Absolute path to the full EHVol CSV file inside the container.",
         required=True,
         default_value="/opt/nifi/db/EHVol_Full.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     SCHEMA_OUTPUT_PATH = PropertyDescriptor(
         name="Schema Output Path",
         description="Where to write master_schema.csv (shared with Step 2 processors).",
         required=True,
         default_value="/opt/nifi/outputs/master_schema.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     MATCH_THRESHOLD = PropertyDescriptor(
         name="Match Threshold",
         description="Composite similarity score floor (0–1). Recommended: 0.35.",
         required=False,
         default_value="0.35",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     TOP_K = PropertyDescriptor(
         name="Top K",
         description="Number of TF-IDF candidate pairs to evaluate per column.",
         required=False,
         default_value="5",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     MIN_FINAL_SCORE = PropertyDescriptor(
         name="Min Final Score",
         description="Minimum final composite score to accept a pair (script default 0.50).",
         required=False,
         default_value="0.50",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     USE_SAPBERT = PropertyDescriptor(
         name="Use SapBERT",
@@ -572,7 +572,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         required=False,
         default_value="false",
         allowable_values=["true", "false"],
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     LEXICON_PATH = PropertyDescriptor(
         name="Lexicon Path",
@@ -582,7 +582,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         ),
         required=False,
         default_value="/opt/nifi/biolink_scripts/clinical_lexicon.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
 
     property_descriptors = [

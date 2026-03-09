@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     # NiFi ETL API
     etl_service_url: str = "https://nifi:8443/nifi-api"
 
+    # Auth / JWT
+    secret_key: str = "change-me-in-production-use-a-long-random-string"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
     @field_validator("database_url")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:

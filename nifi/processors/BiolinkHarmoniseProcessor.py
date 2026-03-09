@@ -237,7 +237,7 @@ class BiolinkHarmoniseProcessor(FlowFileTransform):
         ),
         required=True,
         default_value="/opt/nifi/outputs/master_schema.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
 
     property_descriptors = [DATASET_TYPE, SCHEMA_PATH]

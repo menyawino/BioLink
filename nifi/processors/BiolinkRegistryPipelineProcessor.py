@@ -20,10 +20,6 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-import psycopg2
-from psycopg2 import sql
-from psycopg2.extras import Json, execute_values
-
 from nifiapi.flowfiletransform import FlowFileTransform, FlowFileTransformResult
 from nifiapi.properties import ExpressionLanguageScope, PropertyDescriptor
 
@@ -102,7 +98,7 @@ def _infer_sql_type(column_name: str, sample_values: list[str]) -> str:
     return "TEXT"
 
 
-def _create_or_replace_csv_table(conn, csv_path: Path, table_name: str) -> int:
+def _create_or_replace_csv_table(conn, csv_path: Path, table_name: str, sql_module) -> int:
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
@@ -117,63 +113,63 @@ def _create_or_replace_csv_table(conn, csv_path: Path, table_name: str) -> int:
             sample_by_column[column].append(row.get(column, ""))
 
     with conn.cursor() as cursor:
-        cursor.execute(sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(sql.Identifier(table_name)))
+        cursor.execute(sql_module.SQL("DROP TABLE IF EXISTS {} CASCADE").format(sql_module.Identifier(table_name)))
         definitions = [
-            sql.SQL("{} {}")
-            .format(sql.Identifier(column), sql.SQL(_infer_sql_type(column, sample_by_column[column])))
+            sql_module.SQL("{} {}")
+            .format(sql_module.Identifier(column), sql_module.SQL(_infer_sql_type(column, sample_by_column[column])))
             for column in columns
         ]
         cursor.execute(
-            sql.SQL("CREATE TABLE {} ({})").format(
-                sql.Identifier(table_name),
-                sql.SQL(", ").join(definitions),
+            sql_module.SQL("CREATE TABLE {} ({})").format(
+                sql_module.Identifier(table_name),
+                sql_module.SQL(", ").join(definitions),
             )
         )
         with csv_path.open("r", encoding="utf-8") as copy_handle:
-            copy_sql = sql.SQL("COPY {} ({}) FROM STDIN WITH CSV HEADER").format(
-                sql.Identifier(table_name),
-                sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+            copy_sql = sql_module.SQL("COPY {} ({}) FROM STDIN WITH CSV HEADER").format(
+                sql_module.Identifier(table_name),
+                sql_module.SQL(", ").join(sql_module.Identifier(column) for column in columns),
             )
             cursor.copy_expert(copy_sql.as_string(conn), copy_handle)
     conn.commit()
     return len(rows)
 
 
-def _load_unified_registry(conn, csv_path: Path, table_name: str) -> int:
+def _load_unified_registry(conn, csv_path: Path, table_name: str, sql_module, json_cls, execute_values_fn) -> int:
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
 
     with conn.cursor() as cursor:
-        cursor.execute(sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(sql.Identifier(table_name)))
+        cursor.execute(sql_module.SQL("DROP TABLE IF EXISTS {} CASCADE").format(sql_module.Identifier(table_name)))
         cursor.execute(
-            sql.SQL(
+            sql_module.SQL(
                 "CREATE TABLE {} ("
                 "id BIGSERIAL PRIMARY KEY, "
                 "cohort TEXT NOT NULL, "
                 "clinical_data JSONB NOT NULL, "
                 "loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
                 ")"
-            ).format(sql.Identifier(table_name))
+            ).format(sql_module.Identifier(table_name))
         )
         payload = [
             (
                 row.get("cohort", ""),
-                Json({key: value for key, value in row.items() if key != "cohort"}),
+                json_cls({key: value for key, value in row.items() if key != "cohort"}),
             )
             for row in rows
         ]
         if payload:
-            execute_values(
+            execute_values_fn(
                 cursor,
-                sql.SQL("INSERT INTO {} (cohort, clinical_data) VALUES %s").format(sql.Identifier(table_name)).as_string(conn),
+                sql_module.SQL("INSERT INTO {} (cohort, clinical_data) VALUES %s").format(sql_module.Identifier(table_name)).as_string(conn),
                 payload,
             )
     conn.commit()
     return len(rows)
 
 
-def _store_run_manifest(conn, manifest: dict) -> None:
+def _store_run_manifest(conn, manifest: dict, json_cls) -> None:
     with conn.cursor() as cursor:
         cursor.execute(
             """
@@ -186,7 +182,7 @@ def _store_run_manifest(conn, manifest: dict) -> None:
         )
         cursor.execute(
             "INSERT INTO registry_etl_runs (manifest) VALUES (%s)",
-            (Json(manifest),),
+            (json_cls(manifest),),
         )
     conn.commit()
 
@@ -209,42 +205,42 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         description="Mounted repository root containing scripts/, db/, and outputs/.",
         required=True,
         default_value="/opt/nifi/biolink_repo",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     SCHEMA_RELATIVE_PATH = PropertyDescriptor(
         name="Schema Relative Path",
         description="Path to master_schema.csv relative to the repository root.",
         required=True,
         default_value="outputs/master_schema.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     UNIFIED_RELATIVE_PATH = PropertyDescriptor(
         name="Unified Output Relative Path",
         description="Path to unified_registry.csv relative to the repository root.",
         required=True,
         default_value="outputs/unified_registry.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     OMOP_OUTPUT_DIR = PropertyDescriptor(
         name="OMOP Output Relative Directory",
         description="OMOP output directory relative to the repository root.",
         required=True,
         default_value="outputs/omop_cdm",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     REPORT_HTML_PATH = PropertyDescriptor(
         name="Quality Report Relative Path",
         description="HTML quality report path relative to the repository root.",
         required=True,
         default_value="outputs/data_quality_report.html",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     CHARACTERIZATION_PATH = PropertyDescriptor(
         name="Characterization Relative Path",
         description="Characterization CSV path relative to the repository root.",
         required=True,
         default_value="outputs/cohort_characterization.csv",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     LOAD_TO_POSTGRES = PropertyDescriptor(
         name="Load To PostgreSQL",
@@ -252,49 +248,49 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         required=False,
         default_value="true",
         allowable_values=["true", "false"],
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     DB_HOST = PropertyDescriptor(
         name="Database Host",
         description="PostgreSQL host.",
         required=True,
         default_value="postgres",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     DB_PORT = PropertyDescriptor(
         name="Database Port",
         description="PostgreSQL port.",
         required=True,
         default_value="5432",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     DB_NAME = PropertyDescriptor(
         name="Database Name",
         description="PostgreSQL database name.",
         required=True,
         default_value="biolink",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     DB_USER = PropertyDescriptor(
         name="Database User",
         description="PostgreSQL user.",
         required=True,
         default_value="biolink",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     DB_PASSWORD = PropertyDescriptor(
         name="Database Password",
         description="PostgreSQL password.",
         required=True,
         default_value="biolink_secret",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     UNIFIED_TABLE_NAME = PropertyDescriptor(
         name="Unified Registry Table",
         description="Table used to store the wide unified registry snapshot as JSONB per patient.",
         required=True,
         default_value="unified_registry",
-        expression_language_scope=ExpressionLanguageScope.VARIABLE_REGISTRY,
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     property_descriptors = [
         REPOSITORY_ROOT,
@@ -311,6 +307,11 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         DB_PASSWORD,
         UNIFIED_TABLE_NAME,
     ]
+
+    def __init__(self, **kwargs):
+        # NiFi passes runtime kwargs (including jvm) to the constructor.
+        # FlowFileTransform does not accept them, so initialize without forwarding.
+        super().__init__()
 
     def getPropertyDescriptors(self):
         return self.property_descriptors
@@ -417,6 +418,18 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         }
 
         if load_to_postgres:
+            try:
+                import psycopg2
+                from psycopg2 import sql as psy_sql
+                from psycopg2.extras import Json as psy_json, execute_values as psy_execute_values
+            except Exception as exc:
+                message = f"BiolinkRegistryPipelineProcessor: PostgreSQL driver import failed: {exc}"
+                return FlowFileTransformResult(
+                    relationship="failure",
+                    contents=json.dumps({"error": message}),
+                    attributes={"biolink.error": message[:2000]},
+                )
+
             conn = psycopg2.connect(
                 host=context.getProperty(self.DB_HOST).getValue(),
                 port=int(context.getProperty(self.DB_PORT).getValue() or "5432"),
@@ -425,7 +438,14 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                 password=context.getProperty(self.DB_PASSWORD).getValue(),
             )
             try:
-                summary["postgres_unified_rows"] = _load_unified_registry(conn, unified_path, unified_table)
+                summary["postgres_unified_rows"] = _load_unified_registry(
+                    conn,
+                    unified_path,
+                    unified_table,
+                    psy_sql,
+                    psy_json,
+                    psy_execute_values,
+                )
                 omop_tables = {
                     "person": omop_dir / "person.csv",
                     "measurement": omop_dir / "measurement.csv",
@@ -435,9 +455,14 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                 loaded_tables = {}
                 for table_name, csv_path in omop_tables.items():
                     if csv_path.is_file():
-                        loaded_tables[table_name] = _create_or_replace_csv_table(conn, csv_path, f"omop_{table_name}")
+                        loaded_tables[table_name] = _create_or_replace_csv_table(
+                            conn,
+                            csv_path,
+                            f"omop_{table_name}",
+                            psy_sql,
+                        )
                 summary["postgres_omop_tables"] = loaded_tables
-                _store_run_manifest(conn, summary)
+                _store_run_manifest(conn, summary, psy_json)
             finally:
                 conn.close()
 

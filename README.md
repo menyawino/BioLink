@@ -185,7 +185,7 @@ docker compose --profile optional up -d
 Frontend: http://localhost:3000
 Backend: http://localhost:3001
 Ollama: http://localhost:11434
-NiFi: http://localhost:8443/nifi
+NiFi: https://localhost:8443/nifi
 
 ### NiFi Ingestion (Local)
 

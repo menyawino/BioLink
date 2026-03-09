@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AppProvider, useApp } from "./context/AppContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Sidebar } from "./components/Sidebar";
 import { ChatInterface } from "./components/ChatInterface";
 import { PatientHeader } from "./components/PatientHeader";
@@ -18,6 +19,7 @@ import { DataDictionary } from "./components/DataDictionary";
 import { Settings } from "./components/Settings";
 import { UserProfile } from "./components/UserProfile";
 import { DataNotAvailable } from "./components/DataNotAvailable";
+import { LoginPage } from "./components/LoginPage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { usePatient, usePatientGenomics } from "./hooks/usePatients";
 import type { PatientDetail } from "./api/types";
@@ -370,10 +372,30 @@ export default function App() {
   };
 
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <AuthProvider>
+      <AppProvider>
+        <AuthGate />
+      </AppProvider>
+    </AuthProvider>
   );
+}
+
+function AuthGate() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return <AppContent />;
 }
 
 function AppContent() {
