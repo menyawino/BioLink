@@ -169,6 +169,161 @@ def _load_unified_registry(conn, csv_path: Path, table_name: str, sql_module, js
     return len(rows)
 
 
+def _insertable_columns(conn, table_name: str) -> list[str]:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            (table_name,),
+        )
+        return [(row[0], row[1]) for row in cursor.fetchall() if row[0] != "_ingest_id"]
+
+
+def _parse_dateish(text: str):
+    normalized = text.strip()
+    if not normalized:
+        return None
+
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(normalized, fmt).date()
+        except ValueError:
+            continue
+
+    iso_candidate = normalized.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(iso_candidate)
+        return parsed.date()
+    except ValueError:
+        return None
+
+
+def _parse_timestampish(text: str):
+    normalized = text.strip()
+    if not normalized:
+        return None
+
+    iso_candidate = normalized.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(iso_candidate)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y"):
+        try:
+            parsed = datetime.strptime(normalized, fmt)
+            return parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+    return None
+
+
+def _clean_cell(value: str | None, data_type: str):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text == "":
+        return None
+
+    lowered = text.lower()
+    if data_type == "boolean":
+        if lowered in {"true", "t", "1", "yes", "y", "on", "checked"}:
+            return True
+        if lowered in {"false", "f", "0", "no", "n", "off", "unchecked"}:
+            return False
+        return None
+
+    if data_type == "date":
+        return _parse_dateish(text)
+    if data_type.startswith("timestamp"):
+        return _parse_timestampish(text)
+    if data_type in {"smallint", "integer", "bigint"}:
+        try:
+            return int(text)
+        except ValueError:
+            return None
+    if data_type in {"real", "double precision", "numeric", "decimal"}:
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    return text
+
+
+def _load_dataset_participants(
+    conn,
+    csv_path: Path,
+    table_name: str,
+    cohort_name: str,
+    source_dataset: str,
+    sql_module,
+    json_cls,
+    execute_values_fn,
+) -> int:
+    columns = _insertable_columns(conn, table_name)
+    loaded_at = datetime.now(timezone.utc)
+    payload = []
+    key_column = next(
+        (column for column, _ in columns if column in {"participant_id", "dna_id", "record_id"}),
+        None,
+    )
+    deduped_rows = {}
+
+    with csv_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            if (row.get("cohort") or "").strip() != cohort_name:
+                continue
+
+            values = []
+            for column, data_type in columns:
+                if column == "_source_dataset":
+                    values.append(source_dataset)
+                elif column == "_ingested_at":
+                    values.append(loaded_at)
+                elif column == "_source_raw_json":
+                    values.append(json_cls(row))
+                else:
+                    values.append(_clean_cell(row.get(column), data_type))
+
+            if key_column:
+                key_index = next(i for i, (column, _) in enumerate(columns) if column == key_column)
+                key_value = values[key_index]
+                if key_value is not None:
+                    deduped_rows[key_value] = tuple(values)
+                    continue
+
+            payload.append(tuple(values))
+
+    if deduped_rows:
+        payload.extend(deduped_rows.values())
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            sql_module.SQL("TRUNCATE TABLE {} RESTART IDENTITY").format(
+                sql_module.Identifier(table_name)
+            )
+        )
+        if payload:
+            insert_sql = sql_module.SQL("INSERT INTO {} ({}) VALUES %s").format(
+                sql_module.Identifier(table_name),
+                sql_module.SQL(", ").join(
+                    sql_module.Identifier(column) for column, _ in columns
+                ),
+            ).as_string(conn)
+            execute_values_fn(cursor, insert_sql, payload, page_size=250)
+
+    conn.commit()
+    return len(payload)
+
+
 def _store_run_manifest(conn, manifest: dict, json_cls) -> None:
     with conn.cursor() as cursor:
         cursor.execute(
@@ -446,6 +601,28 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                     psy_json,
                     psy_execute_values,
                 )
+                summary["postgres_dataset_rows"] = {
+                    "bhs_participants": _load_dataset_participants(
+                        conn,
+                        unified_path,
+                        "bhs_participants",
+                        "D1",
+                        "bhs",
+                        psy_sql,
+                        psy_json,
+                        psy_execute_values,
+                    ),
+                    "ehvol_participants": _load_dataset_participants(
+                        conn,
+                        unified_path,
+                        "ehvol_participants",
+                        "D2",
+                        "ehvol",
+                        psy_sql,
+                        psy_json,
+                        psy_execute_values,
+                    ),
+                }
                 omop_tables = {
                     "person": omop_dir / "person.csv",
                     "measurement": omop_dir / "measurement.csv",

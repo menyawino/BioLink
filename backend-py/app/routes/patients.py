@@ -19,14 +19,14 @@ ALLOWED_SORT_COLUMNS = {
     "enrollment_date",
     "data_completeness",
 }
-ALLOWED_DATASETS = {"ehvol", "bhs"}
+ALLOWED_DATASETS = {"all", "ehvol", "bhs"}
 DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
 LEGACY_FALLBACK_VIEW = "ehvol"
 
 
 def _normalized_dataset(dataset: str | None) -> str:
-    value = (dataset or "ehvol").lower()
-    return value if value in ALLOWED_DATASETS else "ehvol"
+    value = (dataset or "all").lower()
+    return value if value in ALLOWED_DATASETS else "all"
 
 
 def _stable_unit_float(seed: str) -> float:
@@ -47,6 +47,13 @@ def _dataset_table(dataset: str | None) -> str:
     return DATASET_TABLES[_normalized_dataset(dataset)]
 
 
+def _dataset_tables(dataset: str | None) -> list[str]:
+    normalized = _normalized_dataset(dataset)
+    if normalized == "all":
+        return [DATASET_TABLES["ehvol"], DATASET_TABLES["bhs"]]
+    return [DATASET_TABLES[normalized]]
+
+
 def _table_has_rows(db, table_name: str) -> bool:
     row = db.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1")).fetchone()
     return row is not None
@@ -54,6 +61,26 @@ def _table_has_rows(db, table_name: str) -> bool:
 
 def _registry_source_table(db, dataset: str | None) -> str:
     normalized = _normalized_dataset(dataset)
+
+    if normalized == "all":
+        tables = _dataset_tables(normalized)
+        if any(_table_has_rows(db, table_name) for table_name in tables):
+            union_sql = " UNION ALL ".join(
+                f"SELECT * FROM {table_name}" for table_name in tables
+            )
+            return f"({union_sql}) registry"
+
+        if _table_has_rows(db, "patients"):
+            logger.warning(
+                "Falling back to legacy EHVOL view because participant tables are empty"
+            )
+            return LEGACY_FALLBACK_VIEW
+
+        union_sql = " UNION ALL ".join(
+            f"SELECT * FROM {table_name}" for table_name in tables
+        )
+        return f"({union_sql}) registry"
+
     source_table = _dataset_table(normalized)
 
     if _table_has_rows(db, source_table):
@@ -81,6 +108,15 @@ def _table_columns(db, table_name: str) -> set[str]:
     return {row[0] for row in rows}
 
 
+def _source_columns(db, dataset: str | None, source_table: str) -> set[str]:
+    if _normalized_dataset(dataset) == "all":
+        columns: set[str] = set()
+        for table_name in _dataset_tables(dataset):
+            columns.update(_table_columns(db, table_name))
+        return columns
+    return _table_columns(db, source_table)
+
+
 def _mri_sql_expr(columns: set[str]) -> tuple[str, str]:
     if "mri_ef" in columns:
         return "mri_ef", "(mri_ef IS NOT NULL)"
@@ -94,10 +130,24 @@ def _first_column(columns: set[str], *candidates: str) -> str | None:
     return None
 
 
+def _json_text_expr(*keys: str) -> str:
+    exprs = [f"NULLIF(BTRIM(clinical_data->>'{key}'), '')" for key in keys]
+    return f"COALESCE({', '.join(exprs)})" if exprs else "NULL::text"
+
+
+def _json_numeric_expr(keys: list[str], sql_type: str) -> str:
+    raw = _json_text_expr(*keys)
+    return (
+        f"CASE WHEN {raw} ~ '^-?[0-9]+(\\.[0-9]+)?$' "
+        f"THEN ({raw})::{sql_type} ELSE NULL::{sql_type} END"
+    )
+
+
 def _dataset_field_exprs(columns: set[str], dataset: str) -> dict[str, str]:
     normalized_dataset = _normalized_dataset(dataset).upper()
+    has_clinical_json = "clinical_data" in columns
 
-    id_col = _first_column(columns, "participant_id", "dna_id", "record_id")
+    id_col = _first_column(columns, "participant_id", "dna_id", "record_id", "id")
     if not id_col:
         raise HTTPException(
             status_code=500,
@@ -105,54 +155,95 @@ def _dataset_field_exprs(columns: set[str], dataset: str) -> dict[str, str]:
         )
 
     source_record_col = _first_column(columns, "source_record_id", "record_id")
+    if not source_record_col and has_clinical_json:
+        source_record_col = _json_text_expr("source_record_id", "record_id")
 
     dataset_col = _first_column(columns, "source_dataset", "_source_dataset")
     dataset_expr = dataset_col if dataset_col else f"'{normalized_dataset}'::text"
+    if not dataset_col and has_clinical_json:
+        dataset_expr = f"COALESCE({_json_text_expr('source_dataset', 'cohort')}, '{normalized_dataset}')"
 
     enrollment_col = _first_column(columns, "enrollment_date", "date_of_enrolment")
     enrollment_expr = enrollment_col if enrollment_col else "NULL::date"
+    if not enrollment_col and has_clinical_json:
+        enrollment_expr = (
+            f"CASE WHEN {_json_text_expr('enrollment_date', 'date_of_enrolment')} ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}' "
+            f"THEN ({_json_text_expr('enrollment_date', 'date_of_enrolment')})::date ELSE NULL::date END"
+        )
 
     city_col = _first_column(columns, "current_city", "current_city_of_residence")
     city_expr = city_col if city_col else "NULL::text"
+    if not city_col and has_clinical_json:
+        city_expr = _json_text_expr("current_city", "current_city_of_residence")
 
     echo_col = _first_column(columns, "echo_ef", "ef", "left_ventricular_ef")
     echo_expr = echo_col if echo_col else "NULL::double precision"
+    if not echo_col and has_clinical_json:
+        echo_expr = _json_numeric_expr(["echo_ef", "ef", "left_ventricular_ef"], "double precision")
+
+    age_expr = "age" if "age" in columns else "NULL::integer"
+    if "age" not in columns and has_clinical_json:
+        age_expr = _json_numeric_expr(["age", "current_age", "age_at_enrollment"], "integer")
+
+    gender_expr = "gender" if "gender" in columns else "NULL::text"
+    if "gender" not in columns and has_clinical_json:
+        gender_expr = _json_text_expr("gender")
+
+    nationality_expr = "nationality" if "nationality" in columns else "NULL::text"
+    if "nationality" not in columns and has_clinical_json:
+        nationality_expr = _json_text_expr("nationality")
+
+    heart_rate_expr = "heart_rate" if "heart_rate" in columns else "NULL::double precision"
+    if "heart_rate" not in columns and has_clinical_json:
+        heart_rate_expr = _json_numeric_expr(["heart_rate"], "double precision")
+
+    systolic_expr = (
+        "systolic_bp"
+        if "systolic_bp" in columns
+        else ("bp" if "bp" in columns else "NULL::double precision")
+    )
+    if "systolic_bp" not in columns and "bp" not in columns and has_clinical_json:
+        systolic_expr = _json_numeric_expr(["systolic_bp"], "double precision")
+
+    diastolic_expr = "diastolic_bp" if "diastolic_bp" in columns else "NULL::double precision"
+    if "diastolic_bp" not in columns and has_clinical_json:
+        diastolic_expr = _json_numeric_expr(["diastolic_bp"], "double precision")
+
+    bmi_expr = "bmi" if "bmi" in columns else "NULL::double precision"
+    if "bmi" not in columns and has_clinical_json:
+        bmi_expr = _json_numeric_expr(["bmi"], "double precision")
+
+    hba1c_expr = "hba1c" if "hba1c" in columns else "NULL::double precision"
+    if "hba1c" not in columns and has_clinical_json:
+        hba1c_expr = _json_numeric_expr(["hba1c"], "double precision")
+
+    troponin_expr = "troponin_i" if "troponin_i" in columns else "NULL::double precision"
+    if "troponin_i" not in columns and has_clinical_json:
+        troponin_expr = _json_numeric_expr(["troponin_i"], "double precision")
+
+    current_city_category_expr = (
+        "current_city_category" if "current_city_category" in columns else "NULL::text"
+    )
+    if "current_city_category" not in columns and has_clinical_json:
+        current_city_category_expr = _json_text_expr("current_city_category")
 
     return {
         "id_col": id_col,
         "source_record_col": source_record_col or "",
         "dataset_expr": dataset_expr,
-        "age_expr": "age" if "age" in columns else "NULL::integer",
-        "gender_expr": "gender" if "gender" in columns else "NULL::text",
-        "nationality_expr": (
-            "nationality" if "nationality" in columns else "NULL::text"
-        ),
+        "age_expr": age_expr,
+        "gender_expr": gender_expr,
+        "nationality_expr": nationality_expr,
         "enrollment_expr": enrollment_expr,
         "city_expr": city_expr,
-        "heart_rate_expr": (
-            "heart_rate" if "heart_rate" in columns else "NULL::double precision"
-        ),
-        "systolic_expr": (
-            "systolic_bp"
-            if "systolic_bp" in columns
-            else ("bp" if "bp" in columns else "NULL::double precision")
-        ),
-        "diastolic_expr": (
-            "diastolic_bp" if "diastolic_bp" in columns else "NULL::double precision"
-        ),
-        "bmi_expr": "bmi" if "bmi" in columns else "NULL::double precision",
-        "hba1c_expr": "hba1c" if "hba1c" in columns else "NULL::double precision",
+        "heart_rate_expr": heart_rate_expr,
+        "systolic_expr": systolic_expr,
+        "diastolic_expr": diastolic_expr,
+        "bmi_expr": bmi_expr,
+        "hba1c_expr": hba1c_expr,
         "echo_expr": echo_expr,
-        "troponin_expr": (
-            "troponin_i"
-            if "troponin_i" in columns
-            else "NULL::double precision"
-        ),
-        "current_city_category_expr": (
-            "current_city_category"
-            if "current_city_category" in columns
-            else "NULL::text"
-        ),
+        "troponin_expr": troponin_expr,
+        "current_city_category_expr": current_city_category_expr,
     }
 
 
@@ -185,13 +276,13 @@ async def get_patients(
     hasSmoking: bool = Query(None, alias="hasSmoking"),
     hasObesity: bool = Query(None, alias="hasObesity"),
     hasFamilyHistory: bool = Query(None, alias="hasFamilyHistory"),
-    dataset: str = Query("ehvol"),
+    dataset: str = Query("all"),
     db=Depends(get_db),
 ):
     """Search and filter patients in the registry"""
     try:
         source_table = _registry_source_table(db, dataset)
-        columns = _table_columns(db, source_table)
+        columns = _source_columns(db, dataset, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
         expr = _dataset_field_exprs(columns, dataset)
 
@@ -431,13 +522,13 @@ async def get_patients(
 async def search_patients(
     query: str,
     limit: int = Query(20, ge=1, le=100),
-    dataset: str = Query("ehvol"),
+    dataset: str = Query("all"),
     db=Depends(get_db),
 ):
     """Search patients by DNA ID or nationality"""
     try:
         source_table = _registry_source_table(db, dataset)
-        columns = _table_columns(db, source_table)
+        columns = _source_columns(db, dataset, source_table)
         mri_value_expr, mri_present_expr = _mri_sql_expr(columns)
         expr = _dataset_field_exprs(columns, dataset)
 

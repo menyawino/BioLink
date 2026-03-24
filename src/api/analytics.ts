@@ -11,59 +11,59 @@ import type {
 } from './types';
 import type { DatasetFilter } from './patients';
 
-function withDataset(path: string, dataset: DatasetFilter = 'ehvol') {
+function withDataset(path: string, dataset: DatasetFilter = 'all') {
   const params = new URLSearchParams();
   params.set('dataset', dataset);
   return `${path}?${params.toString()}`;
 }
 
 // Get registry overview statistics
-export async function getRegistryOverview(dataset: DatasetFilter = 'ehvol') {
+export async function getRegistryOverview(dataset: DatasetFilter = 'all') {
   return get<RegistryOverview>(withDataset('/api/analytics/overview', dataset));
 }
 
 // Get demographics breakdown
-export async function getDemographics(dataset: DatasetFilter = 'ehvol') {
+export async function getDemographics(dataset: DatasetFilter = 'all') {
   return get<DemographicsData>(withDataset('/api/analytics/demographics', dataset));
 }
 
 // Get clinical metrics distribution
-export async function getClinicalMetrics(dataset: DatasetFilter = 'ehvol') {
+export async function getClinicalMetrics(dataset: DatasetFilter = 'all') {
   return get<ClinicalMetrics>(withDataset('/api/analytics/clinical', dataset));
 }
 
 // Get comorbidity analysis
-export async function getComorbidities(dataset: DatasetFilter = 'ehvol') {
+export async function getComorbidities(dataset: DatasetFilter = 'all') {
   return get<ComorbidityData>(withDataset('/api/analytics/comorbidities', dataset));
 }
 
 // Get lifestyle/smoking statistics
-export async function getLifestyleStats(dataset: DatasetFilter = 'ehvol') {
+export async function getLifestyleStats(dataset: DatasetFilter = 'all') {
   return get<LifestyleStats>(withDataset('/api/analytics/lifestyle', dataset));
 }
 
 // Get geographic distribution
-export async function getGeographicStats(dataset: DatasetFilter = 'ehvol') {
+export async function getGeographicStats(dataset: DatasetFilter = 'all') {
   return get<GeographicStats>(withDataset('/api/analytics/geographic', dataset));
 }
 
 // Get governorate-level geographic data
-export async function getGovernorateGeographicStats(dataset: DatasetFilter = 'ehvol') {
+export async function getGovernorateGeographicStats(dataset: DatasetFilter = 'all') {
   return get<MapData[]>(withDataset('/api/analytics/geographic-governorates', dataset));
 }
 
 // Get enrollment trends
-export async function getEnrollmentTrends(dataset: DatasetFilter = 'ehvol') {
+export async function getEnrollmentTrends(dataset: DatasetFilter = 'all') {
   return get<EnrollmentTrend[]>(withDataset('/api/analytics/enrollment-trends', dataset));
 }
 
 // Get data quality/completeness analysis
-export async function getDataQuality(dataset: DatasetFilter = 'ehvol') {
+export async function getDataQuality(dataset: DatasetFilter = 'all') {
   return get<DataQuality>(withDataset('/api/analytics/data-quality', dataset));
 }
 
 // Get imaging statistics
-export async function getImagingStats(dataset: DatasetFilter = 'ehvol') {
+export async function getImagingStats(dataset: DatasetFilter = 'all') {
   return get<{
     echo: {
       avg_ef: number;
@@ -82,7 +82,7 @@ export async function getImagingStats(dataset: DatasetFilter = 'ehvol') {
 }
 
 // Get ECG analysis
-export async function getEcgAnalysis(dataset: DatasetFilter = 'ehvol') {
+export async function getEcgAnalysis(dataset: DatasetFilter = 'all') {
   return get<{
     conclusions: Array<{ ecg_conclusion: string; count: number }>;
     abnormalities: {

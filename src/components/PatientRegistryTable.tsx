@@ -21,7 +21,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterGender, setFilterGender] = useState<string>("all");
-  const [dataset, setDataset] = useState<DatasetFilter>("ehvol");
+  const [dataset, setDataset] = useState<DatasetFilter>("all");
   const [page, setPage] = useState(1);
   const [sortField, setSortField] = useState<string>("dna_id");
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>("asc");
@@ -170,6 +170,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                 <SelectValue placeholder="Dataset" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">All Registries</SelectItem>
                 <SelectItem value="ehvol">EHVol</SelectItem>
                 <SelectItem value="bhs">BHS</SelectItem>
               </SelectContent>

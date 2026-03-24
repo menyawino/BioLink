@@ -24,6 +24,28 @@ def _table_has_rows(db, table_name: str) -> bool:
     return row is not None
 
 
+def _empty_overview_response() -> dict:
+    return {
+        "success": True,
+        "data": {
+            "totalPatients": 0,
+            "maleCount": 0,
+            "femaleCount": 0,
+            "averageAge": "0.0",
+            "dataCompleteness": "0.0",
+            "withMri": 0,
+            "withEcho": 0,
+            "withBothEchoMri": 0,
+            "withEcg": 0,
+        },
+    }
+
+
+def _dataset_table_empty(db, dataset: str | None) -> bool:
+    key = _dataset_key(dataset)
+    return key in DATASET_TABLES and not _table_has_rows(db, DATASET_TABLES[key])
+
+
 def _dataset_source(db, dataset: str | None) -> str:
     key = _dataset_key(dataset)
     if key == "all":
@@ -66,6 +88,9 @@ def _mri_column_exists(db, dataset: str | None) -> bool:
 @router.get("/overview")
 async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
     try:
+        if _dataset_table_empty(db, dataset):
+            return _empty_overview_response()
+
         source = _dataset_source(db, dataset)
 
         total = db.execute(text(f"SELECT COUNT(*) FROM {source}")).scalar() or 0
@@ -140,7 +165,17 @@ async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/demographics")
 async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        if _dataset_table_empty(db, dataset):
+            return {
+                "success": True,
+                "data": {
+                    "ageGender": [],
+                    "nationality": [],
+                    "maritalStatus": [],
+                },
+            }
+
+        source = _dataset_source(db, dataset)
 
         age_gender_results = db.execute(text(f"""
             SELECT
@@ -205,7 +240,7 @@ async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
 
 
 @router.get("/clinical")
-async def clinical_metrics(dataset: str = Query("ehvol"), db=Depends(get_db)):
+async def clinical_metrics(dataset: str = Query("all"), db=Depends(get_db)):
     try:
         return {
             "success": True,
@@ -224,7 +259,25 @@ async def clinical_metrics(dataset: str = Query("ehvol"), db=Depends(get_db)):
 @router.get("/comorbidities")
 async def comorbidities(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        if _dataset_table_empty(db, dataset):
+            return {
+                "success": True,
+                "data": {
+                    "conditions": {
+                        "hypertension": 0,
+                        "diabetes": 0,
+                        "dyslipidemia": 0,
+                        "cad": 0,
+                        "heart_failure": 0,
+                        "kidney_disease": 0,
+                        "liver_disease": 0,
+                        "anaemia": 0,
+                    },
+                    "comorbidityDistribution": [],
+                },
+            }
+
+        source = _dataset_source(db, dataset)
 
         row = db.execute(text(f"""
             SELECT
@@ -279,7 +332,20 @@ async def comorbidities(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/lifestyle")
 async def lifestyle(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        if _dataset_table_empty(db, dataset):
+            return {
+                "success": True,
+                "data": {
+                    "smoking": {
+                        "current_smokers": 0,
+                        "former_smokers": 0,
+                        "never_smoked": 0,
+                    },
+                    "smokingDuration": [],
+                },
+            }
+
+        source = _dataset_source(db, dataset)
         smoking_result = db.execute(text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE COALESCE(is_smoker, false)) AS current_smokers,
@@ -307,7 +373,17 @@ async def lifestyle(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/geographic")
 async def geographic(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        if _dataset_table_empty(db, dataset):
+            return {
+                "success": True,
+                "data": {
+                    "cityCategory": [],
+                    "migration": [],
+                    "cityDistribution": [],
+                },
+            }
+
+        source = _dataset_source(db, dataset)
 
         city_results = db.execute(text(f"""
             SELECT current_city, COUNT(*) as count
@@ -336,7 +412,10 @@ async def geographic(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/geographic-governorates")
 async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        if _dataset_table_empty(db, dataset):
+            return {"success": True, "data": []}
+
+        source = _dataset_source(db, dataset)
 
         results = db.execute(text(f"""
             SELECT current_city as governorate,
@@ -416,7 +495,10 @@ async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db
 @router.get("/enrollment-trends")
 async def enrollment_trends(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        if _dataset_table_empty(db, dataset):
+            return {"success": True, "data": []}
+
+        source = _dataset_source(db, dataset)
         rows = db.execute(text(f"""
             SELECT DATE_TRUNC('month', enrollment_date) as month, COUNT(*) as enrolled
             FROM {source}
@@ -448,7 +530,23 @@ async def enrollment_trends(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/data-quality")
 async def data_quality(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        if _dataset_table_empty(db, dataset):
+            return {
+                "success": True,
+                "data": {
+                    "byCategory": {
+                        "physical_exam": 0.0,
+                        "lab_results": 0.0,
+                        "echo": 0.0,
+                        "mri": 0.0,
+                        "ecg": 0.0,
+                        "overall": 0.0,
+                    },
+                    "distribution": [],
+                },
+            }
+
+        source = _dataset_source(db, dataset)
 
         completeness_result = db.execute(text(f"""
             SELECT
