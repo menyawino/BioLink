@@ -363,9 +363,13 @@ async def get_patients(
                 conditions.append("(FALSE = :has_family_history)")
             params["has_family_history"] = hasFamilyHistory
 
-        # Genomics availability (not yet in unified table)
+        # Genomics availability (check patient_genomic_variants table)
         if hasGenomics is not None:
-            conditions.append("(false = :has_genomics)")
+            genomics_expr = (
+                f"EXISTS (SELECT 1 FROM patient_genomic_variants v "
+                f"WHERE v.dna_id = CAST({expr['id_col']} AS TEXT))"
+            )
+            conditions.append(f"(({genomics_expr}) = :has_genomics)")
             params["has_genomics"] = hasGenomics
 
         if minDataCompleteness is not None:

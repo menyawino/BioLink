@@ -373,7 +373,9 @@ async def update_profile(
 
 
 @router.post("/change-password")
+@limiter.limit(RateLimits.AUTH)
 async def change_password(
+    request: Request,
     body: ChangePasswordRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),

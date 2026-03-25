@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS patient_note_extractions (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS patient_note_extractions_patient_id_idx ON patient_note_extractions(patient_id);
+
+-- Audit log: persistent record of security and data-access events
+CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    username TEXT,
+    request_id TEXT,
+    payload JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS audit_log_event_type_idx ON audit_log(event_type);
+CREATE INDEX IF NOT EXISTS audit_log_username_idx ON audit_log(username);
+CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log(created_at DESC);
 """
 
 

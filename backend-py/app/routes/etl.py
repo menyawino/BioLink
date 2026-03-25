@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 import logging
 from datetime import UTC, datetime
@@ -8,6 +8,7 @@ from typing import Any, Optional
 from pathlib import Path
 import os
 from app.services.etl_service import trigger_etl_pipeline, ETLParams
+from app.routes.auth import get_current_active_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -141,11 +142,16 @@ def _run_wrapper(job_id: str, req: ETLRequest):
 
 
 @router.post("/webhook/trigger")
-async def webhook_trigger(payload: WebhookPayload, background_tasks: BackgroundTasks):
+async def webhook_trigger(
+    payload: WebhookPayload,
+    background_tasks: BackgroundTasks,
+    _user=Depends(get_current_active_user),
+):
     """Receive a generic webhook from external systems and enqueue an ETL run.
 
-    The payload may include an external `runId` (for lineage tracking)
-    and an optional `request` object compatible with `ETLRequest` shape.
+    Requires authentication. The payload may include an external `runId`
+    (for lineage tracking) and an optional `request` object compatible
+    with `ETLRequest` shape.
     """
     # Build an ETLRequest from provided payload.request or use defaults
     req_data = payload.request or {}

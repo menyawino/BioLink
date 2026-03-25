@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from app.database import get_db
+import csv
+import io
 import logging
 
 router = APIRouter()
@@ -205,4 +208,82 @@ async def comparability_report(db=Depends(get_db)):
         return {"success": True, "data": row[0]}
     except Exception as e:
         logger.error(f"Comparability report query failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/dictionary")
+async def data_dictionary(db=Depends(get_db)):
+    """Return a data dictionary built from the _schema_registry and harmonization_tiers tables."""
+    try:
+        if not _table_exists(db, "_schema_registry"):
+            return {"success": True, "data": []}
+
+        rows = db.execute(text(
+            "SELECT sr.master_col, sr.data_type, sr.bhs_col, sr.ehvol_col, "
+            "       ht.tier, ht.unit, ht.loinc, ht.snomed, ht.phenotype_definition, "
+            "       ht.allowable_range "
+            "FROM _schema_registry sr "
+            "LEFT JOIN harmonization_tiers ht ON ht.master_col = sr.master_col "
+            "ORDER BY COALESCE(ht.tier, 99), sr.master_col"
+        )).fetchall()
+
+        data = [
+            {
+                "master_col": r[0],
+                "data_type": r[1],
+                "bhs_source": r[2] or "",
+                "ehvol_source": r[3] or "",
+                "tier": r[4] or "",
+                "unit": r[5] or "",
+                "loinc": r[6] or "",
+                "snomed": r[7] or "",
+                "phenotype_definition": r[8] or "",
+                "allowable_range": r[9] or "",
+            }
+            for r in rows
+        ]
+
+        return {"success": True, "data": data, "total": len(data)}
+    except Exception as e:
+        logger.error(f"Data dictionary query failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/export")
+async def export_harmonization(
+    format: str = Query("csv", description="Export format: csv"),
+    db=Depends(get_db),
+):
+    """Export harmonization tiers as a downloadable CSV."""
+    try:
+        if not _table_exists(db, "harmonization_tiers"):
+            return {"success": False, "error": "harmonization_tiers table not found"}
+
+        rows = db.execute(text(
+            "SELECT master_col, tier, data_type, unit, transform, "
+            "       loinc, snomed, phenotype_definition, timing_window, "
+            "       allowable_range, fill_rate "
+            "FROM harmonization_tiers ORDER BY tier, master_col"
+        )).fetchall()
+
+        columns = [
+            "master_col", "tier", "data_type", "unit", "transform",
+            "loinc", "snomed", "phenotype_definition", "timing_window",
+            "allowable_range", "fill_rate",
+        ]
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(columns)
+        for r in rows:
+            writer.writerow(list(r))
+
+        buf.seek(0)
+        return StreamingResponse(
+            iter([buf.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=harmonization_tiers.csv"},
+        )
+    except Exception as e:
+        logger.error(f"Harmonization export failed: {e}")
         return {"success": False, "error": str(e)}

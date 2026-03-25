@@ -397,7 +397,11 @@ async def generate_chart(config: dict, db=Depends(get_db)):
         chart_type = config.get("type", "bar")
         x_field = config.get("xField", "age")
         y_field = config.get("yField")
-        _group_by = config.get("groupBy")
+
+        # Validate all user-supplied field names against the allowlist
+        _validate_field(x_field)
+        if y_field:
+            _validate_field(y_field)
 
         if chart_type == "scatter" and y_field:
             stmt = text(f"""
@@ -427,6 +431,8 @@ async def generate_chart(config: dict, db=Depends(get_db)):
         result = db.execute(stmt).mappings().fetchall()
 
         return {"success": True, "data": [dict(row) for row in result]}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating chart: {e}")
         return {"success": False, "error": str(e)}

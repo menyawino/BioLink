@@ -1077,11 +1077,41 @@ def generate_master_schema(
         }
         master_rows.append(row)
 
-    for col in all_cols_a or []:
-        if col and col not in used_a:
+    # Passthrough columns: first handle exact-name matches between the two
+    # unmatched pools as paired rows, then add remaining single-sided passthroughs.
+    leftover_a = [col for col in (all_cols_a or []) if col and col not in used_a]
+    leftover_b = [col for col in (all_cols_b or []) if col and col not in used_b]
+    leftover_b_set = set(leftover_b)
+
+    for col in leftover_a:
+        if col in leftover_b_set:
+            # Same column name exists unmatched in both datasets — pair them.
+            base = col.lower().strip()
+            master_col = base
+            suffix = 2
+            while master_col in seen_master:
+                master_col = f"{base}_{suffix}"
+                suffix += 1
+            seen_master.add(master_col)
+
+            category = _col_category(col)
+            pii = is_pii_column(col)
+            master_rows.append({
+                "master_col":        master_col,
+                "source_a_cols":     col,
+                "source_b_cols":     col,
+                "category":          category,
+                "omop_domain":       map_to_omop_domain(category, master_col),
+                "standard_vocab":    infer_standard_vocab(master_col, [col]),
+                "final_score":       1.0,   # exact name match — perfect confidence
+                "coalesce_strategy": get_default_strategy(category),
+                "pii_flag":          pii,
+            })
+            used_b.add(col)   # mark so the B pass below skips it
+        else:
             _append_passthrough(col, "a")
 
-    for col in all_cols_b or []:
+    for col in leftover_b:
         if col and col not in used_b:
             _append_passthrough(col, "b")
 

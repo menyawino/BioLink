@@ -526,10 +526,21 @@ async def data_quality(dataset: str = Query("all"), db=Depends(get_db)):
         else:
             distribution_results = []
 
+        # Per-variable completeness
+        per_variable = []
+        total_row = db.execute(text(f"SELECT COUNT(*) FROM {source}")).scalar() or 0
+        for col in all_cols:
+            non_null = db.execute(
+                text(f"SELECT COUNT(*) FROM {source} WHERE {col} IS NOT NULL")
+            ).scalar() or 0
+            pct = round(non_null / total_row * 100, 1) if total_row > 0 else 0.0
+            per_variable.append({"variable": col, "filled": non_null, "total": total_row, "percent": pct})
+
         return {
             "success": True,
             "data": {
                 "byCategory": cat,
+                "perVariable": per_variable,
                 "distribution": [
                     {"range": r[0], "count": r[1]} for r in distribution_results
                 ],

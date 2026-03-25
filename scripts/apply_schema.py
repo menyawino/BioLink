@@ -53,6 +53,15 @@ try:
 except ImportError:
     sys.exit("pandas and numpy are required: pip install pandas numpy")
 
+try:
+    import matplotlib
+    matplotlib.use("Agg")  # non-interactive backend, safe in scripts
+    import matplotlib.pyplot as plt
+    from matplotlib_venn import venn2
+    _VENN_AVAILABLE = True
+except ImportError:
+    _VENN_AVAILABLE = False
+
 # Import variable rules and transforms (same directory)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from variable_rules import VARIABLE_RULES, VariableRule, get_rule
@@ -336,6 +345,110 @@ def process_dataset(
 
 
 # ---------------------------------------------------------------------------
+# Venn chart
+# ---------------------------------------------------------------------------
+
+def _generate_venn_chart(
+    schema: pd.DataFrame,
+    out_path: Path,
+    labels: tuple[str, str] = ("Dataset A", "Dataset B"),
+) -> None:
+    """
+    Generate a Venn diagram showing aligned vs. exclusive columns.
+
+    The master schema encodes alignment as:
+      - source_a_cols non-empty, source_b_cols empty  → A only
+      - source_a_cols empty, source_b_cols non-empty  → B only
+      - both non-empty                                → shared / aligned
+
+    PII-flagged columns are excluded from the count so the chart
+    reflects clinical columns only.
+    """
+    if not _VENN_AVAILABLE:
+        print(
+            "\n  [Venn] Skipped — matplotlib-venn not installed. "
+            "Run: pip install matplotlib-venn"
+        )
+        return
+
+    non_pii = schema[~schema["pii_flag"].astype(bool)]
+
+    # fillna("") handles both numpy NaN and pandas NA (StringDtype) correctly.
+    # Do NOT use .astype(str).replace("nan","") — pd.NA stringifies to "nan" but
+    # Series.replace() does not match it, leaving pd.NA != "" → True for all rows.
+    has_a = non_pii["source_a_cols"].fillna("").str.strip() != ""
+    has_b = non_pii["source_b_cols"].fillna("").str.strip() != ""
+
+    only_a  = int((has_a & ~has_b).sum())
+    only_b  = int((~has_a & has_b).sum())
+    shared  = int((has_a & has_b).sum())
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    v = venn2(
+        subsets=(only_a, only_b, shared),
+        set_labels=labels,
+        ax=ax,
+    )
+
+    # Style the patch colours
+    if v.get_patch_by_id("10"):
+        v.get_patch_by_id("10").set_color("#4C72B0")
+        v.get_patch_by_id("10").set_alpha(0.6)
+    if v.get_patch_by_id("01"):
+        v.get_patch_by_id("01").set_color("#DD8452")
+        v.get_patch_by_id("01").set_alpha(0.6)
+    if v.get_patch_by_id("11"):
+        v.get_patch_by_id("11").set_color("#55A868")
+        v.get_patch_by_id("11").set_alpha(0.8)
+
+    # Bold the count labels
+    for subset_id in ("10", "01", "11"):
+        lbl = v.get_label_by_id(subset_id)
+        if lbl:
+            lbl.set_fontsize(14)
+            lbl.set_fontweight("bold")
+
+    # Fix set label positions: when circles fully overlap the two labels
+    # land on top of each other.  Spread them to top-left / top-right.
+    lbl_a = v.get_label_by_id("A")
+    lbl_b = v.get_label_by_id("B")
+    if lbl_a and lbl_b:
+        ax_xlim = ax.get_xlim()
+        ax_ylim = ax.get_ylim()
+        cx = (ax_xlim[0] + ax_xlim[1]) / 2
+        cy = (ax_ylim[0] + ax_ylim[1]) / 2
+        span_x = (ax_xlim[1] - ax_xlim[0]) * 0.28
+        span_y = (ax_ylim[1] - ax_ylim[0]) * 0.38
+        lbl_a.set_position((cx - span_x, cy + span_y))
+        lbl_b.set_position((cx + span_x, cy + span_y))
+        lbl_a.set_fontsize(11)
+        lbl_b.set_fontsize(11)
+
+    ax.set_title(
+        f"Aligned columns between {labels[0]} and {labels[1]}\n"
+        f"(clinical columns only — PII excluded)",
+        fontsize=12,
+        pad=14,
+    )
+
+    total = only_a + only_b + shared
+    pct = f"{shared / total:.0%}" if total else "N/A"
+    fig.text(
+        0.5, 0.02,
+        f"Total clinical columns: {total}  |  "
+        f"Shared / aligned: {shared} ({pct})  |  "
+        f"{labels[0]} only: {only_a}  |  {labels[1]} only: {only_b}",
+        ha="center", fontsize=9, color="#444",
+    )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"\n  [Venn] Chart saved → {out_path}")
+    print(f"         {labels[0]} only: {only_a}  |  {labels[1]} only: {only_b}  |  shared: {shared}")
+
+
+# ---------------------------------------------------------------------------
 # PII audit
 # ---------------------------------------------------------------------------
 
@@ -389,11 +502,34 @@ Examples:
         default="outputs/harmonization_tiers.csv",
         help="Output path for harmonization tier classification (default: outputs/harmonization_tiers.csv)",
     )
+    parser.add_argument(
+        "--venn-output",
+        default="outputs/column_alignment_venn.png",
+        help="Output path for the Venn diagram PNG (default: outputs/column_alignment_venn.png)",
+    )
+    parser.add_argument(
+        "--venn-labels",
+        nargs=2,
+        default=None,
+        metavar=("LABEL_A", "LABEL_B"),
+        help="Labels for the two datasets in the Venn diagram (default: derived from file names)",
+    )
     args = parser.parse_args()
 
     schema_path = Path(args.schema)
     if not schema_path.exists():
         sys.exit(f"Schema not found: {schema_path}\nRun two_stage_match.py first.")
+
+    # Derive dataset labels from file names (used in Venn chart)
+    if args.venn_labels:
+        venn_labels = tuple(args.venn_labels[:2])
+    elif len(args.datasets) >= 2:
+        venn_labels = (
+            Path(args.datasets[0]).stem,
+            Path(args.datasets[1]).stem,
+        )
+    else:
+        venn_labels = ("Dataset A", "Dataset B")
 
     print("Loading master schema …")
     schema = pd.read_csv(schema_path)
@@ -495,6 +631,13 @@ Examples:
     print(f"\nHarmonization tiers → {tiers_path}")
     for tier_name, cnt in tier_counts.items():
         print(f"  {tier_name}: {cnt} columns")
+
+    # ---- Venn chart ----
+    _generate_venn_chart(
+        schema,
+        out_path=Path(args.venn_output),
+        labels=venn_labels,
+    )
 
     # ---- Summary ----
     n_rows = len(unified)

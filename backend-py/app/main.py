@@ -9,6 +9,7 @@ from app.database import engine
 from app.db_bootstrap import ensure_schema
 from app.routes import (
     chat,
+    cohort,
     patients,
     analytics,
     charts,
@@ -300,6 +301,12 @@ app.include_router(
     harmonization.router,
     prefix="/api/harmonization",
     tags=["harmonization"],
+    dependencies=[Depends(auth.require_scopes("read"))],
+)
+app.include_router(
+    cohort.router,
+    prefix="/api/cohort",
+    tags=["cohort"],
     dependencies=[Depends(auth.require_scopes("read"))],
 )
 
