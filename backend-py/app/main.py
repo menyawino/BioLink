@@ -1,5 +1,6 @@
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from contextlib import asynccontextmanager
 from app.config import settings
@@ -19,6 +20,7 @@ from app.routes import (
     harmonization,
 )
 from app.core import limiter, setup_rate_limiting, RateLimits
+from app.core.middleware import RequestIdMiddleware, request_id_var
 import logging
 from datetime import datetime
 
@@ -94,6 +96,9 @@ app = FastAPI(
 # Setup rate limiting
 setup_rate_limiting(app)
 
+# Request ID + timing middleware (outermost — runs first on every request)
+app.add_middleware(RequestIdMiddleware)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -105,7 +110,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Length"],
+    expose_headers=["Content-Length", "X-Request-ID", "X-Response-Time-Ms"],
     max_age=86400,
 )
 
@@ -116,32 +121,97 @@ async def root():
     return {
         "status": "ok",
         "name": "BioLink API",
-        "version": "1.1.0",
+        "version": "1.2.0",
     }
 
 
 @app.get("/health")
 @limiter.limit(RateLimits.READ_ONLY)
 async def health(request: Request):
-    """Enhanced health check with dependency status."""
-    db_connected = test_connection()
+    """Health check with dependency status."""
+    import time
 
-    # Check additional services
+    db_ok = test_connection()
+
+    redis_ok = False
+    try:
+        from app.core.cache import get_redis_client
+        rc = get_redis_client()
+        if rc:
+            rc.ping()
+            redis_ok = True
+    except Exception:
+        pass
+
     services = {
-        "database": "connected" if db_connected else "disconnected",
+        "database": "connected" if db_ok else "disconnected",
+        "redis": "connected" if redis_ok else "disconnected",
         "api": "healthy",
     }
 
-    # Overall status
-    all_healthy = all(s == "connected" or s == "healthy" for s in services.values())
+    all_healthy = db_ok and redis_ok
 
     return {
         "status": "healthy" if all_healthy else "degraded",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "environment": settings.environment,
         "services": services,
         "timestamp": datetime.now().isoformat(),
     }
+
+
+def _check_db() -> dict:
+    """Probe PostgreSQL and return status + latency."""
+    import time
+    info: dict = {"status": "unknown", "latency_ms": None}
+    try:
+        start = time.perf_counter()
+        ok = test_connection()
+        info["latency_ms"] = round((time.perf_counter() - start) * 1000, 2)
+        info["status"] = "connected" if ok else "disconnected"
+    except Exception as exc:
+        info["status"] = "error"
+        info["error"] = str(exc)
+    return info
+
+
+def _check_redis() -> dict:
+    """Probe Redis and return status + latency."""
+    import time
+    info: dict = {"status": "unknown", "latency_ms": None}
+    try:
+        from app.core.cache import get_redis_client
+        start = time.perf_counter()
+        rc = get_redis_client()
+        if rc:
+            rc.ping()
+            info["latency_ms"] = round((time.perf_counter() - start) * 1000, 2)
+            info["status"] = "connected"
+        else:
+            info["status"] = "disconnected"
+    except Exception as exc:
+        info["status"] = "error"
+        info["error"] = str(exc)
+    return info
+
+
+def _check_pgvector() -> dict:
+    """Probe pgvector database and return status + latency."""
+    import time
+    from sqlalchemy import create_engine as _ce, text as _t
+    info: dict = {"status": "unknown", "latency_ms": None}
+    try:
+        start = time.perf_counter()
+        _eng = _ce(settings.rag_pg_url, pool_pre_ping=True)
+        with _eng.connect() as conn:
+            conn.execute(_t("SELECT 1"))
+        info["latency_ms"] = round((time.perf_counter() - start) * 1000, 2)
+        info["status"] = "connected"
+        _eng.dispose()
+    except Exception as exc:
+        info["status"] = "unavailable"
+        info["error"] = str(exc)
+    return info
 
 
 @app.get("/api/health/detailed")
@@ -150,27 +220,27 @@ async def health_detailed(request: Request):
     """Detailed health check with all dependencies."""
 
     checks = {
-        "database": {"status": "unknown", "latency_ms": None},
-        "api": {"status": "healthy", "version": "1.1.0"},
+        "database": _check_db(),
+        "redis": _check_redis(),
+        "pgvector": _check_pgvector(),
+        "api": {"status": "healthy", "version": "1.2.0"},
     }
 
-    # Database check with timing
-    try:
-        import time
+    critical_ok = checks["database"]["status"] == "connected"
+    all_ok = all(
+        v.get("status") in ("connected", "healthy")
+        for v in checks.values()
+    )
 
-        start = time.time()
-        db_connected = test_connection()
-        latency = (time.time() - start) * 1000
-        checks["database"]["status"] = "connected" if db_connected else "disconnected"
-        checks["database"]["latency_ms"] = round(latency, 2)
-    except Exception as e:
-        checks["database"]["status"] = "error"
-        checks["database"]["error"] = str(e)
-
-    all_healthy = checks["database"]["status"] == "connected"
+    if not critical_ok:
+        status = "unhealthy"
+    elif not all_ok:
+        status = "degraded"
+    else:
+        status = "healthy"
 
     return {
-        "status": "healthy" if all_healthy else "degraded",
+        "status": status,
         "checks": checks,
         "timestamp": datetime.now().isoformat(),
     }
@@ -236,13 +306,17 @@ app.include_router(
 
 # Error handlers
 @app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    logger.error(f"Unhandled error: {exc}")
-    return {
+async def general_exception_handler(request: Request, exc):
+    rid = getattr(request.state, "request_id", None) or request_id_var.get("")
+    logger.error("Unhandled error rid=%s: %s", rid, exc, exc_info=True)
+    body = {
         "success": False,
         "error": "Internal server error",
-        "message": str(exc) if settings.environment == "development" else None,
+        "request_id": rid or None,
     }
+    if settings.environment == "development":
+        body["detail"] = str(exc)
+    return JSONResponse(status_code=500, content=body)
 
 
 if __name__ == "__main__":

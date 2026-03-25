@@ -10,6 +10,10 @@ services:
       - max_wal_senders=10
       - -c
       - max_replication_slots=10
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
     environment:
       POSTGRES_USER: biolink
       POSTGRES_PASSWORD: biolink_secret
@@ -23,6 +27,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
 
   pgvector:
     image: pgvector/pgvector:pg16
@@ -53,7 +62,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
@@ -136,6 +150,9 @@ services:
       RAG_PG_URL: postgresql://biolink:biolink_secret@pgvector:5432/biolink_vector
       OLLAMA_BASE_URL: http://ollama:11434
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-a-long-random-string}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    # Dev: hot‑reload via bind mount + command override
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3001", "--reload"]
     volumes:
       - ./db:/app/db
       - etl_uploads:/shared/etl_uploads
@@ -146,6 +163,11 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
 
   frontend:
     build:

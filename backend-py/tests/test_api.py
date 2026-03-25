@@ -18,6 +18,22 @@ class TestHealthEndpoints:
         assert "name" in data
         assert "version" in data
 
+    def test_request_id_generated(self, client: TestClient):
+        """Test that X-Request-ID is generated for every response."""
+        response = client.get("/")
+        assert "x-request-id" in response.headers
+        assert len(response.headers["x-request-id"]) > 0
+
+    def test_request_id_echoed(self, client: TestClient):
+        """Test that a provided X-Request-ID is echoed back."""
+        response = client.get("/", headers={"X-Request-ID": "test-rid-123"})
+        assert response.headers["x-request-id"] == "test-rid-123"
+
+    def test_response_time_header(self, client: TestClient):
+        """Test that X-Response-Time-Ms header is present."""
+        response = client.get("/")
+        assert "x-response-time-ms" in response.headers
+
     def test_health_endpoint(self, client: TestClient):
         """Test basic health check."""
         response = client.get("/health")
@@ -25,6 +41,8 @@ class TestHealthEndpoints:
         data = response.json()
         assert "status" in data
         assert "services" in data
+        assert "database" in data["services"]
+        assert "redis" in data["services"]
         assert "timestamp" in data
 
     def test_detailed_health_endpoint(self, client: TestClient):
@@ -35,6 +53,8 @@ class TestHealthEndpoints:
         assert "status" in data
         assert "checks" in data
         assert "database" in data["checks"]
+        assert "redis" in data["checks"]
+        assert "pgvector" in data["checks"]
 
 
 class TestAuthEndpoints:

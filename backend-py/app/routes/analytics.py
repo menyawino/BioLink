@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from app.database import get_db
 import logging
@@ -8,152 +8,104 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_DATASETS = {"all", "ehvol", "bhs"}
 DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
-COMPLETENESS_EXPR = "((CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) + (CASE WHEN hba1c IS NOT NULL THEN 20 ELSE 0 END))"
-LEGACY_FALLBACK_SOURCE = "ehvol registry"
 
 
-def _dataset_key(dataset: str | None) -> str:
+def _validate_dataset(dataset: str) -> str:
+    """Validate and normalize the dataset query parameter."""
     normalized = (dataset or "all").lower()
     if normalized not in ALLOWED_DATASETS:
-        normalized = "all"
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid dataset '{dataset}'. Must be one of: {', '.join(sorted(ALLOWED_DATASETS))}",
+        )
     return normalized
 
 
-def _table_has_rows(db, table_name: str) -> bool:
-    row = db.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1")).fetchone()
-    return row is not None
+def _dataset_source(dataset: str | None) -> str:
+    """Return the SQL source expression for the given dataset.
 
-
-def _empty_overview_response() -> dict:
-    return {
-        "success": True,
-        "data": {
-            "totalPatients": 0,
-            "maleCount": 0,
-            "femaleCount": 0,
-            "averageAge": "0.0",
-            "dataCompleteness": "0.0",
-            "withMri": 0,
-            "withEcho": 0,
-            "withBothEchoMri": 0,
-            "withEcg": 0,
-        },
-    }
-
-
-def _dataset_table_empty(db, dataset: str | None) -> bool:
-    key = _dataset_key(dataset)
-    return key in DATASET_TABLES and not _table_has_rows(db, DATASET_TABLES[key])
-
-
-def _dataset_source(db, dataset: str | None) -> str:
-    key = _dataset_key(dataset)
+    Always queries the canonical participant tables (created by db_bootstrap).
+    No fallback logic — if the tables are empty, endpoints return empty results.
+    """
+    key = _validate_dataset(dataset)
     if key == "all":
-        if _table_has_rows(db, DATASET_TABLES["ehvol"]) or _table_has_rows(db, DATASET_TABLES["bhs"]):
-            return "(SELECT * FROM ehvol_participants UNION ALL SELECT * FROM bhs_participants) registry"
-        if _table_has_rows(db, "patients"):
-            logger.warning(
-                "Falling back to legacy EHVOL view for analytics because participant tables are empty"
-            )
-            return LEGACY_FALLBACK_SOURCE
-        return "(SELECT * FROM ehvol_participants UNION ALL SELECT * FROM bhs_participants) registry"
-
-    source = f"{DATASET_TABLES[key]} registry"
-    if key == "ehvol" and not _table_has_rows(db, DATASET_TABLES[key]) and _table_has_rows(db, "patients"):
-        logger.warning(
-            "Falling back to legacy EHVOL view for analytics because ehvol_participants is empty"
-        )
-        return LEGACY_FALLBACK_SOURCE
-    return source
+        return "(SELECT *, 'ehvol' AS _source FROM ehvol_participants UNION ALL SELECT *, 'bhs' AS _source FROM bhs_participants) AS registry"
+    return f"{DATASET_TABLES[key]} AS registry"
 
 
-def _mri_column_exists(db, dataset: str | None) -> bool:
-    key = _dataset_key(dataset)
-    table_names = [DATASET_TABLES[key]] if key in DATASET_TABLES else list(DATASET_TABLES.values())
+def _safe_column(db, table_names: list[str], column: str) -> bool:
+    """Check whether *column* exists in at least one of the given tables."""
     rows = db.execute(
         text(
-            """
-            SELECT table_name
-            FROM information_schema.columns
-            WHERE table_schema='public'
-              AND column_name='mri_ef'
-              AND table_name = ANY(:table_names)
-            """
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' "
+            "  AND column_name = :col "
+            "  AND table_name = ANY(:tables) "
+            "LIMIT 1"
         ),
-        {"table_names": table_names},
-    ).fetchall()
-    return len(rows) > 0
+        {"col": column, "tables": table_names},
+    ).fetchone()
+    return rows is not None
 
 
 @router.get("/overview")
 async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return _empty_overview_response()
+        source = _dataset_source(dataset)
+        tables = list(DATASET_TABLES.values())
 
-        source = _dataset_source(db, dataset)
+        result = db.execute(text(f"""
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE LOWER(gender) IN ('male', 'm')) AS male,
+                COUNT(*) FILTER (WHERE LOWER(gender) IN ('female', 'f')) AS female,
+                AVG(age) FILTER (WHERE age IS NOT NULL) AS avg_age,
+                COUNT(*) FILTER (WHERE echo_ef IS NOT NULL) AS with_echo
+            FROM {source}
+        """)).fetchone()
 
-        total = db.execute(text(f"SELECT COUNT(*) FROM {source}")).scalar() or 0
-        male = (
-            db.execute(
-                text(
-                    f"SELECT COUNT(*) FROM {source} WHERE LOWER(gender) IN ('male','m')"
-                )
-            ).scalar()
-            or 0
-        )
-        female = (
-            db.execute(
-                text(
-                    f"SELECT COUNT(*) FROM {source} WHERE LOWER(gender) IN ('female','f')"
-                )
-            ).scalar()
-            or 0
-        )
-        avg_age = db.execute(
-            text(f"SELECT AVG(age) FROM {source} WHERE age IS NOT NULL")
-        ).scalar()
-        with_echo = (
-            db.execute(
-                text(f"SELECT COUNT(*) FROM {source} WHERE echo_ef IS NOT NULL")
-            ).scalar()
-            or 0
-        )
-        mri_col_exists = _mri_column_exists(db, dataset)
-        if mri_col_exists:
-            with_mri = (
-                db.execute(
-                    text(f"SELECT COUNT(*) FROM {source} WHERE mri_ef IS NOT NULL")
-                ).scalar()
-                or 0
+        total = result[0] or 0
+        with_mri = 0
+        with_both = 0
+        if _safe_column(db, tables, "mri_ef"):
+            mri_row = db.execute(text(f"""
+                SELECT
+                    COUNT(*) FILTER (WHERE mri_ef IS NOT NULL),
+                    COUNT(*) FILTER (WHERE echo_ef IS NOT NULL AND mri_ef IS NOT NULL)
+                FROM {source}
+            """)).fetchone()
+            with_mri = mri_row[0] or 0
+            with_both = mri_row[1] or 0
+
+        # Per-column completeness: count non-null columns per row, average across rows
+        completeness_cols = [
+            c for c in [
+                "heart_rate", "systolic_bp", "diastolic_bp", "bmi", "hba1c",
+                "echo_ef", "age", "gender", "enrollment_date", "current_city",
+            ]
+            if _safe_column(db, tables, c)
+        ]
+        if completeness_cols:
+            parts = " + ".join(
+                f"CASE WHEN {c} IS NOT NULL THEN 1 ELSE 0 END" for c in completeness_cols
             )
-            with_both_echo_mri = (
-                db.execute(
-                    text(
-                        f"SELECT COUNT(*) FROM {source} WHERE echo_ef IS NOT NULL AND mri_ef IS NOT NULL"
-                    )
-                ).scalar()
-                or 0
-            )
+            avg_comp = db.execute(text(
+                f"SELECT AVG(({parts}) * 100.0 / {len(completeness_cols)}) FROM {source}"
+            )).scalar() or 0
         else:
-            with_mri = 0
-            with_both_echo_mri = 0
-        avg_completeness = (
-            db.execute(text(f"SELECT AVG({COMPLETENESS_EXPR}) FROM {source}")).scalar()
-            or 0
-        )
+            avg_comp = 0
 
         return {
             "success": True,
             "data": {
                 "totalPatients": total,
-                "maleCount": male,
-                "femaleCount": female,
-                "averageAge": f"{float(avg_age or 0):.1f}",
-                "dataCompleteness": f"{float(avg_completeness or 0):.1f}",
+                "maleCount": result[1] or 0,
+                "femaleCount": result[2] or 0,
+                "averageAge": f"{float(result[3] or 0):.1f}",
+                "dataCompleteness": f"{float(avg_comp):.1f}",
                 "withMri": with_mri,
-                "withEcho": with_echo,
-                "withBothEchoMri": with_both_echo_mri,
+                "withEcho": result[4] or 0,
+                "withBothEchoMri": with_both,
                 "withEcg": 0,
             },
         }
@@ -165,17 +117,7 @@ async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/demographics")
 async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return {
-                "success": True,
-                "data": {
-                    "ageGender": [],
-                    "nationality": [],
-                    "maritalStatus": [],
-                },
-            }
-
-        source = _dataset_source(db, dataset)
+        source = _dataset_source(dataset)
 
         age_gender_results = db.execute(text(f"""
             SELECT
@@ -242,13 +184,74 @@ async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/clinical")
 async def clinical_metrics(dataset: str = Query("all"), db=Depends(get_db)):
     try:
+        source = _dataset_source(dataset)
+
+        bmi_rows = db.execute(text(f"""
+            SELECT
+                CASE
+                    WHEN bmi < 18.5 THEN 'Underweight'
+                    WHEN bmi < 25 THEN 'Normal'
+                    WHEN bmi < 30 THEN 'Overweight'
+                    ELSE 'Obese'
+                END AS category,
+                COUNT(*) AS count
+            FROM {source}
+            WHERE bmi IS NOT NULL
+            GROUP BY 1
+            ORDER BY 1
+        """)).fetchall()
+
+        bp_rows = db.execute(text(f"""
+            SELECT
+                CASE
+                    WHEN systolic_bp < 120 AND diastolic_bp < 80 THEN 'Normal'
+                    WHEN systolic_bp < 130 AND diastolic_bp < 80 THEN 'Elevated'
+                    WHEN systolic_bp < 140 OR diastolic_bp < 90 THEN 'Stage 1 HTN'
+                    ELSE 'Stage 2 HTN'
+                END AS status,
+                COUNT(*) AS count
+            FROM {source}
+            WHERE systolic_bp IS NOT NULL AND diastolic_bp IS NOT NULL
+            GROUP BY 1
+            ORDER BY 1
+        """)).fetchall()
+
+        ef_rows = db.execute(text(f"""
+            SELECT
+                CASE
+                    WHEN echo_ef >= 55 THEN 'Normal (>=55%)'
+                    WHEN echo_ef >= 40 THEN 'Mildly reduced (40-54%)'
+                    WHEN echo_ef >= 30 THEN 'Moderately reduced (30-39%)'
+                    ELSE 'Severely reduced (<30%)'
+                END AS category,
+                COUNT(*) AS count
+            FROM {source}
+            WHERE echo_ef IS NOT NULL
+            GROUP BY 1
+            ORDER BY 1
+        """)).fetchall()
+
+        hba1c_rows = db.execute(text(f"""
+            SELECT
+                CASE
+                    WHEN hba1c < 5.7 THEN 'Normal (<5.7%)'
+                    WHEN hba1c < 6.5 THEN 'Pre-diabetes (5.7-6.4%)'
+                    ELSE 'Diabetes (>=6.5%)'
+                END AS category,
+                COUNT(*) AS count
+            FROM {source}
+            WHERE hba1c IS NOT NULL
+            GROUP BY 1
+            ORDER BY 1
+        """)).fetchall()
+
         return {
             "success": True,
             "data": {
-                "bmiDistribution": [],
-                "bpDistribution": [],
-                "efDistribution": [],
-                "hba1cDistribution": [],
+                "bmiDistribution": [{"category": r[0], "count": r[1]} for r in bmi_rows],
+                "bpDistribution": [{"status": r[0], "count": r[1]} for r in bp_rows],
+                "efDistribution": [{"category": r[0], "count": r[1]} for r in ef_rows],
+                "hba1cDistribution": [{"category": r[0], "count": r[1]} for r in hba1c_rows],
             },
         }
     except Exception as e:
@@ -259,25 +262,7 @@ async def clinical_metrics(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/comorbidities")
 async def comorbidities(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return {
-                "success": True,
-                "data": {
-                    "conditions": {
-                        "hypertension": 0,
-                        "diabetes": 0,
-                        "dyslipidemia": 0,
-                        "cad": 0,
-                        "heart_failure": 0,
-                        "kidney_disease": 0,
-                        "liver_disease": 0,
-                        "anaemia": 0,
-                    },
-                    "comorbidityDistribution": [],
-                },
-            }
-
-        source = _dataset_source(db, dataset)
+        source = _dataset_source(dataset)
 
         row = db.execute(text(f"""
             SELECT
@@ -332,20 +317,7 @@ async def comorbidities(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/lifestyle")
 async def lifestyle(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return {
-                "success": True,
-                "data": {
-                    "smoking": {
-                        "current_smokers": 0,
-                        "former_smokers": 0,
-                        "never_smoked": 0,
-                    },
-                    "smokingDuration": [],
-                },
-            }
-
-        source = _dataset_source(db, dataset)
+        source = _dataset_source(dataset)
         smoking_result = db.execute(text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE COALESCE(is_smoker, false)) AS current_smokers,
@@ -373,17 +345,7 @@ async def lifestyle(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/geographic")
 async def geographic(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return {
-                "success": True,
-                "data": {
-                    "cityCategory": [],
-                    "migration": [],
-                    "cityDistribution": [],
-                },
-            }
-
-        source = _dataset_source(db, dataset)
+        source = _dataset_source(dataset)
 
         city_results = db.execute(text(f"""
             SELECT current_city, COUNT(*) as count
@@ -412,10 +374,7 @@ async def geographic(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/geographic-governorates")
 async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return {"success": True, "data": []}
-
-        source = _dataset_source(db, dataset)
+        source = _dataset_source(dataset)
 
         results = db.execute(text(f"""
             SELECT current_city as governorate,
@@ -453,35 +412,29 @@ async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db
             smoking_rate = (
                 (row[7] or 0) / patient_count * 100 if patient_count > 0 else 0
             )
-            prevalence = min(
-                25,
-                hypertension_rate * 0.3
-                + diabetes_rate * 0.4
-                + smoking_rate * 0.2
-                + (avg_age - 40) * 0.1,
+            avg_bmi = float(row[8]) if row[8] else None
+            obesity_rate = (
+                round(avg_bmi - 25, 1) if avg_bmi and avg_bmi > 25 else 0
             )
 
             governorate_data.append(
                 {
                     "region": row[0],
-                    "coordinates": [31.2357, 30.0444],
                     "patientCount": patient_count,
-                    "prevalence": round(prevalence, 1),
                     "demographics": {
                         "averageAge": round(avg_age, 1),
                         "genderRatio": round(gender_ratio, 2),
-                        "ethnicityMix": {"arab": 95, "other": 5},
                     },
                     "riskFactors": {
                         "hypertension": round(hypertension_rate, 1),
                         "diabetes": round(diabetes_rate, 1),
                         "smoking": round(smoking_rate, 1),
-                        "obesity": round((row[8] or 25) - 20, 1) if row[8] else 25,
+                        "obesity": obesity_rate,
                     },
-                    "outcomes": {
-                        "mortality": round(prevalence * 0.05, 1),
-                        "readmission": round(prevalence * 1.2, 1),
-                        "complications": round(prevalence * 2.0, 1),
+                    "vitals": {
+                        "avgBmi": round(avg_bmi, 1) if avg_bmi else None,
+                        "avgSystolicBp": round(float(row[9]), 1) if row[9] else None,
+                        "avgHba1c": round(float(row[10]), 1) if row[10] else None,
                     },
                 }
             )
@@ -495,10 +448,7 @@ async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db
 @router.get("/enrollment-trends")
 async def enrollment_trends(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return {"success": True, "data": []}
-
-        source = _dataset_source(db, dataset)
+        source = _dataset_source(dataset)
         rows = db.execute(text(f"""
             SELECT DATE_TRUNC('month', enrollment_date) as month, COUNT(*) as enrolled
             FROM {source}
@@ -530,61 +480,56 @@ async def enrollment_trends(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/data-quality")
 async def data_quality(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        if _dataset_table_empty(db, dataset):
-            return {
-                "success": True,
-                "data": {
-                    "byCategory": {
-                        "physical_exam": 0.0,
-                        "lab_results": 0.0,
-                        "echo": 0.0,
-                        "mri": 0.0,
-                        "ecg": 0.0,
-                        "overall": 0.0,
-                    },
-                    "distribution": [],
-                },
-            }
+        source = _dataset_source(dataset)
+        tables = list(DATASET_TABLES.values())
 
-        source = _dataset_source(db, dataset)
+        # Per-category completeness using actual column availability
+        physical_cols = [c for c in ["heart_rate", "systolic_bp", "diastolic_bp", "height_cm", "weight_kg", "bmi"] if _safe_column(db, tables, c)]
+        lab_cols = [c for c in ["hba1c", "troponin_i"] if _safe_column(db, tables, c)]
+        echo_cols = [c for c in ["echo_ef"] if _safe_column(db, tables, c)]
+        mri_cols = [c for c in ["mri_ef"] if _safe_column(db, tables, c)]
 
-        completeness_result = db.execute(text(f"""
-            SELECT
-                ROUND(AVG(CASE WHEN heart_rate IS NOT NULL OR systolic_bp IS NOT NULL OR diastolic_bp IS NOT NULL THEN 100 ELSE 0 END)) as physical_exam,
-                ROUND(AVG(CASE WHEN hba1c IS NOT NULL THEN 100 ELSE 0 END)) as lab_results,
-                ROUND(AVG(CASE WHEN echo_ef IS NOT NULL THEN 100 ELSE 0 END)) as echo,
-                0 as mri,
-                0 as ecg,
-                ROUND(AVG({COMPLETENESS_EXPR})) as overall
-            FROM {source}
-        """)).fetchone()
+        def _avg_completeness(cols: list[str]) -> float:
+            if not cols:
+                return 0.0
+            parts = " + ".join(f"CASE WHEN {c} IS NOT NULL THEN 1 ELSE 0 END" for c in cols)
+            val = db.execute(text(f"SELECT AVG(({parts}) * 100.0 / {len(cols)}) FROM {source}")).scalar()
+            return float(val or 0)
 
-        distribution_results = db.execute(text(f"""
-            SELECT
-                CASE
-                    WHEN {COMPLETENESS_EXPR} >= 80 THEN '80-100%'
-                    WHEN {COMPLETENESS_EXPR} >= 60 THEN '60-79%'
-                    WHEN {COMPLETENESS_EXPR} >= 40 THEN '40-59%'
-                    WHEN {COMPLETENESS_EXPR} >= 20 THEN '20-39%'
-                    ELSE '0-19%'
-                END as completeness_range,
-                COUNT(*) as count
-            FROM {source}
-            GROUP BY completeness_range
-            ORDER BY completeness_range
-        """)).fetchall()
+        cat = {
+            "physical_exam": round(_avg_completeness(physical_cols), 1),
+            "lab_results": round(_avg_completeness(lab_cols), 1),
+            "echo": round(_avg_completeness(echo_cols), 1),
+            "mri": round(_avg_completeness(mri_cols), 1),
+            "ecg": 0.0,
+        }
+        all_cols = physical_cols + lab_cols + echo_cols + mri_cols
+        cat["overall"] = round(_avg_completeness(all_cols), 1) if all_cols else 0.0
+
+        # Completeness distribution
+        if all_cols:
+            parts = " + ".join(f"CASE WHEN {c} IS NOT NULL THEN 1 ELSE 0 END" for c in all_cols)
+            expr = f"({parts}) * 100.0 / {len(all_cols)}"
+            distribution_results = db.execute(text(f"""
+                SELECT
+                    CASE
+                        WHEN {expr} >= 80 THEN '80-100%'
+                        WHEN {expr} >= 60 THEN '60-79%'
+                        WHEN {expr} >= 40 THEN '40-59%'
+                        WHEN {expr} >= 20 THEN '20-39%'
+                        ELSE '0-19%'
+                    END AS completeness_range,
+                    COUNT(*) AS count
+                FROM {source}
+                GROUP BY 1 ORDER BY 1
+            """)).fetchall()
+        else:
+            distribution_results = []
 
         return {
             "success": True,
             "data": {
-                "byCategory": {
-                    "physical_exam": float(completeness_result[0] or 0),
-                    "lab_results": float(completeness_result[1] or 0),
-                    "echo": float(completeness_result[2] or 0),
-                    "mri": float(completeness_result[3] or 0),
-                    "ecg": float(completeness_result[4] or 0),
-                    "overall": float(completeness_result[5] or 0),
-                },
+                "byCategory": cat,
                 "distribution": [
                     {"range": r[0], "count": r[1]} for r in distribution_results
                 ],
@@ -598,17 +543,41 @@ async def data_quality(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/imaging")
 async def imaging(dataset: str = Query("all"), db=Depends(get_db)):
     try:
+        source = _dataset_source(dataset)
+        tables = list(DATASET_TABLES.values())
+
+        echo_row = db.execute(text(f"""
+            SELECT
+                ROUND(AVG(echo_ef)::numeric, 1),
+                ROUND(MIN(echo_ef)::numeric, 1),
+                ROUND(MAX(echo_ef)::numeric, 1),
+                ROUND(STDDEV(echo_ef)::numeric, 1),
+                COUNT(*) FILTER (WHERE echo_ef IS NOT NULL)
+            FROM {source}
+        """)).fetchone()
+
+        mri_data = {"avg_lv_ef": 0, "avg_lv_mass": 0, "avg_lv_edv": 0, "total": 0}
+        if _safe_column(db, tables, "mri_ef"):
+            mri_row = db.execute(text(f"""
+                SELECT
+                    ROUND(AVG(mri_ef)::numeric, 1),
+                    COUNT(*) FILTER (WHERE mri_ef IS NOT NULL)
+                FROM {source}
+            """)).fetchone()
+            mri_data["avg_lv_ef"] = float(mri_row[0] or 0)
+            mri_data["total"] = mri_row[1] or 0
+
         return {
             "success": True,
             "data": {
                 "echo": {
-                    "avg_ef": 0,
-                    "min_ef": 0,
-                    "max_ef": 0,
-                    "std_ef": 0,
-                    "total": 0,
+                    "avg_ef": float(echo_row[0] or 0),
+                    "min_ef": float(echo_row[1] or 0),
+                    "max_ef": float(echo_row[2] or 0),
+                    "std_ef": float(echo_row[3] or 0),
+                    "total": echo_row[4] or 0,
                 },
-                "mri": {"avg_lv_ef": 0, "avg_lv_mass": 0, "avg_lv_edv": 0, "total": 0},
+                "mri": mri_data,
             },
         }
     except Exception as e:

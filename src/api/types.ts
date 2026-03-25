@@ -310,19 +310,16 @@ export interface GeographicStats {
 
 export interface MapData {
   region: string;
-  coordinates: [number, number];
   patientCount: number;
-  prevalence: number;
   demographics: {
     averageAge: number;
     genderRatio: number;
-    ethnicityMix: Record<string, number>;
   };
   riskFactors: Record<string, number>;
-  outcomes: {
-    mortality: number;
-    readmission: number;
-    complications: number;
+  vitals: {
+    avgBmi: number | null;
+    avgSystolicBp: number | null;
+    avgHba1c: number | null;
   };
 }
 

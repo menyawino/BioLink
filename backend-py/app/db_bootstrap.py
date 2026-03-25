@@ -113,9 +113,9 @@ CREATE INDEX IF NOT EXISTS patient_note_extractions_patient_id_idx ON patient_no
 
 
 VIEW_SQL = """
-
- -- EHVOL view: what list/search/analytics/charts should use
--- EHVOL view: what list/search/analytics/charts should use
+-- EHVOL view: legacy compatibility layer over the patients table.
+-- Analytics now queries participant tables directly; this view is kept
+-- only for backward compatibility with Superset dashboards / ad‑hoc SQL.
 DROP VIEW IF EXISTS EHVOL;
 CREATE VIEW EHVOL AS
 SELECT
@@ -139,10 +139,7 @@ SELECT
     mri_ef,
     echo_ef AS ef,
     mri_ef AS lv_ejection_fraction,
-    NULL::DOUBLE PRECISION AS lv_mass,
-    NULL::DOUBLE PRECISION AS lv_edv,
-    NULL::DOUBLE PRECISION AS lv_esv,
-    rv_ef AS rv_ef,
+    rv_ef,
     current_city_category,
     childhood_city_category,
     migration_pattern,
@@ -151,14 +148,7 @@ SELECT
     EXISTS (
         SELECT 1 FROM patient_genomic_variants v
         WHERE v.dna_id = patients.dna_id
-    ) AS has_genomics,
-    COALESCE((
-        (CASE WHEN heart_rate IS NOT NULL THEN 20 ELSE 0 END) +
-        (CASE WHEN systolic_bp IS NOT NULL THEN 20 ELSE 0 END) +
-        (CASE WHEN bmi IS NOT NULL THEN 20 ELSE 0 END) +
-        (CASE WHEN echo_ef IS NOT NULL THEN 20 ELSE 0 END) +
-        (CASE WHEN mri_ef IS NOT NULL THEN 20 ELSE 0 END)
-    ), 0) AS data_completeness
+    ) AS has_genomics
 FROM patients;
 
 """
