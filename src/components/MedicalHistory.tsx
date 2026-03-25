@@ -3,6 +3,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { FileText, Calendar, Stethoscope, Activity, Plus, Download } from "lucide-react";
+import type { DiagnosisSeverity } from "../api/types";
 
 interface MedicalHistoryProps {
   history: {
@@ -12,7 +13,7 @@ interface MedicalHistoryProps {
       icd10Code: string;
       diagnosedDate: string;
       status: 'controlled' | 'treated' | 'symptomatic' | 'stable' | 'resolved' | 'chronic';
-      severity: 'Stage 1' | 'Stage 2' | 'High-Risk Category' | 'Mild MR (Grade 1)' | 'Moderate MR (Grade 2)' | 'Severe MR (Grade 3-4)' | 'Moderate Stenosis (60-70%)' | 'Severe Stenosis (>70%)' | 'Critical Stenosis (>90%)';
+      severity: DiagnosisSeverity;
       category: string;
       clinicalNotes?: string;
     }>;

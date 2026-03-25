@@ -145,6 +145,7 @@ services:
     environment:
       ETL_UPLOAD_WRITE_DIR: /shared/etl_uploads
       ETL_UPLOAD_READ_DIR: /shared/etl_uploads
+      REGISTRY_SNAPSHOT_PATH: /app/outputs/unified_registry.csv
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql://biolink:biolink_secret@postgres:5432/biolink
       RAG_PG_URL: postgresql://biolink:biolink_secret@pgvector:5432/biolink_vector
@@ -155,6 +156,7 @@ services:
     command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3001", "--reload"]
     volumes:
       - ./db:/app/db
+      - ./outputs:/app/outputs
       - etl_uploads:/shared/etl_uploads
       - ./backend-py/app:/app/app  # Hot reload for development
     healthcheck:

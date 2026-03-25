@@ -298,9 +298,44 @@ export function CohortBuilder() {
     window.URL.revokeObjectURL(url);
   };
 
+  const averageCompleteness = patients.length > 0
+    ? Math.round(patients.reduce((sum, patient) => sum + patient.data_completeness, 0) / patients.length)
+    : 0;
+
+  const averageAge = patients.length > 0
+    ? Math.round(patients.reduce((sum, patient) => sum + (patient.age || 0), 0) / patients.length)
+    : 0;
+
   return (
-    <div className="space-y-6">
-      <Card>
+    <div className="cohort-shell space-y-6">
+      <div className="cohort-hero flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-2">
+          <span className="section-kicker">Cohort Workspace</span>
+          <div>
+            <h2 className="section-title">Advanced Cohort Builder</h2>
+            <p className="section-subtitle max-w-3xl">
+              Shape enrollment-ready cohorts with demographic, clinical, temporal, and data quality constraints in a tighter research workflow.
+            </p>
+          </div>
+        </div>
+
+        <div className="registry-meta-grid grid gap-3 sm:grid-cols-3">
+          <div className="metric-tile">
+            <span className="metric-label">Estimated cohort</span>
+            <strong className="metric-value">{estimateLoading ? '...' : estimatedSize.toLocaleString()}</strong>
+          </div>
+          <div className="metric-tile">
+            <span className="metric-label">Registry population</span>
+            <strong className="metric-value">{totalPatients.toLocaleString()}</strong>
+          </div>
+          <div className="metric-tile">
+            <span className="metric-label">Min completeness</span>
+            <strong className="metric-value">{criteria.dataAvailability.minimumCompleteness}%</strong>
+          </div>
+        </div>
+      </div>
+
+      <Card className="cohort-builder-card">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <Users className="h-5 w-5" />
@@ -324,7 +359,10 @@ export function CohortBuilder() {
               <div className="text-center">
                 <Label className="text-sm text-muted-foreground">Estimated Size</Label>
                 {estimateLoading ? (
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto mt-2" />
+                  <div className="mt-2 space-y-2">
+                    <div className="skeleton-block mx-auto h-8 w-24 rounded-2xl" />
+                    <div className="skeleton-block mx-auto h-3 w-14 rounded-full" />
+                  </div>
                 ) : (
                   <div className="text-2xl">{estimatedSize.toLocaleString()}</div>
                 )}
@@ -345,8 +383,8 @@ export function CohortBuilder() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="demographics" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-7">
+      <Tabs defaultValue="demographics" className="space-y-4 cohort-tabs">
+        <TabsList className="view-tabs-list cohort-tabs-list grid w-full grid-cols-7">
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
           <TabsTrigger value="clinical">Clinical</TabsTrigger>
           <TabsTrigger value="temporal">Temporal</TabsTrigger>
@@ -1311,7 +1349,61 @@ export function CohortBuilder() {
               </div>
             </CardHeader>
             <CardContent>
-              {queryExecuted ? (
+              {queryLoading ? (
+                <div className="space-y-5">
+                  <div className="cohort-results-skeleton-table rounded-lg border p-4">
+                    <div className="grid grid-cols-7 gap-3 border-b pb-3">
+                      <div className="skeleton-block h-4 rounded-full" />
+                      <div className="skeleton-block h-4 rounded-full" />
+                      <div className="skeleton-block h-4 rounded-full" />
+                      <div className="skeleton-block h-4 rounded-full" />
+                      <div className="skeleton-block h-4 rounded-full" />
+                      <div className="skeleton-block h-4 rounded-full" />
+                      <div className="skeleton-block h-4 rounded-full" />
+                    </div>
+                    <div className="space-y-3 pt-4">
+                      {Array.from({ length: 5 }).map((_, index) => (
+                        <div key={index} className="grid grid-cols-7 gap-3">
+                          <div className="skeleton-block h-5 rounded-full" />
+                          <div className="skeleton-block h-5 rounded-full" />
+                          <div className="skeleton-block h-5 rounded-full" />
+                          <div className="skeleton-block h-5 rounded-full" />
+                          <div className="skeleton-block h-5 rounded-full" />
+                          <div className="skeleton-block h-5 rounded-full" />
+                          <div className="skeleton-block h-5 rounded-full" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <Card key={index}>
+                        <CardContent className="p-4">
+                          <div className="space-y-3 text-center">
+                            <div className="skeleton-block mx-auto h-8 w-20 rounded-2xl" />
+                            <div className="skeleton-block mx-auto h-4 w-32 rounded-full" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Query Metadata</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <div key={index} className="flex items-center justify-between gap-4">
+                          <div className="skeleton-block h-4 w-28 rounded-full" />
+                          <div className="skeleton-block h-4 w-40 rounded-full" />
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : queryExecuted ? (
                 <div className="space-y-4">
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full">
@@ -1367,7 +1459,7 @@ export function CohortBuilder() {
                       <CardContent className="p-4">
                         <div className="text-center">
                           <p className="text-2xl" style={{ color: '#efb01b' }}>
-                            {patients.length > 0 ? Math.round(patients.reduce((sum, p) => sum + p.data_completeness, 0) / patients.length) : 0}%
+                            {averageCompleteness}%
                           </p>
                           <p className="text-sm text-muted-foreground">Avg Data Completeness</p>
                         </div>
@@ -1377,7 +1469,7 @@ export function CohortBuilder() {
                       <CardContent className="p-4">
                         <div className="text-center">
                           <p className="text-2xl" style={{ color: '#e9322b' }}>
-                            {patients.length > 0 ? Math.round(patients.reduce((sum, p) => sum + (p.age || 0), 0) / patients.length) : 0}
+                            {averageAge}
                           </p>
                           <p className="text-sm text-muted-foreground">Avg Age (years)</p>
                         </div>

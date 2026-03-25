@@ -12,6 +12,23 @@ _STANDARDIZED_SCHEMA_PATH = pathlib.Path("/app/db/schema_standardized.sql")
 logger = logging.getLogger(__name__)
 
 
+def _standardized_table_state(conn) -> tuple[bool, bool]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name IN ('bhs_participants', 'ehvol_participants')
+            """
+        )
+    ).fetchall()
+    present = {row[0] for row in rows}
+    both_present = {"bhs_participants", "ehvol_participants"}.issubset(present)
+    any_present = bool(present)
+    return both_present, any_present
+
+
 MIGRATION_SQL = """
 -- Denormalized patients table (single source of truth for the demo app)
 -- We keep this as a single wide table for dev/demo stability.
@@ -189,17 +206,29 @@ def ensure_schema(engine: Engine) -> None:
     # (3) Standardised wide tables (_schema_registry, bhs_participants, ehvol_participants, core VIEW)
     #     schema_standardized.sql contains many statements (DDL + 844 INSERT/UPSERT rows);
     #     we use the raw psycopg2 connection which supports multi-statement execution.
+    with engine.connect() as conn:
+        both_present, any_present = _standardized_table_state(conn)
+
     if _STANDARDIZED_SCHEMA_PATH.exists():
-        standardized_sql = _STANDARDIZED_SCHEMA_PATH.read_text()
-        raw = engine.raw_connection()
-        try:
-            cur = raw.cursor()
-            cur.execute(standardized_sql)
-            raw.commit()
-            cur.close()
-        finally:
-            raw.close()
-        logger.info("Database schema bootstrap: ✓ _schema_registry + bhs_participants + ehvol_participants")
+        if both_present:
+            logger.info(
+                "Database schema bootstrap: standardized participant tables already exist; skipping destructive schema replay"
+            )
+        elif any_present:
+            logger.warning(
+                "Database schema bootstrap: partial participant-table state detected; skipping destructive schema replay to preserve existing data"
+            )
+        else:
+            standardized_sql = _STANDARDIZED_SCHEMA_PATH.read_text()
+            raw = engine.raw_connection()
+            try:
+                cur = raw.cursor()
+                cur.execute(standardized_sql)
+                raw.commit()
+                cur.close()
+            finally:
+                raw.close()
+            logger.info("Database schema bootstrap: ✓ _schema_registry + bhs_participants + ehvol_participants")
     else:
         logger.warning(
             "Database schema bootstrap: schema_standardized.sql not found at %s — "

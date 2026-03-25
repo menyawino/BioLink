@@ -46,6 +46,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
   });
 
   const patients = patientsData || [];
+  const activeFilters = [filterGender !== "all", dataset !== "all", Boolean(debouncedSearch)].filter(Boolean).length;
 
   const handleExport = () => {
     const selectedData = patients
@@ -123,39 +124,69 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Patient Registry</CardTitle>
+    <div className="registry-shell space-y-5">
+      <div className="registry-hero flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-2">
+          <span className="section-kicker">Registry Workspace</span>
+          <div>
+            <h2 className="section-title">Patient Registry</h2>
+            <p className="section-subtitle max-w-3xl">
+              Review the live registry, refine the cohort, and move into patient detail with a faster, cleaner table workflow.
+            </p>
+          </div>
+        </div>
+
+        <div className="registry-meta-grid grid gap-3 sm:grid-cols-3">
+          <div className="metric-tile">
+            <span className="metric-label">Visible on page</span>
+            <strong className="metric-value">{patients.length}</strong>
+          </div>
+          <div className="metric-tile">
+            <span className="metric-label">Selected</span>
+            <strong className="metric-value">{selectedPatients.length}</strong>
+          </div>
+          <div className="metric-tile">
+            <span className="metric-label">Active filters</span>
+            <strong className="metric-value">{activeFilters}</strong>
+          </div>
+        </div>
+      </div>
+
+      <Card className="registry-card">
+        <CardHeader className="pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <CardTitle className="text-lg font-semibold tracking-tight">Patient Registry</CardTitle>
+              <p className="text-sm text-muted-foreground">Sorted by {sortField.replace(/_/g, ' ')} in {sortDirection} order.</p>
+            </div>
             <div className="flex items-center space-x-2">
-              <Badge variant="outline">
+              <Badge variant="outline" className="registry-badge">
                 {patients.length} patients
               </Badge>
-              <Button size="sm">
+              <Button size="sm" className="registry-primary-action">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Patient
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
           {/* Filters and Search */}
-          <div className="flex items-center space-x-4 mb-6">
-            <div className="flex-1">
+          <div className="registry-toolbar flex flex-wrap items-center gap-3">
+            <div className="registry-search-group flex-1 min-w-[18rem]">
               <div className="relative">
                 <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Search by DNA ID, nationality, city..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="registry-search-input pl-10"
                 />
               </div>
             </div>
             
             <Select value={filterGender} onValueChange={(value) => { setFilterGender(value); setPage(1); }}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="registry-select w-40">
                 <SelectValue placeholder="Gender" />
               </SelectTrigger>
               <SelectContent>
@@ -166,7 +197,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
             </Select>
 
             <Select value={dataset} onValueChange={(value) => { setDataset(value as DatasetFilter); setPage(1); }}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="registry-select w-44">
                 <SelectValue placeholder="Dataset" />
               </SelectTrigger>
               <SelectContent>
@@ -176,7 +207,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
               </SelectContent>
             </Select>
 
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" className="registry-toolbar-button">
               <Filter className="h-4 w-4 mr-2" />
               More Filters
             </Button>
@@ -184,6 +215,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
             <Button 
               variant="outline" 
               size="sm" 
+              className="registry-toolbar-button"
               disabled={selectedPatients.length === 0}
               onClick={handleExport}
             >
@@ -193,15 +225,15 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
           </div>
 
           {/* Patient Table */}
-          <div className="border rounded-lg overflow-hidden">
+          <div className="registry-table-shell overflow-hidden rounded-xl border">
             {isLoading ? (
-              <div className="flex items-center justify-center p-8">
+              <div className="flex items-center justify-center p-10">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-muted-foreground">Loading patients...</span>
               </div>
             ) : (
-            <Table>
-              <TableHeader>
+            <Table className="registry-table">
+              <TableHeader className="registry-table-header">
                 <TableRow>
                   <TableHead className="w-12">
                     <Checkbox
@@ -232,17 +264,17 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                   </TableRow>
                 ) : (
                   patients.map((patient) => (
-                    <TableRow key={patient.dna_id}>
+                    <TableRow key={patient.dna_id} className="registry-row">
                       <TableCell>
                         <Checkbox
                           checked={selectedPatients.includes(patient.dna_id)}
                           onCheckedChange={(checked) => handleSelectPatient(patient.dna_id, checked as boolean)}
                         />
                       </TableCell>
-                      <TableCell className="font-mono">
+                      <TableCell className="font-mono text-[0.82rem] tracking-[0.08em] uppercase">
                         <button
                           onClick={() => onPatientSelect(patient.dna_id)}
-                          className="text-[#00a2ddff] hover:underline cursor-pointer"
+                          className="registry-link cursor-pointer text-[#00a2ddff]"
                         >
                           {patient.dna_id}
                         </button>
@@ -268,9 +300,9 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
-                          <div className="w-12 bg-gray-200 rounded-full h-2">
+                          <div className="h-2 w-14 rounded-full bg-gray-200/80">
                             <div 
-                              className={`h-2 rounded-full ${
+                              className={`h-2 rounded-full registry-progress-bar ${
                                 patient.data_completeness >= 80 ? 'bg-green-500' :
                                 patient.data_completeness >= 60 ? 'bg-yellow-500' : 'bg-red-500'
                               }`}
@@ -290,6 +322,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                         <Button 
                           variant="ghost" 
                           size="sm"
+                          className="registry-row-action"
                           onClick={() => onPatientSelect(patient.dna_id)}
                         >
                           <Eye className="h-4 w-4" />
@@ -304,7 +337,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center justify-between mt-2">
             <div className="text-sm text-muted-foreground">
               Page {page}
             </div>

@@ -54,6 +54,37 @@
     build: {
       target: 'esnext',
       outDir: 'build',
+        rollupOptions: {
+          output: {
+            manualChunks(id) {
+              if (!id.includes('node_modules')) {
+                return undefined;
+              }
+
+              if (id.includes('@radix-ui')) {
+                return 'radix-vendor';
+              }
+
+              if (id.includes('recharts')) {
+                return 'charts-vendor';
+              }
+
+              if (id.includes('leaflet') || id.includes('react-leaflet')) {
+                return 'maps-vendor';
+              }
+
+              if (id.includes('@superset-ui')) {
+                return 'superset-vendor';
+              }
+
+              if (id.includes('lucide-react')) {
+                return 'icons-vendor';
+              }
+
+              return 'vendor';
+            },
+          },
+        },
     },
     server: {
       port: 3000,

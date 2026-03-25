@@ -19,6 +19,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from nifiapi.flowfiletransform import FlowFileTransform, FlowFileTransformResult
 from nifiapi.properties import ExpressionLanguageScope, PropertyDescriptor
@@ -30,6 +31,18 @@ def _count_csv_rows(path: Path) -> tuple[int, int]:
         header = next(reader)
         row_count = sum(1 for _ in reader)
     return row_count, len(header)
+
+
+def _parse_requested_datasets(raw_value: str | None) -> list[str]:
+    if not raw_value:
+        return []
+
+    normalized: list[str] = []
+    for part in str(raw_value).split(","):
+        dataset = part.strip().lower()
+        if dataset in {"bhs", "ehvol"} and dataset not in normalized:
+            normalized.append(dataset)
+    return normalized
 
 
 def _boolish(values: list[str]) -> bool:
@@ -447,6 +460,20 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         default_value="unified_registry",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
+    TRIGGER_RUN_TOKEN = PropertyDescriptor(
+        name="Trigger Run Token",
+        description="Backend-provided token used to correlate a specific NiFi RUN_ONCE request with registry_etl_runs entries.",
+        required=False,
+        default_value="",
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
+    )
+    TRIGGER_REQUESTED_DATASETS = PropertyDescriptor(
+        name="Triggered Datasets",
+        description="Comma-separated requested datasets for the current backend-triggered ETL job.",
+        required=False,
+        default_value="",
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
+    )
     PROVENANCE_RELATIVE_PATH = PropertyDescriptor(
         name="Provenance Output Relative Path",
         description="Path to provenance.csv relative to the repository root.",
@@ -485,6 +512,8 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         DB_USER,
         DB_PASSWORD,
         UNIFIED_TABLE_NAME,
+        TRIGGER_RUN_TOKEN,
+        TRIGGER_REQUESTED_DATASETS,
     ]
 
     def __init__(self, **kwargs):
@@ -516,6 +545,10 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         characterization_csv = repo_root / context.getProperty(self.CHARACTERIZATION_PATH).getValue()
         load_to_postgres = (context.getProperty(self.LOAD_TO_POSTGRES).getValue() or "true").strip().lower() == "true"
         unified_table = context.getProperty(self.UNIFIED_TABLE_NAME).getValue() or "unified_registry"
+        trigger_run_token = (context.getProperty(self.TRIGGER_RUN_TOKEN).getValue() or "").strip() or str(uuid4())
+        requested_datasets = _parse_requested_datasets(
+            context.getProperty(self.TRIGGER_REQUESTED_DATASETS).getValue()
+        )
 
         if not repo_root.is_dir():
             message = f"BiolinkRegistryPipelineProcessor: repository root not found at '{repo_root}'"
@@ -608,6 +641,9 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         manifest_path = omop_dir / "manifest.json"
         manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
         summary = {
+            "source": "nifi-processor",
+            "trigger_token": trigger_run_token,
+            "requested_datasets": requested_datasets,
             "master_schema_path": str(schema_path),
             "unified_registry_path": str(unified_path),
             "unified_registry_rows": unified_rows,
@@ -642,87 +678,129 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                 password=context.getProperty(self.DB_PASSWORD).getValue(),
             )
             try:
-                summary["postgres_unified_rows"] = _load_unified_registry(
+                _store_run_manifest(
                     conn,
-                    unified_path,
-                    unified_table,
-                    psy_sql,
+                    {
+                        **summary,
+                        "status": "running",
+                        "stage": "postgres-load-started",
+                        "started_at": datetime.now(timezone.utc).isoformat(),
+                    },
                     psy_json,
-                    psy_execute_values,
                 )
-                summary["postgres_dataset_rows"] = {
-                    "bhs_participants": _load_dataset_participants(
+                try:
+                    summary["postgres_unified_rows"] = _load_unified_registry(
                         conn,
                         unified_path,
-                        "bhs_participants",
-                        "D1",
-                        "bhs",
+                        unified_table,
                         psy_sql,
                         psy_json,
                         psy_execute_values,
-                    ),
-                    "ehvol_participants": _load_dataset_participants(
-                        conn,
-                        unified_path,
-                        "ehvol_participants",
-                        "D2",
-                        "ehvol",
-                        psy_sql,
-                        psy_json,
-                        psy_execute_values,
-                    ),
-                }
-                omop_tables = {
-                    "person": omop_dir / "person.csv",
-                    "measurement": omop_dir / "measurement.csv",
-                    "condition_occurrence": omop_dir / "condition_occurrence.csv",
-                    "observation": omop_dir / "observation.csv",
-                }
-                loaded_tables = {}
-                for table_name, csv_path in omop_tables.items():
-                    if csv_path.is_file():
-                        loaded_tables[table_name] = _create_or_replace_csv_table(
+                    )
+                    summary["postgres_dataset_rows"] = {
+                        "bhs_participants": _load_dataset_participants(
                             conn,
-                            csv_path,
-                            f"omop_{table_name}",
+                            unified_path,
+                            "bhs_participants",
+                            "D1",
+                            "bhs",
                             psy_sql,
-                        )
-                summary["postgres_omop_tables"] = loaded_tables
+                            psy_json,
+                            psy_execute_values,
+                        ),
+                        "ehvol_participants": _load_dataset_participants(
+                            conn,
+                            unified_path,
+                            "ehvol_participants",
+                            "D2",
+                            "ehvol",
+                            psy_sql,
+                            psy_json,
+                            psy_execute_values,
+                        ),
+                    }
+                    omop_tables = {
+                        "person": omop_dir / "person.csv",
+                        "measurement": omop_dir / "measurement.csv",
+                        "condition_occurrence": omop_dir / "condition_occurrence.csv",
+                        "observation": omop_dir / "observation.csv",
+                    }
+                    loaded_tables = {}
+                    for table_name, csv_path in omop_tables.items():
+                        if csv_path.is_file():
+                            loaded_tables[table_name] = _create_or_replace_csv_table(
+                                conn,
+                                csv_path,
+                                f"omop_{table_name}",
+                                psy_sql,
+                            )
+                    summary["postgres_omop_tables"] = loaded_tables
 
-                # Load harmonization artifacts (provenance, tiers)
-                harmonization_tables = {}
-                if provenance_path.is_file():
-                    harmonization_tables["harmonization_provenance"] = _create_or_replace_csv_table(
-                        conn, provenance_path, "harmonization_provenance", psy_sql,
-                    )
-                if tiers_path.is_file():
-                    harmonization_tables["harmonization_tiers"] = _create_or_replace_csv_table(
-                        conn, tiers_path, "harmonization_tiers", psy_sql,
-                    )
-                # Store comparability report as JSONB if it exists
-                if comparability_path.is_file():
-                    report_json = json.loads(comparability_path.read_text())
-                    with conn.cursor() as cursor:
-                        cursor.execute(psy_sql.SQL(
-                            "DROP TABLE IF EXISTS {} CASCADE"
-                        ).format(psy_sql.Identifier("comparability_report")))
-                        cursor.execute(psy_sql.SQL(
-                            "CREATE TABLE {} ("
-                            "id BIGSERIAL PRIMARY KEY, "
-                            "report JSONB NOT NULL, "
-                            "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-                            ")"
-                        ).format(psy_sql.Identifier("comparability_report")))
-                        cursor.execute(
-                            psy_sql.SQL("INSERT INTO {} (report) VALUES (%s)").format(
-                                psy_sql.Identifier("comparability_report")
-                            ).as_string(conn),
-                            (psy_json(report_json),),
+                    # Load harmonization artifacts (provenance, tiers)
+                    harmonization_tables = {}
+                    if provenance_path.is_file():
+                        harmonization_tables["harmonization_provenance"] = _create_or_replace_csv_table(
+                            conn, provenance_path, "harmonization_provenance", psy_sql,
                         )
-                    conn.commit()
-                    harmonization_tables["comparability_report"] = 1
-                summary["postgres_harmonization_tables"] = harmonization_tables
-                _store_run_manifest(conn, summary, psy_json)
+                    if tiers_path.is_file():
+                        harmonization_tables["harmonization_tiers"] = _create_or_replace_csv_table(
+                            conn, tiers_path, "harmonization_tiers", psy_sql,
+                        )
+                    # Store comparability report as JSONB if it exists
+                    if comparability_path.is_file():
+                        report_json = json.loads(comparability_path.read_text())
+                        with conn.cursor() as cursor:
+                            cursor.execute(psy_sql.SQL(
+                                "DROP TABLE IF EXISTS {} CASCADE"
+                            ).format(psy_sql.Identifier("comparability_report")))
+                            cursor.execute(psy_sql.SQL(
+                                "CREATE TABLE {} ("
+                                "id BIGSERIAL PRIMARY KEY, "
+                                "report JSONB NOT NULL, "
+                                "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                                ")"
+                            ).format(psy_sql.Identifier("comparability_report")))
+                            cursor.execute(
+                                psy_sql.SQL("INSERT INTO {} (report) VALUES (%s)").format(
+                                    psy_sql.Identifier("comparability_report")
+                                ).as_string(conn),
+                                (psy_json(report_json),),
+                            )
+                        conn.commit()
+                        harmonization_tables["comparability_report"] = 1
+                    summary["postgres_harmonization_tables"] = harmonization_tables
+                    _store_run_manifest(
+                        conn,
+                        {
+                            **summary,
+                            "status": "succeeded",
+                            "stage": "postgres-load-complete",
+                            "finished_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                        psy_json,
+                    )
+                except Exception as exc:
+                    conn.rollback()
+                    try:
+                        _store_run_manifest(
+                            conn,
+                            {
+                                **summary,
+                                "status": "failed",
+                                "stage": "postgres-load-failed",
+                                "failed_at": datetime.now(timezone.utc).isoformat(),
+                                "error": str(exc),
+                            },
+                            psy_json,
+                        )
+                    except Exception:
+                        pass
+                    message = f"BiolinkRegistryPipelineProcessor: PostgreSQL load failed: {exc}"
+                    return FlowFileTransformResult(
+                        relationship="failure",
+                        contents=json.dumps({"error": message}),
+                        attributes={"biolink.error": message[:2000]},
+                    )
             finally:
                 conn.close()
 

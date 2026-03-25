@@ -1,6 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from app.database import get_db
+from app.routes._dataset_union import aligned_union_sql
+from app.routes.patients import (
+    _dataset_field_exprs,
+    _mri_sql_expr,
+    _registry_source_table,
+    _source_columns,
+)
 import logging
 
 router = APIRouter()
@@ -21,7 +28,7 @@ def _validate_dataset(dataset: str) -> str:
     return normalized
 
 
-def _dataset_source(dataset: str | None) -> str:
+def _dataset_source(db, dataset: str | None) -> str:
     """Return the SQL source expression for the given dataset.
 
     Always queries the canonical participant tables (created by db_bootstrap).
@@ -29,8 +36,36 @@ def _dataset_source(dataset: str | None) -> str:
     """
     key = _validate_dataset(dataset)
     if key == "all":
-        return "(SELECT *, 'ehvol' AS _source FROM ehvol_participants UNION ALL SELECT *, 'bhs' AS _source FROM bhs_participants) AS registry"
+        return aligned_union_sql(db, [DATASET_TABLES["ehvol"], DATASET_TABLES["bhs"]])
     return f"{DATASET_TABLES[key]} AS registry"
+
+
+def _normalized_dataset_source(db, dataset: str | None) -> str:
+    source_table = _registry_source_table(db, dataset)
+    columns = _source_columns(db, dataset, source_table)
+    expr = _dataset_field_exprs(columns, dataset or "all")
+    mri_value_expr, _ = _mri_sql_expr(columns)
+
+    return (
+        "(SELECT "
+        f"CAST({expr['id_col']} AS TEXT) AS dna_id, "
+        f"{expr['dataset_expr']} AS source_dataset, "
+        f"{expr['age_expr']} AS age, "
+        f"{expr['gender_expr']} AS gender, "
+        f"{expr['nationality_expr']} AS nationality, "
+        f"{expr['enrollment_expr']} AS enrollment_date, "
+        f"{expr['city_expr']} AS current_city, "
+        f"{expr['heart_rate_expr']} AS heart_rate, "
+        f"{expr['systolic_expr']} AS systolic_bp, "
+        f"{expr['diastolic_expr']} AS diastolic_bp, "
+        f"{expr['bmi_expr']} AS bmi, "
+        f"{expr['hba1c_expr']} AS hba1c, "
+        f"{expr['echo_expr']} AS echo_ef, "
+        f"{mri_value_expr} AS mri_ef, "
+        f"{expr['troponin_expr']} AS troponin_i, "
+        f"{expr['current_city_category_expr']} AS current_city_category "
+        f"FROM {source_table}) AS registry"
+    )
 
 
 def _safe_column(db, table_names: list[str], column: str) -> bool:
@@ -51,8 +86,7 @@ def _safe_column(db, table_names: list[str], column: str) -> bool:
 @router.get("/overview")
 async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
-        tables = list(DATASET_TABLES.values())
+        source = _normalized_dataset_source(db, dataset)
 
         result = db.execute(text(f"""
             SELECT
@@ -65,25 +99,19 @@ async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
         """)).fetchone()
 
         total = result[0] or 0
-        with_mri = 0
-        with_both = 0
-        if _safe_column(db, tables, "mri_ef"):
-            mri_row = db.execute(text(f"""
-                SELECT
-                    COUNT(*) FILTER (WHERE mri_ef IS NOT NULL),
-                    COUNT(*) FILTER (WHERE echo_ef IS NOT NULL AND mri_ef IS NOT NULL)
-                FROM {source}
-            """)).fetchone()
-            with_mri = mri_row[0] or 0
-            with_both = mri_row[1] or 0
+        mri_row = db.execute(text(f"""
+            SELECT
+                COUNT(*) FILTER (WHERE mri_ef IS NOT NULL),
+                COUNT(*) FILTER (WHERE echo_ef IS NOT NULL AND mri_ef IS NOT NULL)
+            FROM {source}
+        """)).fetchone()
+        with_mri = mri_row[0] or 0
+        with_both = mri_row[1] or 0
 
         # Per-column completeness: count non-null columns per row, average across rows
         completeness_cols = [
-            c for c in [
-                "heart_rate", "systolic_bp", "diastolic_bp", "bmi", "hba1c",
-                "echo_ef", "age", "gender", "enrollment_date", "current_city",
-            ]
-            if _safe_column(db, tables, c)
+            "heart_rate", "systolic_bp", "diastolic_bp", "bmi", "hba1c",
+            "echo_ef", "age", "gender", "enrollment_date", "current_city",
         ]
         if completeness_cols:
             parts = " + ".join(
@@ -117,7 +145,7 @@ async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/demographics")
 async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _normalized_dataset_source(db, dataset)
 
         age_gender_results = db.execute(text(f"""
             SELECT
@@ -184,7 +212,7 @@ async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/clinical")
 async def clinical_metrics(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
 
         bmi_rows = db.execute(text(f"""
             SELECT
@@ -262,7 +290,7 @@ async def clinical_metrics(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/comorbidities")
 async def comorbidities(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
 
         row = db.execute(text(f"""
             SELECT
@@ -317,7 +345,7 @@ async def comorbidities(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/lifestyle")
 async def lifestyle(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
         smoking_result = db.execute(text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE COALESCE(is_smoker, false)) AS current_smokers,
@@ -345,7 +373,7 @@ async def lifestyle(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/geographic")
 async def geographic(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
 
         city_results = db.execute(text(f"""
             SELECT current_city, COUNT(*) as count
@@ -374,7 +402,7 @@ async def geographic(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/geographic-governorates")
 async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
 
         results = db.execute(text(f"""
             SELECT current_city as governorate,
@@ -448,7 +476,7 @@ async def geographic_governorates(dataset: str = Query("all"), db=Depends(get_db
 @router.get("/enrollment-trends")
 async def enrollment_trends(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
         rows = db.execute(text(f"""
             SELECT DATE_TRUNC('month', enrollment_date) as month, COUNT(*) as enrolled
             FROM {source}
@@ -480,7 +508,7 @@ async def enrollment_trends(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/data-quality")
 async def data_quality(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
         tables = list(DATASET_TABLES.values())
 
         # Per-category completeness using actual column availability
@@ -554,7 +582,7 @@ async def data_quality(dataset: str = Query("all"), db=Depends(get_db)):
 @router.get("/imaging")
 async def imaging(dataset: str = Query("all"), db=Depends(get_db)):
     try:
-        source = _dataset_source(dataset)
+        source = _dataset_source(db, dataset)
         tables = list(DATASET_TABLES.values())
 
         echo_row = db.execute(text(f"""

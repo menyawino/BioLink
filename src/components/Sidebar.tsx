@@ -1,13 +1,15 @@
+import type { CSSProperties } from "react";
 import { cn } from "./ui/utils";
 import { Button } from "./ui/button";
 import { User, Table, BarChart3, Activity, Database, Users, BookOpen, Settings, RefreshCw, LogOut } from "lucide-react";
 import logo from "figma:asset/e26cb8b78ee049387f524876448562f480bca21b.png";
 import { useAuth } from "../context/AuthContext";
+import type { ViewType } from "../context/AppContext";
 import { canAccessView } from "../lib/access";
 
 interface SidebarProps {
-  currentView: string;
-  onViewChange: (view: string) => void;
+  currentView: ViewType;
+  onViewChange: (view: ViewType) => void;
   className?: string;
 }
 
@@ -22,49 +24,49 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
 
   const navigationItems = [
     {
-      id: "welcome",
+      id: "welcome" as ViewType,
       label: "Welcome",
       icon: Database,
       description: "Platform overview & features"
     },
     {
-      id: "patient",
+      id: "patient" as ViewType,
       label: "Patient Profile",
       icon: User,
       description: "Individual patient view"
     },
     {
-      id: "registry",
+      id: "registry" as ViewType,
       label: "Patient Registry",
       icon: Table,
       description: "All patients table view"
     },
     {
-      id: "cohort",
+      id: "cohort" as ViewType,
       label: "Cohort Builder",
       icon: Users,
       description: "Advanced patient selection"
     },
     {
-      id: "analytics",
+      id: "analytics" as ViewType,
       label: "Registry Analytics", 
       icon: BarChart3,
       description: "Data visualization & insights"
     },
     {
-      id: "charts",
+      id: "charts" as ViewType,
       label: "Chart Builder",
       icon: Activity,
       description: "Create custom visualizations"
     },
     {
-      id: "etl",
+      id: "etl" as ViewType,
       label: "ETL Monitor",
       icon: RefreshCw,
       description: "Track ETL runs and status"
     },
     {
-      id: "dictionary",
+      id: "dictionary" as ViewType,
       label: "Data Dictionary",
       icon: BookOpen,
       description: "Variables & metadata"
@@ -72,8 +74,8 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
   ].filter((item) => canAccessView(user, item.id as never));
 
   return (
-    <div className={cn("w-64 bg-sidebar border-r border-sidebar-border flex flex-col h-screen", className)}>
-      <div className="p-6 flex-shrink-0">
+    <div className={cn("app-sidebar-shell w-64 border-r border-sidebar-border bg-sidebar flex h-screen flex-col", className)}>
+      <div className="app-sidebar-brand p-6 flex-shrink-0">
         <div className="flex items-center space-x-3">
           <img 
             src={logo} 
@@ -89,21 +91,23 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
 
       <div className="flex-1 overflow-y-auto px-6">
         <nav className="space-y-2">
-          {navigationItems.map((item) => {
+          {navigationItems.map((item, index) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
             
             return (
               <Button
                 key={item.id}
+                data-active={isActive ? "true" : "false"}
                 variant={isActive ? "default" : "ghost"}
                 size="sm"
                 className={cn(
-                  "w-full justify-start h-auto p-3",
+                  "nav-item-button w-full justify-start h-auto p-3",
                   isActive 
                     ? "bg-sidebar-primary text-sidebar-primary-foreground" 
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 )}
+                style={{ "--stagger-index": index + 1 } as CSSProperties}
                 onClick={() => onViewChange(item.id)}
               >
                 <div className="flex items-center space-x-3 w-full">
@@ -128,7 +132,7 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
       
       <div className="p-6 border-t border-sidebar-border flex-shrink-0">
         <button 
-          className="mb-4 p-3 rounded-lg bg-sidebar-accent/50 border border-sidebar-border w-full text-left hover:bg-sidebar-accent transition-colors"
+          className="profile-card mb-4 w-full rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-3 text-left transition-colors hover:bg-sidebar-accent"
           onClick={() => onViewChange('profile')}
         >
           <div className="flex items-center space-x-3">

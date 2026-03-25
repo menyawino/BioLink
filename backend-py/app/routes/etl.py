@@ -91,42 +91,38 @@ def _run_wrapper(job_id: str, req: ETLRequest):
         requested_datasets = ["ehvol", "bhs"]
 
     try:
-        run_results: list[dict[str, Any]] = []
-        for dataset in requested_datasets:
-            params = ETLParams(
-                table="bhs_full" if dataset == "bhs" else "ehvol_full",
+        primary_dataset = requested_datasets[0]
+        result = trigger_etl_pipeline(
+            ETLParams(
+                table="bhs_full" if primary_dataset == "bhs" else "ehvol_full",
                 schema=req.schema,
                 csv=etl_csv_path,
-                dataset_name=dataset,
+                dataset_name=primary_dataset,
+                datasets=requested_datasets,
                 dbt_select=req.dbt_select,
                 skip_superset=req.skip_superset,
             )
-            result = trigger_etl_pipeline(params)
-            run_results.append(result)
+        )
 
-        ok = all(bool(item.get("ok", False)) for item in run_results)
+        ok = bool(result.get("ok", False))
         result: dict[str, Any] = {
             "ok": ok,
             "engine": "nifi",
             "datasets_requested": requested_datasets,
-            "results": run_results,
+            "result": result,
             "message": (
-                "NiFi ETL trigger executed for all datasets"
+                "NiFi ETL trigger executed and verified"
                 if ok
-                else "One or more dataset ETL triggers failed"
+                else "NiFi ETL trigger failed verification"
             ),
         }
 
-        first_error = next(
-            (item.get("error") for item in run_results if not item.get("ok")),
-            None,
-        )
         _update_job(
             job_id,
             status="succeeded" if ok else "failed",
             finishedAt=_utcnow(),
             result=result,
-            error=None if ok else first_error,
+            error=None if ok else result["result"].get("error"),
             csvPath=etl_csv_path,
             localCsvPath=local_written_csv,
         )

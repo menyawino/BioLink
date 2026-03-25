@@ -6,6 +6,7 @@ import hashlib
 from typing import List
 
 from app.diagnoses import build_patient_diagnoses
+from app.routes._dataset_union import aligned_union_sql
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -65,10 +66,7 @@ def _registry_source_table(db, dataset: str | None) -> str:
     if normalized == "all":
         tables = _dataset_tables(normalized)
         if any(_table_has_rows(db, table_name) for table_name in tables):
-            union_sql = " UNION ALL ".join(
-                f"SELECT * FROM {table_name}" for table_name in tables
-            )
-            return f"({union_sql}) registry"
+            return aligned_union_sql(db, tables)
 
         if _table_has_rows(db, "patients"):
             logger.warning(
@@ -76,10 +74,7 @@ def _registry_source_table(db, dataset: str | None) -> str:
             )
             return LEGACY_FALLBACK_VIEW
 
-        union_sql = " UNION ALL ".join(
-            f"SELECT * FROM {table_name}" for table_name in tables
-        )
-        return f"({union_sql}) registry"
+        return aligned_union_sql(db, tables)
 
     source_table = _dataset_table(normalized)
 
@@ -109,7 +104,10 @@ def _table_columns(db, table_name: str) -> set[str]:
 
 
 def _source_columns(db, dataset: str | None, source_table: str) -> set[str]:
-    if _normalized_dataset(dataset) == "all":
+    # When source_table is a UNION subquery, aggregate columns from the underlying tables.
+    # Otherwise (including legacy fallback views), introspect the actual source_table so
+    # that generated SQL only references columns that exist in the table being queried.
+    if source_table.startswith("("):
         columns: set[str] = set()
         for table_name in _dataset_tables(dataset):
             columns.update(_table_columns(db, table_name))

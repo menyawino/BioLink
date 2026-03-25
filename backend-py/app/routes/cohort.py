@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from app.database import get_db
 from app.routes.auth import get_current_active_user
+from app.routes._dataset_union import aligned_union_sql
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -54,13 +55,10 @@ ALLOWED_EXPORT_FIELDS = {
 }
 
 
-def _source_expr(dataset: str) -> str:
+def _source_expr(db, dataset: str) -> str:
     normalized = (dataset or "all").lower()
     if normalized == "all":
-        return (
-            "(SELECT *, 'ehvol' AS _source FROM ehvol_participants "
-            "UNION ALL SELECT *, 'bhs' AS _source FROM bhs_participants) AS registry"
-        )
+        return aligned_union_sql(db, [DATASET_TABLES["ehvol"], DATASET_TABLES["bhs"]])
     if normalized in DATASET_TABLES:
         return f"{DATASET_TABLES[normalized]} AS registry"
     raise HTTPException(status_code=422, detail=f"Invalid dataset: {dataset}")
@@ -74,7 +72,7 @@ async def query_cohort(
 ):
     """Execute a cohort query and return matching patients."""
     try:
-        source = _source_expr(criteria.dataset)
+        source = _source_expr(db, criteria.dataset)
         conditions = ["1=1"]
         params: dict = {}
 
@@ -134,7 +132,7 @@ async def cohort_summary(
 
         ids = body.patientIds[:5000]  # cap
 
-        source = _source_expr("all")
+        source = _source_expr(db, "all")
         row = db.execute(
             text(
                 f"SELECT COUNT(*), AVG(age), "
@@ -180,7 +178,7 @@ async def export_cohort(
             fields = list(ALLOWED_EXPORT_FIELDS)
 
         select_cols = ", ".join(fields)
-        source = _source_expr("all")
+        source = _source_expr(db, "all")
 
         rows = db.execute(
             text(f"SELECT {select_cols} FROM {source} WHERE participant_id = ANY(:ids)"),

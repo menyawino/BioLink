@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import type { CSSProperties } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -570,26 +571,47 @@ Rules:
   };
 
   return (
-    <div className="flex flex-col h-full max-w-4xl mx-auto w-full">
+    <div className="chat-shell flex h-full w-full max-w-5xl mx-auto flex-col">
       {/* Header */}
-      <div className="flex items-center justify-center space-x-3 pb-6 pt-4 border-b border-muted/20">
-        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#00a2dd] to-[#efb01b] flex items-center justify-center flex-shrink-0">
-          <Sparkles className="h-5 w-5 text-white" />
+      <div className="chat-hero border-b border-muted/20 pb-7 pt-4">
+        <div className="chat-hero-row flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start space-x-4">
+            <div className="chat-hero-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#00a2dd] to-[#efb01b]">
+              <Sparkles className="h-5 w-5 text-white" />
+            </div>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="section-kicker">Conversational Workspace</span>
+                <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
+                  Beta
+                </Badge>
+              </div>
+              <div>
+                <h1 className="section-title">BioLink Agent</h1>
+                <p className="section-subtitle max-w-2xl">
+                  Explore patient records, build cohorts, and move from question to evidence with a faster research workflow.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="hero-pill-row flex flex-wrap gap-2">
+            <span className="hero-pill"><Activity className="h-3.5 w-3.5" /> Live clinical context</span>
+            <span className="hero-pill"><Users className="h-3.5 w-3.5" /> Cohort aware</span>
+            <span className="hero-pill"><BarChart3 className="h-3.5 w-3.5" /> Analytics ready</span>
+          </div>
         </div>
-        <h1 className="text-2xl font-bold text-foreground">BioLink Agent</h1>
-        <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5">
-          Beta
-        </Badge>
       </div>
 
       {/* Chat Area */}
-      <Card className="flex-1 flex flex-col overflow-hidden shadow-sm border-muted/40 rounded-lg mt-4">
-        <ScrollArea className="flex-1 p-4 md:p-6">
-          <div className="space-y-6">
-            {messages.map((message) => (
+      <Card className="chat-surface mt-5 flex-1 flex-col overflow-hidden border-muted/40 shadow-sm">
+        <ScrollArea className="chat-scroll flex-1 p-4 md:p-6">
+          <div className="chat-thread space-y-6">
+            {messages.map((message, index) => (
               <div
                 key={message.id}
-                className={`flex items-start ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                className={`message-row flex items-start ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                style={{ "--stagger-index": index + 1 } as CSSProperties}
               >
                 {/* Avatar */}
                 <Avatar className={`h-8 w-8 flex-shrink-0 ${message.role === 'user' ? 'ml-3' : 'mr-3'}`}>
@@ -601,11 +623,11 @@ Rules:
                 </Avatar>
 
                 {/* Message Content */}
-                <div className={`space-y-2 max-w-[80%]`}>
-                  <div className={`p-3 rounded-2xl text-sm ${
+                <div className="max-w-[82%] space-y-2">
+                  <div className={`message-bubble rounded-2xl p-4 text-[0.95rem] leading-7 ${
                     message.role === 'user'
-                      ? 'bg-primary text-primary-foreground rounded-tr-none'
-                      : 'bg-muted/50 text-foreground rounded-tl-none'
+                      ? 'message-bubble-user rounded-tr-none bg-primary text-primary-foreground'
+                      : 'message-bubble-assistant rounded-tl-none bg-muted/50 text-foreground'
                   }`}>
                     {/* Render chunks if available (assistant responses) */}
                     {message.isStreaming ? (
@@ -663,7 +685,7 @@ Rules:
 
                   {/* Action Buttons */}
                   {message.actions && message.actions.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
+                    <div className="message-actions flex flex-wrap gap-2 pt-1">
                       {message.actions.map((action, idx) => (
                         <Button
                           key={idx}
@@ -690,13 +712,13 @@ Rules:
 
             {/* Loading Indicator - only show when not streaming */}
             {isLoading && !messages.some(message => message.isStreaming) && (
-              <div className="flex items-start">
+              <div className="message-row flex items-start">
                 <Avatar className="h-8 w-8 mr-3 bg-primary/10">
                   <AvatarFallback className="bg-primary/10 text-primary">
                     <Bot size={16} />
                   </AvatarFallback>
                 </Avatar>
-                <div className="bg-muted/50 p-3 rounded-2xl rounded-tl-none">
+                <div className="message-bubble message-bubble-assistant rounded-2xl rounded-tl-none bg-muted/50 p-4">
                   <div className="flex space-x-1">
                     <div className="w-2 h-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                     <div className="w-2 h-2 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -711,13 +733,13 @@ Rules:
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="p-4 border-t bg-background/50 backdrop-blur-sm">
+        <div className="chat-input-shell border-t bg-background/50 p-4 backdrop-blur-sm">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSendMessage();
             }}
-            className="flex items-center space-x-2"
+            className="chat-input-bar flex items-center space-x-2"
           >
             <Input
               ref={inputRef}
@@ -725,14 +747,14 @@ Rules:
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask me to show patients, build cohorts, or analyze data..."
               disabled={isLoading}
-              className="flex-1"
+              className="chat-input-field flex-1"
               autoFocus
             />
             <Button
               type="submit"
               size="icon"
               disabled={!input.trim() || isLoading}
-              className="bg-[#00a2dd] hover:bg-[#0081b0]"
+              className="chat-send-button bg-[#00a2dd] hover:bg-[#0081b0]"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -741,10 +763,10 @@ Rules:
               )}
             </Button>
           </form>
-          <div className="mt-3 flex justify-center space-x-6 text-xs text-muted-foreground px-2">
-            <span className="flex items-center"><Activity className="h-3 w-3 mr-1.5" /> Clinical Data</span>
-            <span className="flex items-center"><Users className="h-3 w-3 mr-1.5" /> Cohorts</span>
-            <span className="flex items-center"><BarChart3 className="h-3 w-3 mr-1.5" /> Analytics</span>
+          <div className="mt-3 flex justify-center space-x-6 px-2 text-xs text-muted-foreground">
+            <span className="flex items-center"><Activity className="mr-1.5 h-3 w-3" /> Clinical Data</span>
+            <span className="flex items-center"><Users className="mr-1.5 h-3 w-3" /> Cohorts</span>
+            <span className="flex items-center"><BarChart3 className="mr-1.5 h-3 w-3" /> Analytics</span>
           </div>
         </div>
       </Card>

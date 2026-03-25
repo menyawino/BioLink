@@ -1,24 +1,21 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { ExternalLink, PlugZap } from "lucide-react";
+import { Card, CardContent } from "./ui/card";
 
 const SUPERSET_URL_KEY = "biolink.superset.url";
+const DEFAULT_SUPERSET_URL = import.meta.env.VITE_SUPERSET_URL?.trim() ?? "";
 
 export function SupersetWorkspace() {
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(DEFAULT_SUPERSET_URL);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = localStorage.getItem(SUPERSET_URL_KEY);
-    if (stored) setUrl(stored);
+    if (stored?.trim()) {
+      setUrl(stored);
+    } else if (DEFAULT_SUPERSET_URL) {
+      localStorage.setItem(SUPERSET_URL_KEY, DEFAULT_SUPERSET_URL);
+    }
   }, []);
-
-  const saveUrl = () => {
-    localStorage.setItem(SUPERSET_URL_KEY, url);
-  };
 
   return (
     <Card className="w-full h-[calc(100vh-5.5rem)] max-h-[calc(100vh-5.5rem)]">

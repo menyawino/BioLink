@@ -7,6 +7,7 @@ from app.config import settings
 from app.database import test_connection
 from app.database import engine
 from app.db_bootstrap import ensure_schema
+from app.services.registry_loader import ensure_registry_snapshot_loaded
 from app.routes import (
     chat,
     cohort,
@@ -43,6 +44,13 @@ async def lifespan(app: FastAPI):
         ensure_schema(engine)
     except Exception as e:
         logger.error(f"Database schema bootstrap failed: {e}")
+
+    try:
+        reload_result = ensure_registry_snapshot_loaded(engine, reason="startup")
+        if reload_result.get("loaded"):
+            logger.info("✓ Registry snapshot restored during startup")
+    except Exception as e:
+        logger.warning(f"Registry snapshot startup reload failed: {e}")
 
     # Bootstrap auth tables + seed default users
     try:

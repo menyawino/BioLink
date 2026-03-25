@@ -4,7 +4,7 @@ import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Line, ComposedChart } from 'recharts';
-import { TrendingUp, Users, Database, Activity, Heart, Map, Loader2, Shield } from "lucide-react";
+import { TrendingUp, Users, Database, Activity, Heart, Map, Shield } from "lucide-react";
 import { GeographicMapping } from "./GeographicMapping";
 import { DataNotAvailable } from "./DataNotAvailable";
 import { useRegistryStats, useDemographics, useDataCompleteness, useComorbidities, useEnrollmentTrends } from "../hooks/useAnalytics";
@@ -13,6 +13,29 @@ import type { DatasetFilter } from "../api/patients";
 
 // Colors for charts
 const COLORS = ['#e9322b', '#efb01b', '#00a2dd', '#22c55e', '#8b5cf6', '#6b7280', '#ec4899', '#f97316'];
+
+function AnalyticsMetricSkeleton() {
+  return (
+    <div className="space-y-3 pt-1">
+      <div className="skeleton-block h-4 w-24 rounded-full" />
+      <div className="skeleton-block h-10 w-28 rounded-2xl" />
+      <div className="skeleton-block h-4 w-32 rounded-full" />
+    </div>
+  );
+}
+
+function AnalyticsChartSkeleton({ heightClass = "h-[300px]" }: { heightClass?: string }) {
+  return (
+    <div className={`analytics-chart-skeleton ${heightClass}`}>
+      <div className="skeleton-block h-full w-full rounded-[1.1rem]" />
+      <div className="pointer-events-none absolute inset-x-6 bottom-6 flex gap-3">
+        <div className="skeleton-block h-3 flex-1 rounded-full" />
+        <div className="skeleton-block h-3 flex-1 rounded-full" />
+        <div className="skeleton-block h-3 flex-1 rounded-full" />
+      </div>
+    </div>
+  );
+}
 
 export function RegistryAnalytics() {
   const [dataset, setDataset] = useState<DatasetFilter>("all");
@@ -158,12 +181,24 @@ export function RegistryAnalytics() {
     : undefined;
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-end">
-            <Select value={dataset} onValueChange={(value: string) => setDataset(value as DatasetFilter)}>
-              <SelectTrigger className="w-44">
+    <div className="analytics-shell space-y-6">
+      <div className="analytics-hero flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-2">
+          <span className="section-kicker">Analytics Workspace</span>
+          <div>
+            <h2 className="section-title">Registry Analytics</h2>
+            <p className="section-subtitle max-w-3xl">
+              Monitor coverage, enrollment momentum, and harmonization quality with a cleaner executive view across the registry.
+            </p>
+          </div>
+        </div>
+
+        <Card className="analytics-toolbar-card">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-end gap-3">
+              <Badge variant="outline" className="registry-badge">{dataset === 'all' ? 'All registries' : dataset.toUpperCase()}</Badge>
+              <Select value={dataset} onValueChange={(value: string) => setDataset(value as DatasetFilter)}>
+                <SelectTrigger className="analytics-select w-44">
                 <SelectValue placeholder="Dataset" />
               </SelectTrigger>
               <SelectContent>
@@ -173,18 +208,19 @@ export function RegistryAnalytics() {
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+      <div className="analytics-overview-grid grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Card className="metric-card">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Patients</p>
                 {statsLoading ? (
-                  <Loader2 className="h-6 w-6 animate-spin mt-2" />
+                  <AnalyticsMetricSkeleton />
                 ) : (
                   <p className="text-3xl">{stats?.totalPatients?.toLocaleString() || '0'}</p>
                 )}
@@ -200,13 +236,13 @@ export function RegistryAnalytics() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="metric-card">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Patients with Echo</p>
                 {statsLoading ? (
-                  <Loader2 className="h-6 w-6 animate-spin mt-2" />
+                  <AnalyticsMetricSkeleton />
                 ) : (
                   <p className="text-3xl">{stats?.withEcho || 0}</p>
                 )}
@@ -221,13 +257,13 @@ export function RegistryAnalytics() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="metric-card">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Patients with MRI</p>
                 {statsLoading ? (
-                  <Loader2 className="h-6 w-6 animate-spin mt-2" />
+                  <AnalyticsMetricSkeleton />
                 ) : (
                   <p className="text-3xl">{stats?.withMri || 0}</p>
                 )}
@@ -242,13 +278,13 @@ export function RegistryAnalytics() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="metric-card">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Avg Data Completeness</p>
                 {statsLoading ? (
-                  <Loader2 className="h-6 w-6 animate-spin mt-2" />
+                  <AnalyticsMetricSkeleton />
                 ) : (
                   <p className="text-3xl">{Math.round(Number(stats?.dataCompleteness || 0))}%</p>
                 )}
@@ -263,8 +299,8 @@ export function RegistryAnalytics() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card className="insight-card">
           <CardHeader>
             <CardTitle>Fast Facts</CardTitle>
           </CardHeader>
@@ -276,7 +312,7 @@ export function RegistryAnalytics() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="insight-card">
           <CardHeader>
             <CardTitle>Enrollment Momentum</CardTitle>
           </CardHeader>
@@ -288,7 +324,7 @@ export function RegistryAnalytics() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="insight-card">
           <CardHeader>
             <CardTitle>Immediate Priorities</CardTitle>
           </CardHeader>
@@ -305,8 +341,8 @@ export function RegistryAnalytics() {
         </Card>
       </div>
 
-      <Tabs defaultValue="demographics" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-8">
+      <Tabs defaultValue="demographics" className="space-y-4 analytics-tabs">
+        <TabsList className="view-tabs-list analytics-tabs-list grid w-full grid-cols-8">
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
           <TabsTrigger value="comorbidities">Comorbidities</TabsTrigger>
           <TabsTrigger value="samples">Sample Analysis</TabsTrigger>
@@ -331,9 +367,7 @@ export function RegistryAnalytics() {
               </CardHeader>
               <CardContent>
                 {demoLoading ? (
-                  <div className="flex items-center justify-center h-[300px]">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
+                  <AnalyticsChartSkeleton />
                 ) : genderChartData ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
@@ -367,9 +401,7 @@ export function RegistryAnalytics() {
               </CardHeader>
               <CardContent>
                 {demoLoading ? (
-                  <div className="flex items-center justify-center h-[300px]">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
+                  <AnalyticsChartSkeleton />
                 ) : nationalityChartData && nationalityChartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={nationalityChartData} layout="vertical" margin={{ left: 20, right: 10 }}>
@@ -397,9 +429,7 @@ export function RegistryAnalytics() {
             </CardHeader>
             <CardContent>
               {demoLoading ? (
-                <div className="flex items-center justify-center h-[300px]">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
+                <AnalyticsChartSkeleton />
                 ) : demographicsChartData && demographicsChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={demographicsChartData}>
@@ -426,9 +456,7 @@ export function RegistryAnalytics() {
               </CardHeader>
               <CardContent>
                 {comorbidityLoading ? (
-                  <div className="flex items-center justify-center h-[300px]">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
+                  <AnalyticsChartSkeleton />
                 ) : comorbidityRateData && comorbidityRateData.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={comorbidityRateData}>
@@ -451,9 +479,7 @@ export function RegistryAnalytics() {
               </CardHeader>
               <CardContent>
                 {comorbidityLoading ? (
-                  <div className="flex items-center justify-center h-[300px]">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
+                  <AnalyticsChartSkeleton />
                 ) : comorbidities?.comorbidityDistribution ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={comorbidities.comorbidityDistribution.map(item => ({
@@ -482,9 +508,7 @@ export function RegistryAnalytics() {
             </CardHeader>
             <CardContent>
               {compLoading ? (
-                <div className="flex items-center justify-center h-[300px]">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
+                <AnalyticsChartSkeleton />
               ) : realSampleCompletenessData ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <ComposedChart data={realSampleCompletenessData}>
@@ -514,9 +538,7 @@ export function RegistryAnalytics() {
             </CardHeader>
             <CardContent>
               {statsLoading ? (
-                <div className="flex items-center justify-center h-[400px]">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
+                <AnalyticsChartSkeleton heightClass="h-[400px]" />
               ) : coverageChartData ? (
                 <ResponsiveContainer width="100%" height={320}>
                   <BarChart data={coverageChartData} layout="vertical" margin={{ left: 10, right: 10 }}>
@@ -597,9 +619,7 @@ export function RegistryAnalytics() {
               </CardHeader>
               <CardContent>
                 {ehvolStatsLoading || bhsStatsLoading ? (
-                  <div className="flex items-center justify-center h-[280px]">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
+                  <AnalyticsChartSkeleton heightClass="h-[280px]" />
                 ) : registryContributionData ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
                     <ResponsiveContainer width="100%" height={280}>
@@ -641,9 +661,7 @@ export function RegistryAnalytics() {
               </CardHeader>
               <CardContent>
                 {compLoading ? (
-                  <div className="flex items-center justify-center h-[300px]">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
+                  <AnalyticsChartSkeleton />
                 ) : dataAvailabilityData && dataAvailabilityData.length > 0 ? (
                   <>
                     <ResponsiveContainer width="100%" height={300}>
@@ -672,9 +690,7 @@ export function RegistryAnalytics() {
               </CardHeader>
               <CardContent>
                 {compLoading ? (
-                  <div className="flex items-center justify-center h-[300px]">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
+                  <AnalyticsChartSkeleton />
                 ) : completenessDistributionData && completenessDistributionData.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={completenessDistributionData}>
@@ -729,9 +745,7 @@ export function RegistryAnalytics() {
             </CardHeader>
             <CardContent>
               {enrollmentLoading ? (
-                <div className="flex items-center justify-center h-[400px]">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
+                <AnalyticsChartSkeleton heightClass="h-[400px]" />
               ) : enrollmentTrendData ? (
                 <ResponsiveContainer width="100%" height={400}>
                   <ComposedChart data={enrollmentTrendData}>

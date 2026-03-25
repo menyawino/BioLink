@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { AppProvider, useApp } from "./context/AppContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Sidebar } from "./components/Sidebar";
-import { ChatInterface } from "./components/ChatInterface";
 import { PatientHeader } from "./components/PatientHeader";
 import { PatientSearch } from "./components/PatientSearch";
 import { VitalSigns } from "./components/VitalSigns";
@@ -10,20 +9,23 @@ import { RiskFactors } from "./components/RiskFactors";
 import { MedicalHistory } from "./components/MedicalHistory";
 import { TraditionalImaging } from "./components/TraditionalImaging";
 import { GenomicData } from "./components/GenomicData";
-import { PatientRegistryTable } from "./components/PatientRegistryTable";
-import { RegistryAnalytics } from "./components/RegistryAnalytics";
-import { SupersetWorkspace } from "./components/SupersetWorkspace";
-import { EtlMonitor } from "./components/EtlMonitor";
-import { CohortBuilder } from "./components/CohortBuilder";
-import { DataDictionary } from "./components/DataDictionary";
-import { Settings } from "./components/Settings";
-import { UserProfile } from "./components/UserProfile";
 import { DataNotAvailable } from "./components/DataNotAvailable";
-import { LoginPage } from "./components/LoginPage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { usePatient, usePatientGenomics } from "./hooks/usePatients";
 import { canAccessView } from "./lib/access";
-import type { PatientDetail } from "./api/types";
+import type { ViewType } from "./context/AppContext";
+import type { GenomicData as GenomicDataResponse, PatientDetail } from "./api/types";
+
+const ChatInterface = lazy(() => import("./components/ChatInterface").then((module) => ({ default: module.ChatInterface })));
+const PatientRegistryTable = lazy(() => import("./components/PatientRegistryTable").then((module) => ({ default: module.PatientRegistryTable })));
+const RegistryAnalytics = lazy(() => import("./components/RegistryAnalytics").then((module) => ({ default: module.RegistryAnalytics })));
+const SupersetWorkspace = lazy(() => import("./components/SupersetWorkspace").then((module) => ({ default: module.SupersetWorkspace })));
+const EtlMonitor = lazy(() => import("./components/EtlMonitor").then((module) => ({ default: module.EtlMonitor })));
+const CohortBuilder = lazy(() => import("./components/CohortBuilder").then((module) => ({ default: module.CohortBuilder })));
+const DataDictionary = lazy(() => import("./components/DataDictionary").then((module) => ({ default: module.DataDictionary })));
+const Settings = lazy(() => import("./components/Settings").then((module) => ({ default: module.Settings })));
+const UserProfile = lazy(() => import("./components/UserProfile").then((module) => ({ default: module.UserProfile })));
+const LoginPage = lazy(() => import("./components/LoginPage").then((module) => ({ default: module.LoginPage })));
 
 // Transform patient data from API to component format
 function transformPatientToHeader(patient: PatientDetail) {
@@ -102,7 +104,14 @@ function transformToMedicalHistory(patient: PatientDetail) {
   const diagnoses = patient.medical?.diagnoses ?? [];
   const hasLabsData = patient.labs !== null;
   
-  const tests = [];
+  const tests: Array<{
+    id: string;
+    name: string;
+    date: string;
+    result: string;
+    status: "normal" | "abnormal";
+    notes?: string;
+  }> = [];
   if (hasLabsData && patient.labs) {
     if (patient.labs.hba1c !== null) {
       tests.push({
@@ -110,7 +119,7 @@ function transformToMedicalHistory(patient: PatientDetail) {
         name: "HbA1c",
         date: patient.enrollment_date || "Not recorded",
         result: `${Number(patient.labs.hba1c).toFixed(1)}%`,
-        status: (Number(patient.labs.hba1c) > 6.5 ? "abnormal" : "normal") as const,
+        status: Number(patient.labs.hba1c) > 6.5 ? "abnormal" : "normal",
         notes: patient.labs.hba1c_outlier ? "Flagged as outlier" : undefined
       });
     }
@@ -120,7 +129,7 @@ function transformToMedicalHistory(patient: PatientDetail) {
         name: "Troponin I",
         date: patient.enrollment_date || "Not recorded",
         result: `${Number(patient.labs.troponin_i).toFixed(2)} ng/L`,
-        status: (Number(patient.labs.troponin_i) > 14 ? "abnormal" : "normal") as const,
+        status: Number(patient.labs.troponin_i) > 14 ? "abnormal" : "normal",
         notes: patient.labs.troponin_outlier ? "Flagged as outlier" : undefined
       });
     }
@@ -194,184 +203,6 @@ function transformToImagingData(patient: PatientDetail) {
 }
 
 export default function App() {
-  const [currentView, setCurrentView] = useState("welcome");
-  const [selectedPatientDnaId, setSelectedPatientDnaId] = useState<string | null>(null);
-  
-  const { data: patientData, isLoading: patientLoading, error: patientError } = usePatient(selectedPatientDnaId || '');
-
-  const handlePatientSelect = (dnaId: string) => {
-    setSelectedPatientDnaId(dnaId);
-    setCurrentView("patient");
-  };
-
-  const renderMainContent = () => {
-    switch (currentView) {
-      case "welcome":
-        return <ChatInterface />;
-      
-      case "registry":
-        return <PatientRegistryTable onPatientSelect={handlePatientSelect} />;
-      
-      case "cohort":
-        return <CohortBuilder />;
-      
-      case "analytics":
-        return <RegistryAnalytics />;
-      
-      case "charts":
-        return <SupersetWorkspace />;
-
-      case "etl":
-        return <EtlMonitor />;
-      
-      case "dictionary":
-        return <DataDictionary />;
-      
-      case "settings":
-        return <Settings />;
-      
-      case "profile":
-        return <UserProfile />;
-      
-      case "patient":
-      default:
-        if (!selectedPatientDnaId) {
-          return (
-            <div className="space-y-6">
-              <PatientSearch 
-                currentMrn="" 
-                onPatientSelect={handlePatientSelect} 
-              />
-              <div className="flex items-center justify-center h-64">
-                <p className="text-muted-foreground">Select a patient from the search above or from the Patient Registry.</p>
-              </div>
-            </div>
-          );
-        }
-
-        if (patientLoading) {
-          return (
-            <div className="space-y-6">
-              <PatientSearch 
-                currentMrn={selectedPatientDnaId} 
-                onPatientSelect={handlePatientSelect} 
-              />
-              <div className="flex items-center justify-center h-64">
-                <p className="text-muted-foreground">Loading patient data...</p>
-              </div>
-            </div>
-          );
-        }
-
-        if (patientError || !patientData) {
-          return (
-            <div className="space-y-6">
-              <PatientSearch 
-                currentMrn={selectedPatientDnaId} 
-                onPatientSelect={handlePatientSelect} 
-              />
-              <div className="flex items-center justify-center h-64">
-                <p className="text-destructive">Error loading patient: {patientError?.message || 'Patient not found'}</p>
-              </div>
-            </div>
-          );
-        }
-
-        const patient = patientData;
-        const patientHeader = transformPatientToHeader(patient);
-        const vitals = transformToVitals(patient);
-        const riskFactors = transformToRiskFactors(patient);
-        const medicalHistory = transformToMedicalHistory(patient);
-        const imagingData = transformToImagingData(patient);
-
-        return (
-          <div className="space-y-6">
-            <PatientSearch 
-              currentMrn={selectedPatientDnaId} 
-              onPatientSelect={handlePatientSelect} 
-            />
-            
-            <PatientHeader patient={patientHeader} />
-            
-            <Tabs defaultValue="vitals" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-6">
-                <TabsTrigger value="vitals">Vital Signs</TabsTrigger>
-                <TabsTrigger value="risk">Risk Assessment</TabsTrigger>
-                <TabsTrigger value="history">Medical History</TabsTrigger>
-                <TabsTrigger value="genomics">Genomics</TabsTrigger>
-                <TabsTrigger value="biomarkers">Biomarkers</TabsTrigger>
-                <TabsTrigger value="imaging">Imaging</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="vitals">
-                {vitals.hasData ? (
-                  <VitalSigns vitals={vitals} />
-                ) : (
-                  <DataNotAvailable 
-                    title="Vital Signs Data Not Available" 
-                    message="No physical examination data recorded for this patient in the EHVol database."
-                    type="empty-for-patient"
-                  />
-                )}
-              </TabsContent>
-
-              <TabsContent value="risk">
-                {riskFactors.hasData ? (
-                  <RiskFactors riskFactors={riskFactors} />
-                ) : (
-                  <DataNotAvailable 
-                    title="Risk Factor Data Not Available" 
-                    message="No medical history or lifestyle data recorded for this patient."
-                    type="empty-for-patient"
-                  />
-                )}
-              </TabsContent>
-
-              <TabsContent value="history">
-                {medicalHistory.hasData ? (
-                  <MedicalHistory history={medicalHistory} />
-                ) : (
-                  <DataNotAvailable 
-                    title="Medical History Not Available" 
-                    message="No diagnoses or lab results recorded for this patient."
-                    type="empty-for-patient"
-                  />
-                )}
-              </TabsContent>
-
-              <TabsContent value="genomics">
-                <DataNotAvailable 
-                  title="Genomic Data Not Available" 
-                  message="Genomic data (polygenic risk scores, genetic variants, pharmacogenomics) is not included in the EHVol database schema."
-                  type="not-in-database"
-                />
-              </TabsContent>
-
-              <TabsContent value="biomarkers">
-                <DataNotAvailable 
-                  title="Protein Biomarkers Not Available" 
-                  message="Detailed protein biomarker panels (hs-CRP, NT-proBNP, IL-6, etc.) are not included in the EHVol database schema. Only basic lab values (HbA1c, Troponin I) are available in the Medical History tab."
-                  type="not-in-database"
-                />
-              </TabsContent>
-
-              <TabsContent value="imaging">
-                {imagingData.hasData ? (
-                  <TraditionalImaging imaging={imagingData} />
-                ) : (
-                  <DataNotAvailable 
-                    title="Imaging Data Not Available" 
-                    message="No echocardiogram or MRI data recorded for this patient, or imaging was marked as missing."
-                    type="empty-for-patient"
-                  />
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-        );
-    }
-  };
-
   return (
     <AuthProvider>
       <AppProvider>
@@ -385,15 +216,15 @@ function AuthGate() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
-      </div>
-    );
+    return <FullscreenLoader />;
   }
 
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return (
+      <Suspense fallback={<FullscreenLoader />}>
+        <LoginPage />
+      </Suspense>
+    );
   }
 
   return <AppContent />;
@@ -403,6 +234,9 @@ function AppContent() {
   const { user } = useAuth();
   const { currentView, setCurrentView, selectedPatient, setSelectedPatient } = useApp();
   const [currentTab, setCurrentTab] = useState<string>("vitals");
+  const [displayedView, setDisplayedView] = useState<ViewType>(currentView);
+  const [displayedPatient, setDisplayedPatient] = useState<string | null>(selectedPatient);
+  const [transitionPhase, setTransitionPhase] = useState<"enter" | "exit" | "idle">("enter");
   const { data: patient, error: patientError, isLoading: patientLoading } = usePatient(selectedPatient || '');
   const { data: genomicsData, error: genomicsError, isLoading: genomicsLoading } = usePatientGenomics(selectedPatient || '');
 
@@ -411,6 +245,36 @@ function AppContent() {
       setCurrentView("welcome");
     }
   }, [currentView, setCurrentView, user]);
+
+  useEffect(() => {
+    const targetKey = `${currentView}:${selectedPatient ?? "none"}`;
+    const displayedKey = `${displayedView}:${displayedPatient ?? "none"}`;
+
+    if (targetKey === displayedKey) {
+      return;
+    }
+
+    setTransitionPhase("exit");
+    const timer = window.setTimeout(() => {
+      setDisplayedView(currentView);
+      setDisplayedPatient(selectedPatient);
+      setTransitionPhase("enter");
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [currentView, displayedPatient, displayedView, selectedPatient]);
+
+  useEffect(() => {
+    if (transitionPhase !== "enter") {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setTransitionPhase("idle");
+    }, 320);
+
+    return () => window.clearTimeout(timer);
+  }, [transitionPhase]);
   
   const handlePatientSelect = (dnaId: string) => {
     setSelectedPatient(dnaId);
@@ -418,26 +282,32 @@ function AppContent() {
   };
   
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar currentView={currentView} onViewChange={setCurrentView} className="flex-shrink-0" />
-      
-      <div className="flex-1 overflow-auto">
-        <div className="p-6">
-          {renderContent(
-            user,
-            currentView,
-            selectedPatient,
-            setSelectedPatient,
-            currentTab,
-            setCurrentTab,
-            patient,
-            patientError,
-            patientLoading,
-            genomicsData,
-            genomicsError,
-            genomicsLoading,
-            handlePatientSelect
-          )}
+    <div className="app-shell flex h-screen overflow-hidden bg-background">
+      <Sidebar currentView={currentView} onViewChange={setCurrentView} className="app-sidebar-panel flex-shrink-0" />
+
+      <div className="app-main flex-1 overflow-auto">
+        <div
+          key={`${displayedView}:${displayedPatient ?? 'none'}`}
+          className={`app-stage app-stage-${transitionPhase} p-6`}
+          data-view={displayedView}
+        >
+          <Suspense fallback={<ViewLoadingState view={displayedView} />}>
+            {renderContent(
+              user,
+              displayedView,
+              displayedPatient,
+              setSelectedPatient,
+              currentTab,
+              setCurrentTab,
+              patient,
+              patientError,
+              patientLoading,
+              genomicsData,
+              genomicsError,
+              genomicsLoading,
+              handlePatientSelect
+            )}
+          </Suspense>
         </div>
       </div>
     </div>
@@ -454,7 +324,7 @@ function renderContent(
   patient: any,
   patientError: any,
   patientLoading: boolean,
-  genomicsData: import("./api/types").GenomicData | undefined,
+  genomicsData: GenomicDataResponse | undefined,
   genomicsError: string | null,
   genomicsLoading: boolean,
   handlePatientSelect: (dnaId: string) => void
@@ -471,7 +341,7 @@ function renderContent(
         return <PatientRegistryTable onPatientSelect={handlePatientSelect} />;
       case "patient":
         if (!selectedPatient) {
-          return <PatientSearch onPatientSelect={setSelectedPatient} />;
+          return <PatientSearch currentMrn="" onPatientSelect={setSelectedPatient} />;
         }
         return renderPatientView(
           selectedPatient,
@@ -504,6 +374,31 @@ function renderContent(
   };
   
   return renderMainContent();
+}
+
+function FullscreenLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+    </div>
+  );
+}
+
+function ViewLoadingState({ view }: { view: ViewType }) {
+  return (
+    <div className="view-loading-shell">
+      <div className="view-loading-header space-y-2">
+        <span className="section-kicker">Loading View</span>
+        <h2 className="section-title capitalize">{view}</h2>
+        <p className="section-subtitle">Preparing the next workspace and loading its data dependencies.</p>
+      </div>
+      <div className="view-loading-grid">
+        <div className="view-loading-card view-loading-card-lg" />
+        <div className="view-loading-card" />
+        <div className="view-loading-card" />
+      </div>
+    </div>
+  );
 }
 
 function renderPatientView(
@@ -544,8 +439,8 @@ function renderPatientView(
     <div className="space-y-6">
       <PatientHeader patient={headerData} />
       
-      <Tabs value={currentTab} onValueChange={setCurrentTab}>
-        <TabsList className="grid w-full grid-cols-5">
+      <Tabs value={currentTab} onValueChange={setCurrentTab} className="patient-tabs-shell">
+        <TabsList className="view-tabs-list patient-tabs-list grid w-full grid-cols-5">
           <TabsTrigger value="vitals">Vital Signs</TabsTrigger>
           <TabsTrigger value="risk">Risk Factors</TabsTrigger>
           <TabsTrigger value="history">Medical History</TabsTrigger>
@@ -553,7 +448,7 @@ function renderPatientView(
           <TabsTrigger value="imaging">Imaging</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="vitals">
+        <TabsContent value="vitals" className="patient-tab-panel">
           {vitalsData.hasData ? (
             <VitalSigns vitals={vitalsData} />
           ) : (
@@ -565,7 +460,7 @@ function renderPatientView(
           )}
         </TabsContent>
         
-        <TabsContent value="risk">
+        <TabsContent value="risk" className="patient-tab-panel">
           {riskFactorsData.hasData ? (
             <RiskFactors riskFactors={riskFactorsData} />
           ) : (
@@ -577,7 +472,7 @@ function renderPatientView(
           )}
         </TabsContent>
         
-        <TabsContent value="history">
+        <TabsContent value="history" className="patient-tab-panel">
           {medicalHistoryData.hasData ? (
             <MedicalHistory history={medicalHistoryData} />
           ) : (
@@ -589,7 +484,7 @@ function renderPatientView(
           )}
         </TabsContent>
 
-        <TabsContent value="genomics">
+        <TabsContent value="genomics" className="patient-tab-panel">
           {genomicsLoading ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">Loading genomic data...</p>
@@ -605,7 +500,7 @@ function renderPatientView(
           )}
         </TabsContent>
         
-        <TabsContent value="imaging">
+        <TabsContent value="imaging" className="patient-tab-panel">
           {imagingData.hasData ? (
             <TraditionalImaging imaging={imagingData} />
           ) : (
