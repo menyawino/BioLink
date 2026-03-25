@@ -131,6 +131,40 @@ class TestAnalyticsEndpoints:
         assert response.status_code in [200, 404]
 
 
+class TestHarmonizationEndpoints:
+    """Test harmonization endpoints."""
+
+    def test_harmonization_tiers(self, client: TestClient):
+        """Test harmonization tiers endpoint."""
+        response = client.get("/api/harmonization/tiers")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "data" in data
+
+    def test_provenance_summary(self, client: TestClient):
+        """Test provenance summary endpoint."""
+        response = client.get("/api/harmonization/provenance/summary")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_provenance_records(self, client: TestClient):
+        """Test provenance records endpoint with filters."""
+        response = client.get("/api/harmonization/provenance?limit=10")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "data" in data
+
+    def test_comparability_report(self, client: TestClient):
+        """Test comparability report endpoint."""
+        response = client.get("/api/harmonization/comparability")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+
 @pytest.mark.integration
 class TestIntegration:
     """Integration tests requiring full stack."""

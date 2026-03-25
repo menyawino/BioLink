@@ -55,7 +55,6 @@ BioLink now features a **complete agentic system** powered by AI with function c
 
 - **`./scripts/setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
 - **`./scripts/run.sh`**: Quick start for machines that already have the environment set up
-- **`./scripts/start-all.sh`**: Start all Docker services (assumes Docker is running)
 - **`./scripts/quick_test.sh`**: Run basic functionality tests against running services
 
 ---

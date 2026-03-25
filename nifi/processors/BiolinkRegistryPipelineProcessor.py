@@ -447,10 +447,34 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         default_value="unified_registry",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
+    PROVENANCE_RELATIVE_PATH = PropertyDescriptor(
+        name="Provenance Output Relative Path",
+        description="Path to provenance.csv relative to the repository root.",
+        required=True,
+        default_value="outputs/provenance.csv",
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
+    )
+    TIERS_RELATIVE_PATH = PropertyDescriptor(
+        name="Tiers Output Relative Path",
+        description="Path to harmonization_tiers.csv relative to the repository root.",
+        required=True,
+        default_value="outputs/harmonization_tiers.csv",
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
+    )
+    COMPARABILITY_RELATIVE_PATH = PropertyDescriptor(
+        name="Comparability Report Relative Path",
+        description="Path to comparability_report.json relative to the repository root.",
+        required=True,
+        default_value="outputs/comparability_report.json",
+        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
+    )
     property_descriptors = [
         REPOSITORY_ROOT,
         SCHEMA_RELATIVE_PATH,
         UNIFIED_RELATIVE_PATH,
+        PROVENANCE_RELATIVE_PATH,
+        TIERS_RELATIVE_PATH,
+        COMPARABILITY_RELATIVE_PATH,
         OMOP_OUTPUT_DIR,
         REPORT_HTML_PATH,
         CHARACTERIZATION_PATH,
@@ -484,6 +508,9 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         repo_root = Path(context.getProperty(self.REPOSITORY_ROOT).getValue())
         schema_path = repo_root / context.getProperty(self.SCHEMA_RELATIVE_PATH).getValue()
         unified_path = repo_root / context.getProperty(self.UNIFIED_RELATIVE_PATH).getValue()
+        provenance_path = repo_root / context.getProperty(self.PROVENANCE_RELATIVE_PATH).getValue()
+        tiers_path = repo_root / context.getProperty(self.TIERS_RELATIVE_PATH).getValue()
+        comparability_path = repo_root / context.getProperty(self.COMPARABILITY_RELATIVE_PATH).getValue()
         omop_dir = repo_root / context.getProperty(self.OMOP_OUTPUT_DIR).getValue()
         report_html = repo_root / context.getProperty(self.REPORT_HTML_PATH).getValue()
         characterization_csv = repo_root / context.getProperty(self.CHARACTERIZATION_PATH).getValue()
@@ -508,6 +535,7 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         apply_script = repo_root / "scripts" / "apply_schema.py"
         omop_script = repo_root / "scripts" / "omop_etl.py"
         quality_script = repo_root / "scripts" / "omop_quality.py"
+        comparability_script = repo_root / "scripts" / "cohort_comparability.py"
 
         try:
             self._run_script(
@@ -520,6 +548,24 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                     str(repo_root / "db" / "EHVol_Full.csv"),
                     "--output",
                     str(unified_path),
+                    "--provenance-output",
+                    str(provenance_path),
+                    "--tiers-output",
+                    str(tiers_path),
+                    "--drop-empty-cols",
+                ],
+            )
+            self._run_script(
+                repo_root,
+                [
+                    "python3",
+                    str(comparability_script),
+                    "--registry",
+                    str(unified_path),
+                    "--tiers",
+                    str(tiers_path),
+                    "--output",
+                    str(comparability_path),
                 ],
             )
             self._run_script(
@@ -566,6 +612,9 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
             "unified_registry_path": str(unified_path),
             "unified_registry_rows": unified_rows,
             "unified_registry_columns": unified_cols,
+            "provenance_path": str(provenance_path),
+            "tiers_path": str(tiers_path),
+            "comparability_path": str(comparability_path),
             "omop_output_dir": str(omop_dir),
             "quality_report_path": str(report_html),
             "characterization_path": str(characterization_csv),
@@ -639,6 +688,40 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                             psy_sql,
                         )
                 summary["postgres_omop_tables"] = loaded_tables
+
+                # Load harmonization artifacts (provenance, tiers)
+                harmonization_tables = {}
+                if provenance_path.is_file():
+                    harmonization_tables["harmonization_provenance"] = _create_or_replace_csv_table(
+                        conn, provenance_path, "harmonization_provenance", psy_sql,
+                    )
+                if tiers_path.is_file():
+                    harmonization_tables["harmonization_tiers"] = _create_or_replace_csv_table(
+                        conn, tiers_path, "harmonization_tiers", psy_sql,
+                    )
+                # Store comparability report as JSONB if it exists
+                if comparability_path.is_file():
+                    report_json = json.loads(comparability_path.read_text())
+                    with conn.cursor() as cursor:
+                        cursor.execute(psy_sql.SQL(
+                            "DROP TABLE IF EXISTS {} CASCADE"
+                        ).format(psy_sql.Identifier("comparability_report")))
+                        cursor.execute(psy_sql.SQL(
+                            "CREATE TABLE {} ("
+                            "id BIGSERIAL PRIMARY KEY, "
+                            "report JSONB NOT NULL, "
+                            "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                            ")"
+                        ).format(psy_sql.Identifier("comparability_report")))
+                        cursor.execute(
+                            psy_sql.SQL("INSERT INTO {} (report) VALUES (%s)").format(
+                                psy_sql.Identifier("comparability_report")
+                            ).as_string(conn),
+                            (psy_json(report_json),),
+                        )
+                    conn.commit()
+                    harmonization_tables["comparability_report"] = 1
+                summary["postgres_harmonization_tables"] = harmonization_tables
                 _store_run_manifest(conn, summary, psy_json)
             finally:
                 conn.close()

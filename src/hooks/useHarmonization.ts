@@ -1,0 +1,26 @@
+import { useQuery } from './useApi';
+import {
+  getHarmonizationTiers,
+  getProvenanceSummary,
+  getComparabilityReport,
+} from '../api/harmonization';
+import type {
+  HarmonizationTier,
+  ProvenanceSummary,
+  ComparabilityReport,
+} from '../api/types';
+
+export function useHarmonizationTiers() {
+  return useQuery<{
+    data: HarmonizationTier[];
+    summary: Record<string, number>;
+  }>(() => getHarmonizationTiers(), []);
+}
+
+export function useProvenanceSummary() {
+  return useQuery<ProvenanceSummary>(() => getProvenanceSummary(), []);
+}
+
+export function useComparabilityReport() {
+  return useQuery<ComparabilityReport>(() => getComparabilityReport(), []);
+}

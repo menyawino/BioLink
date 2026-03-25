@@ -16,6 +16,7 @@ from app.routes import (
     superset,
     etl,
     auth,
+    harmonization,
 )
 from app.core import limiter, setup_rate_limiting, RateLimits
 import logging
@@ -224,6 +225,12 @@ app.include_router(
     prefix="/api/etl",
     tags=["etl"],
     dependencies=[Depends(auth.require_role("admin"))],
+)
+app.include_router(
+    harmonization.router,
+    prefix="/api/harmonization",
+    tags=["harmonization"],
+    dependencies=[Depends(auth.require_scopes("read"))],
 )
 
 

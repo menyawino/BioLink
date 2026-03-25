@@ -344,6 +344,56 @@ export interface DataQuality {
   distribution: Array<{ range?: string; category?: string; count: number }>;
 }
 
+// Harmonization types
+export interface HarmonizationTier {
+  master_col: string;
+  tier: string;
+  data_type: string;
+  unit: string;
+  transform: string;
+  loinc: string;
+  snomed: string;
+  phenotype_definition: string;
+  timing_window: string;
+  allowable_range: string;
+  fill_rate: number;
+}
+
+export interface ProvenanceRecord {
+  row_index: number;
+  cohort: string;
+  master_col: string;
+  source_cols: string;
+  source_value: string;
+  transform: string;
+  harmonized_value: string;
+  validation_status: string;
+  validation_reason: string;
+  tier: string;
+  unit: string;
+  confidence: string;
+  reviewer_approved: boolean;
+}
+
+export interface ProvenanceSummary {
+  total_records: number;
+  pass_count: number;
+  fail_count: number;
+  columns_tracked: number;
+  cohorts: number;
+  by_tier: Array<{ tier: string; status: string; count: number }>;
+  top_failures: Array<{ master_col: string; reason: string; count: number }>;
+}
+
+export interface ComparabilityReport {
+  cohorts: string[];
+  n_variables_analyzed: number;
+  numeric_comparisons: Record<string, unknown>[];
+  categorical_comparisons: Record<string, unknown>[];
+  missingness_comparison: Record<string, unknown>[];
+  protocol_context: Record<string, unknown>;
+}
+
 // Cohort types
 export interface CohortCriteria {
   ageMin?: number;

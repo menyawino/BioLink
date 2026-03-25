@@ -4,10 +4,11 @@ import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Line, ComposedChart } from 'recharts';
-import { TrendingUp, Users, Database, Activity, Heart, Map, Loader2 } from "lucide-react";
+import { TrendingUp, Users, Database, Activity, Heart, Map, Loader2, Shield } from "lucide-react";
 import { GeographicMapping } from "./GeographicMapping";
 import { DataNotAvailable } from "./DataNotAvailable";
 import { useRegistryStats, useDemographics, useDataCompleteness, useComorbidities, useEnrollmentTrends } from "../hooks/useAnalytics";
+import { useHarmonizationTiers, useProvenanceSummary } from "../hooks/useHarmonization";
 import type { DatasetFilter } from "../api/patients";
 
 // Colors for charts
@@ -33,6 +34,10 @@ export function RegistryAnalytics() {
   const { data: demographics, isLoading: demoLoading } = useDemographics(dataset);
   const { data: completeness, isLoading: compLoading } = useDataCompleteness(dataset);
   const { data: comorbidities, isLoading: comorbidityLoading } = useComorbidities(dataset);
+
+  // Fetch harmonization data
+  const { data: tiersData } = useHarmonizationTiers();
+  const { data: provenanceSummary } = useProvenanceSummary();
 
   // Transform demographics data for age-gender chart (use correct field names from API)
   const demographicsChartData = demographics?.ageGender?.map(item => ({
@@ -301,12 +306,16 @@ export function RegistryAnalytics() {
       </div>
 
       <Tabs defaultValue="demographics" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
           <TabsTrigger value="comorbidities">Comorbidities</TabsTrigger>
           <TabsTrigger value="samples">Sample Analysis</TabsTrigger>
           <TabsTrigger value="intersections">Data Intersections</TabsTrigger>
           <TabsTrigger value="completeness">Data Quality</TabsTrigger>
+          <TabsTrigger value="harmonization">
+            <Shield className="h-4 w-4 mr-1" />
+            Harmonization
+          </TabsTrigger>
           <TabsTrigger value="trends">Enrollment Trends</TabsTrigger>
           <TabsTrigger value="geography">
             <Map className="h-4 w-4 mr-1" />
@@ -758,6 +767,131 @@ export function RegistryAnalytics() {
               <GeographicMapping dataset={dataset} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="harmonization" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Tier Breakdown */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Harmonization Tiers
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {tiersData?.summary ? (
+                  <div className="space-y-3">
+                    {Object.entries(tiersData.summary).map(([tier, count]) => (
+                      <div key={tier} className="flex items-center justify-between">
+                        <Badge variant={tier === 'analysis_ready' ? 'default' : tier === 'semantically_harmonized' ? 'secondary' : 'outline'}>
+                          {tier.replace(/_/g, ' ')}
+                        </Badge>
+                        <span className="text-sm font-mono">{count} columns</span>
+                      </div>
+                    ))}
+                    <div className="pt-2 border-t text-sm text-muted-foreground">
+                      {tiersData.data?.length ?? 0} total variables tracked
+                    </div>
+                  </div>
+                ) : (
+                  <DataNotAvailable title="Harmonization Tiers" message="Run the harmonization pipeline to generate tier data" />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Provenance Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Provenance Tracking</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {provenanceSummary?.total_records ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Total records</span>
+                      <span className="font-mono text-sm">{provenanceSummary.total_records.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Badge variant="default">PASS</Badge>
+                      <span className="font-mono text-sm text-green-600">{provenanceSummary.pass_count.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Badge variant="destructive">FAIL</Badge>
+                      <span className="font-mono text-sm text-red-600">{provenanceSummary.fail_count.toLocaleString()}</span>
+                    </div>
+                    <div className="pt-2 border-t text-sm text-muted-foreground">
+                      {provenanceSummary.columns_tracked} columns × {provenanceSummary.cohorts} cohorts
+                    </div>
+                  </div>
+                ) : (
+                  <DataNotAvailable title="Provenance" message="No provenance data available" />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Validation Failures */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Validation Failures</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {provenanceSummary?.top_failures?.length ? (
+                  <div className="space-y-2">
+                    {provenanceSummary.top_failures.slice(0, 8).map((f, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="truncate max-w-[180px]" title={f.master_col}>{f.master_col}</span>
+                        <span className="font-mono text-red-500">{f.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <DataNotAvailable title="Validation Failures" message="No validation failures recorded" />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Tier detail table */}
+          {tiersData?.data?.length ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Variable Classification Detail</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-96 overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-background">
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-2">Variable</th>
+                        <th className="text-left py-2 px-2">Tier</th>
+                        <th className="text-left py-2 px-2">Type</th>
+                        <th className="text-left py-2 px-2">Unit</th>
+                        <th className="text-left py-2 px-2">Transform</th>
+                        <th className="text-right py-2 px-2">Fill Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tiersData.data.map((t) => (
+                        <tr key={t.master_col} className="border-b hover:bg-muted/50">
+                          <td className="py-1.5 px-2 font-mono text-xs">{t.master_col}</td>
+                          <td className="py-1.5 px-2">
+                            <Badge variant={t.tier === 'analysis_ready' ? 'default' : t.tier === 'semantically_harmonized' ? 'secondary' : 'outline'} className="text-xs">
+                              {t.tier.replace(/_/g, ' ')}
+                            </Badge>
+                          </td>
+                          <td className="py-1.5 px-2">{t.data_type}</td>
+                          <td className="py-1.5 px-2">{t.unit || '—'}</td>
+                          <td className="py-1.5 px-2 text-xs">{t.transform === 'none' ? '—' : t.transform}</td>
+                          <td className="py-1.5 px-2 text-right font-mono">{(t.fill_rate * 100).toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
       </Tabs>
     </div>
