@@ -2,9 +2,9 @@
 BioLink Registry Pipeline Processor for Apache NiFi 2.8.0.
 
 Runs the documented script ETL plan inside NiFi:
-  1. scripts/apply_schema.py
-  2. scripts/omop_etl.py
-  3. scripts/omop_quality.py
+  1. pipeline/apply_schema.py
+  2. pipeline/omop_etl.py
+  3. pipeline/omop_quality.py
   4. loads unified registry + OMOP CSV outputs into PostgreSQL
 
 This keeps NiFi as the execution engine while using the same ETL method as the
@@ -357,7 +357,7 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
 
     REPOSITORY_ROOT = PropertyDescriptor(
         name="Repository Root",
-        description="Mounted repository root containing scripts/, db/, and outputs/.",
+        description="Mounted repository root containing pipeline/, db/, and outputs/.",
         required=True,
         default_value="/opt/nifi/biolink_repo",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
@@ -532,10 +532,10 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                 attributes={"biolink.error": message},
             )
 
-        apply_script = repo_root / "scripts" / "apply_schema.py"
-        omop_script = repo_root / "scripts" / "omop_etl.py"
-        quality_script = repo_root / "scripts" / "omop_quality.py"
-        comparability_script = repo_root / "scripts" / "cohort_comparability.py"
+        apply_script = repo_root / "pipeline" / "apply_schema.py"
+        omop_script = repo_root / "pipeline" / "omop_etl.py"
+        quality_script = repo_root / "pipeline" / "omop_quality.py"
+        comparability_script = repo_root / "pipeline" / "cohort_comparability.py"
 
         try:
             self._run_script(

@@ -3,7 +3,7 @@
 Two-stage clinical column matching pipeline.
 
 Stage 1 – Candidate generation
-  Expands snake_case names via a clinical lexicon CSV (scripts/clinical_lexicon.csv)
+  Expands snake_case names via a clinical lexicon CSV (pipeline/clinical_lexicon.csv)
   then embeds with TF-IDF char+word n-grams, or SapBERT when sentence-transformers
   is installed. Keeps pairs with cosine similarity ≥ STAGE1_THRESHOLD (default 0.35).
 
@@ -31,10 +31,10 @@ Outputs
   outputs/match_validation_report.json  – aggregate stats + top-30 accepted
 
 Usage
-  python scripts/two_stage_match.py [--threshold 0.35] [--top-k 5] [--no-sapbert]
-  python scripts/two_stage_match.py --weights name:0.6,range:0.3,cat:0.05,type:0.05
-  python scripts/two_stage_match.py --cat-threshold 0.3 --n-boot 200
-    python scripts/two_stage_match.py --min-final-score 0.50
+  python pipeline/two_stage_match.py [--threshold 0.35] [--top-k 5] [--no-sapbert]
+  python pipeline/two_stage_match.py --weights name:0.6,range:0.3,cat:0.05,type:0.05
+  python pipeline/two_stage_match.py --cat-threshold 0.3 --n-boot 200
+    python pipeline/two_stage_match.py --min-final-score 0.50
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ EHVOL_ONLY = OUTPUTS / "db_only_ehvol.csv"
 
 # ---------------------------------------------------------------------------
 # Clinical abbreviation / domain expansion lexicon
-# Primary source: scripts/clinical_lexicon.csv (acronym,expansion,category,...)
+# Primary source: pipeline/clinical_lexicon.csv (acronym,expansion,category,...)
 # Fallback: hardcoded dict below (used when CSV is missing or unreadable).
 # ---------------------------------------------------------------------------
 

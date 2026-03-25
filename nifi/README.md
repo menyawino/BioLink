@@ -2,10 +2,10 @@
 
 Apache NiFi 2.8.0 pipeline with automated REST bootstrap for the documented
 script ETL plan:
-- **Step 1**: schema matching via `scripts/two_stage_match.py`
-- **Step 2**: harmonisation and de-identification via `scripts/apply_schema.py`
-- **Step 3**: OMOP-aligned exports via `scripts/omop_etl.py`
-- **Step 4**: quality and characterization via `scripts/omop_quality.py`
+- **Step 1**: schema matching via `pipeline/two_stage_match.py`
+- **Step 2**: harmonisation and de-identification via `pipeline/apply_schema.py`
+- **Step 3**: OMOP-aligned exports via `pipeline/omop_etl.py`
+- **Step 4**: quality and characterization via `pipeline/omop_quality.py`
 
 NiFi remains the execution engine, but the ETL method now follows the scripts
 pipeline rather than the older in-processor transformation logic.
@@ -54,7 +54,7 @@ nifi/
 ## Python Processors
 
 The NiFi processors are **NiFi 2.x native Python processors** and now orchestrate
-the same scripts described in `scripts/README_registry_pipeline.md`.
+the same scripts described in `docs/README_registry_pipeline.md`.
 
 ### 1. BiolinkCsvToJsonProcessor
 
@@ -71,9 +71,9 @@ the same scripts described in `scripts/README_registry_pipeline.md`.
 
 Runs the downstream script pipeline in one NiFi processor:
 
-- Calls `scripts/apply_schema.py` to build `outputs/unified_registry.csv`
-- Calls `scripts/omop_etl.py` to build OMOP CSV tables under `outputs/omop_cdm/`
-- Calls `scripts/omop_quality.py` to generate the HTML report and cohort characterization
+- Calls `pipeline/apply_schema.py` to build `outputs/unified_registry.csv`
+- Calls `pipeline/omop_etl.py` to build OMOP CSV tables under `outputs/omop_cdm/`
+- Calls `pipeline/omop_quality.py` to generate the HTML report and cohort characterization
 - Loads the unified registry snapshot and OMOP outputs into PostgreSQL
 - Persists a JSON manifest in `registry_etl_runs`
 

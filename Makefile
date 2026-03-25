@@ -65,7 +65,7 @@ install:
 
 setup:
 	@echo "Running initial setup..."
-	./scripts/setup-and-test.sh
+	./bin/setup-and-test.sh
 
 # ============================================
 # Development
@@ -183,18 +183,18 @@ db-reset:
 
 stage-data:
 	@echo "Staging CSV chunks for NiFi ingestion..."
-	python3 scripts/stage_nifi_chunks.py
+	python3 nifi/scripts/stage_nifi_chunks.py
 	@echo "Chunks written to nifi/data-input/ — NiFi will consume them automatically."
 
 harmonize:
 	@echo "Running harmonization pipeline..."
-	python3 scripts/two_stage_match.py db/BHS_Full.csv db/EHVol_Full.csv --output outputs/master_schema.csv
-	python3 scripts/apply_schema.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv \
+	python3 pipeline/two_stage_match.py db/BHS_Full.csv db/EHVol_Full.csv --output outputs/master_schema.csv
+	python3 pipeline/apply_schema.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv \
 		--output outputs/unified_registry.csv \
 		--provenance-output outputs/provenance.csv \
 		--tiers-output outputs/harmonization_tiers.csv \
 		--drop-empty-cols
-	python3 scripts/cohort_comparability.py \
+	python3 pipeline/cohort_comparability.py \
 		--registry outputs/unified_registry.csv \
 		--tiers outputs/harmonization_tiers.csv \
 		--output outputs/comparability_report.json

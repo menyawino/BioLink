@@ -26,9 +26,9 @@ echo "Waiting for frontend..."
 wait_for http://localhost:3000 Frontend
 
 # Run quick tests if available
-if [ -f "./scripts/quick_test.sh" ]; then
+if [ -f "./bin/quick_test.sh" ]; then
   echo "Running quick tests..."
-  bash ./scripts/quick_test.sh || echo "Quick tests had failures"
+  bash ./bin/quick_test.sh || echo "Quick tests had failures"
 else
   echo "No quick_test.sh found"
 fi

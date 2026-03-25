@@ -14,10 +14,10 @@ git clone https://github.com/menyawino/BioLink.git
 cd BioLink/
 
 # Run the complete setup script (first time)
-./scripts/setup-and-test.sh
+./bin/setup-and-test.sh
 
 # Or just run if already set up
-./scripts/run.sh
+./bin/run.sh
 ```
 
 These scripts will:
@@ -30,7 +30,7 @@ These scripts will:
 - Open frontend in browser
 - Provide access URLs
 
-**Migration to bigger machines**: Just copy the project and run `./scripts/setup-and-test.sh`!
+**Migration to bigger machines**: Just copy the project and run `./bin/setup-and-test.sh`!
 
 **[Complete Migration Guide →](MIGRATION.md)**
 
@@ -53,9 +53,9 @@ BioLink now features a **complete agentic system** powered by AI with function c
 
 ## Available Scripts
 
-- **`./scripts/setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
-- **`./scripts/run.sh`**: Quick start for machines that already have the environment set up
-- **`./scripts/quick_test.sh`**: Run basic functionality tests against running services
+- **`./bin/setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
+- **`./bin/run.sh`**: Quick start for machines that already have the environment set up
+- **`./bin/quick_test.sh`**: Run basic functionality tests against running services
 
 ---
 
@@ -142,7 +142,7 @@ Use this order to ensure Docker components are ready before tests:
 
 1. **Install and verify Docker components**
 ```bash
-./scripts/setup-and-test.sh
+./bin/setup-and-test.sh
 ```
 
 If Docker is already installed, you can skip the full script and do:
@@ -154,7 +154,7 @@ docker compose up -d --build
 
 3. **Run tests after services are healthy**
 ```bash
-./scripts/quick_test.sh
+./bin/quick_test.sh
 python -m unittest discover -s backend-py/tests
 ```
 
@@ -212,12 +212,12 @@ Recommended processors:
 ### ETL Trigger API (NiFi-backed, script-aligned)
 
 Backend endpoint `/api/etl/run` now triggers a NiFi processor that executes the
-same ETL plan defined in `scripts/README_registry_pipeline.md`:
+same ETL plan defined in `docs/README_registry_pipeline.md`:
 
-- `scripts/two_stage_match.py`
-- `scripts/apply_schema.py`
-- `scripts/omop_etl.py`
-- `scripts/omop_quality.py`
+- `pipeline/two_stage_match.py`
+- `pipeline/apply_schema.py`
+- `pipeline/omop_etl.py`
+- `pipeline/omop_quality.py`
 
 ```bash
 curl -X POST http://localhost:3001/api/etl/run \
@@ -236,12 +236,12 @@ For users who prefer not to use Docker, there's a native installation script for
 
 1. **Run the non-docker installation**:
 ```bash
-./scripts/install-nondocker.sh install
+./bin/install-nondocker.sh install
 ```
 
 2. **Start the application**:
 ```bash
-./scripts/install-nondocker.sh start
+./bin/install-nondocker.sh start
 ```
 
 3. **Access the application**:
@@ -250,9 +250,9 @@ For users who prefer not to use Docker, there's a native installation script for
 
 **Management commands**:
 ```bash
-./scripts/install-nondocker.sh stop      # Stop application
-./scripts/install-nondocker.sh status    # Check service status
-./scripts/install-nondocker.sh restart   # Restart everything
+./bin/install-nondocker.sh stop      # Stop application
+./bin/install-nondocker.sh status    # Check service status
+./bin/install-nondocker.sh restart   # Restart everything
 ```
 
 **[Complete non-Docker installation guide →](NONDOCKER_README.md)**

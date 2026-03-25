@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# BioLink Quick Start Script (moved to scripts/)
+# BioLink Quick Start Script
 # Starts all services assuming setup is already complete
 
 set -e

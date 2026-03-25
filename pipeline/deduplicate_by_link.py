@@ -5,7 +5,7 @@ Create a deduplicated unified registry by computing a stable pseudonymous
 rows with the same `link_id`.
 
 Usage:
-  python scripts/deduplicate_by_link.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv
+  python pipeline/deduplicate_by_link.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv
 
 The script writes `outputs/unified_registry_dedup.csv` and prints counts.
 """
@@ -18,11 +18,10 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-# Ensure repo root is on sys.path when running as a script
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+# Ensure pipeline/ is on sys.path when running as a script
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from scripts.apply_schema import _load_csv, process_dataset
+from apply_schema import _load_csv, process_dataset
 
 
 def find_id_column(cols: list[str]) -> Optional[str]:

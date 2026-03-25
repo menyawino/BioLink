@@ -6,8 +6,8 @@ Generates:
   outputs/match_scores.html   – ranked bar chart of final_score by column pair
 
 Usage:
-  python scripts/_viz_matches.py                  # reads default accepted CSV
-  python scripts/_viz_matches.py --csv outputs/matched_pairs_accepted.csv
+  python pipeline/_viz_matches.py                  # reads default accepted CSV
+  python pipeline/_viz_matches.py --csv outputs/matched_pairs_accepted.csv
 """
 from __future__ import annotations
 

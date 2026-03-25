@@ -38,7 +38,7 @@ from nifiapi.flowfiletransform import FlowFileTransform, FlowFileTransformResult
 from nifiapi.properties import PropertyDescriptor, ExpressionLanguageScope
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Shared string helpers  (mirror scripts/two_stage_match.py)
+# Shared string helpers  (mirror pipeline/two_stage_match.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _APOS_RE = re.compile(r"['\u2018\u2019\u0060\u00b4]")
@@ -510,7 +510,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
     class ProcessorDetails:
         version = "1.0.0"
         description = (
-            "Step 1 of the script-aligned ETL: executes scripts/two_stage_match.py "
+            "Step 1 of the script-aligned ETL: executes pipeline/two_stage_match.py "
             "inside the NiFi container to generate outputs/master_schema.csv using "
             "the same matching logic documented for the registry pipeline."
         )
