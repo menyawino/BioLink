@@ -11,10 +11,15 @@ import { TraditionalImaging } from "./components/TraditionalImaging";
 import { GenomicData } from "./components/GenomicData";
 import { DataNotAvailable } from "./components/DataNotAvailable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { Button } from "./components/ui/button";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "./components/ui/drawer";
+import { useIsMobile } from "./components/ui/use-mobile";
 import { usePatient, usePatientGenomics } from "./hooks/usePatients";
 import { canAccessView } from "./lib/access";
 import type { ViewType } from "./context/AppContext";
 import type { GenomicData as GenomicDataResponse, PatientDetail } from "./api/types";
+import { cn } from "./components/ui/utils";
+import { Menu } from "lucide-react";
 
 const ChatInterface = lazy(() => import("./components/ChatInterface").then((module) => ({ default: module.ChatInterface })));
 const PatientRegistryTable = lazy(() => import("./components/PatientRegistryTable").then((module) => ({ default: module.PatientRegistryTable })));
@@ -26,6 +31,19 @@ const DataDictionary = lazy(() => import("./components/DataDictionary").then((mo
 const Settings = lazy(() => import("./components/Settings").then((module) => ({ default: module.Settings })));
 const UserProfile = lazy(() => import("./components/UserProfile").then((module) => ({ default: module.UserProfile })));
 const LoginPage = lazy(() => import("./components/LoginPage").then((module) => ({ default: module.LoginPage })));
+
+const VIEW_LABELS: Record<ViewType, string> = {
+  welcome: "Welcome",
+  patient: "Patient Profile",
+  registry: "Patient Registry",
+  cohort: "Cohort Builder",
+  analytics: "Registry Analytics",
+  charts: "Chart Builder",
+  etl: "ETL Monitor",
+  dictionary: "Data Dictionary",
+  settings: "Settings",
+  profile: "Profile",
+};
 
 // Transform patient data from API to component format
 function transformPatientToHeader(patient: PatientDetail) {
@@ -233,10 +251,12 @@ function AuthGate() {
 function AppContent() {
   const { user } = useAuth();
   const { currentView, setCurrentView, selectedPatient, setSelectedPatient } = useApp();
+  const isMobile = useIsMobile();
   const [currentTab, setCurrentTab] = useState<string>("vitals");
   const [displayedView, setDisplayedView] = useState<ViewType>(currentView);
   const [displayedPatient, setDisplayedPatient] = useState<string | null>(selectedPatient);
   const [transitionPhase, setTransitionPhase] = useState<"enter" | "exit" | "idle">("enter");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { data: patient, error: patientError, isLoading: patientLoading } = usePatient(selectedPatient || '');
   const { data: genomicsData, error: genomicsError, isLoading: genomicsLoading } = usePatientGenomics(selectedPatient || '');
 
@@ -280,15 +300,55 @@ function AppContent() {
     setSelectedPatient(dnaId);
     setCurrentView("patient");
   };
+
+  const handleViewChange = (view: ViewType) => {
+    setCurrentView(view);
+    setMobileNavOpen(false);
+  };
   
   return (
-    <div className="app-shell flex h-screen overflow-hidden bg-background">
-      <Sidebar currentView={currentView} onViewChange={setCurrentView} className="app-sidebar-panel flex-shrink-0" />
+    <div className={cn("app-shell bg-background", isMobile ? "min-h-screen" : "flex h-screen overflow-hidden")}>
+      {!isMobile ? (
+        <Sidebar currentView={currentView} onViewChange={handleViewChange} className="app-sidebar-panel flex-shrink-0" />
+      ) : null}
+
+      {isMobile ? (
+        <Drawer direction="left" open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          <DrawerContent className="app-mobile-drawer w-[88vw] max-w-[22rem] border-r-0 bg-transparent p-0">
+            <DrawerHeader className="sr-only">
+              <DrawerTitle>BioLink navigation</DrawerTitle>
+            </DrawerHeader>
+            <Sidebar
+              currentView={currentView}
+              onViewChange={handleViewChange}
+              className="app-sidebar-panel app-mobile-sidebar h-full w-full border-r-0"
+            />
+          </DrawerContent>
+        </Drawer>
+      ) : null}
 
       <div className="app-main flex-1 overflow-auto">
+        {isMobile ? (
+          <div className="app-mobile-topbar sticky top-0 z-20 mb-3 flex items-center justify-between gap-3 border-b border-border/70 bg-background/88 px-4 py-3 backdrop-blur-xl md:hidden">
+            <div className="min-w-0">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary/80">BioLink</p>
+              <p className="truncate text-base font-semibold text-foreground">{VIEW_LABELS[currentView] ?? "BioLink"}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="shrink-0"
+              aria-label="Open navigation menu"
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : null}
         <div
           key={`${displayedView}:${displayedPatient ?? 'none'}`}
-          className={`app-stage app-stage-${transitionPhase} p-6`}
+          className={`app-stage app-stage-${transitionPhase}`}
           data-view={displayedView}
         >
           <Suspense fallback={<ViewLoadingState view={displayedView} />}>
@@ -440,7 +500,7 @@ function renderPatientView(
       <PatientHeader patient={headerData} />
       
       <Tabs value={currentTab} onValueChange={setCurrentTab} className="patient-tabs-shell">
-        <TabsList className="view-tabs-list patient-tabs-list grid w-full grid-cols-5">
+        <TabsList className="view-tabs-list view-tabs-scroll patient-tabs-list w-full justify-start">
           <TabsTrigger value="vitals">Vital Signs</TabsTrigger>
           <TabsTrigger value="risk">Risk Factors</TabsTrigger>
           <TabsTrigger value="history">Medical History</TabsTrigger>

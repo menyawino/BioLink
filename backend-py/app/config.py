@@ -1,8 +1,14 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"),
+        case_sensitive=False,
+        extra="ignore",
+    )
+
     # Server
     port: int = 3001
     host: str = "0.0.0.0"
@@ -13,11 +19,11 @@ class Settings(BaseSettings):
 
     # Ollama / LangChain SQL agent
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "Qwen2.5:7B-Instruct"
-    ollama_orchestrator_model: str = "Qwen2.5:7B"
-    ollama_data_model: str = "Qwen2.5:7B-Instruct"
-    ollama_medical_model: str = "alibayram/medgemma:4b"
-    ollama_coding_model: str = "Qwen2.5:7B-Instruct"
+    ollama_model: str = "llama3.2:3b"
+    ollama_orchestrator_model: str = "llama3.2:3b"
+    ollama_data_model: str = "llama3.2:3b"
+    ollama_medical_model: str = "llama3.2:3b"
+    ollama_coding_model: str = "llama3.2:3b"
     sql_agent_default_limit: int = 200
     llm_max_retries: int = 2
     llm_retry_backoff_s: float = 0.4
@@ -72,11 +78,5 @@ class Settings(BaseSettings):
         if value.startswith("postgresql://") and "+" not in value.split("://", 1)[0]:
             value = value.replace("postgresql://", "postgresql+psycopg2://", 1)
         return value
-
-    class Config:
-        env_file = (".env", "../.env")
-        case_sensitive = False
-        extra = "ignore"
-
 
 settings = Settings()

@@ -1,5 +1,6 @@
 import { useQuery } from './useApi';
 import {
+  getCohortFilterOptions,
   getRegistryOverview,
   getDemographics,
   getClinicalMetrics,
@@ -12,6 +13,7 @@ import {
   getEcgAnalysis,
 } from '../api/analytics';
 import type {
+  CohortFilterOptions,
   RegistryOverview,
   DemographicsData,
   ClinicalMetrics,
@@ -31,6 +33,10 @@ export function useRegistryStats(dataset: DatasetFilter = 'all') {
 // Hook for registry overview
 export function useRegistryOverview(dataset: DatasetFilter = 'all') {
   return useQuery<RegistryOverview>(() => getRegistryOverview(dataset), [dataset]);
+}
+
+export function useCohortFilterOptions(dataset: DatasetFilter = 'all') {
+  return useQuery<CohortFilterOptions>(() => getCohortFilterOptions(dataset), [dataset]);
 }
 
 // Hook for demographics data

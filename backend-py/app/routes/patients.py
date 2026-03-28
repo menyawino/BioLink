@@ -128,6 +128,13 @@ def _first_column(columns: set[str], *candidates: str) -> str | None:
     return None
 
 
+def _truthy_column_expr(column: str) -> str:
+    return (
+        f"LOWER(COALESCE(CAST({column} AS TEXT), 'false')) "
+        "IN ('true', 't', '1', 'yes', 'y')"
+    )
+
+
 def _json_text_expr(*keys: str) -> str:
     exprs = [f"NULLIF(BTRIM(clinical_data->>'{key}'), '')" for key in keys]
     return f"COALESCE({', '.join(exprs)})" if exprs else "NULL::text"
@@ -138,6 +145,26 @@ def _json_numeric_expr(keys: list[str], sql_type: str) -> str:
     return (
         f"CASE WHEN {raw} ~ '^-?[0-9]+(\\.[0-9]+)?$' "
         f"THEN ({raw})::{sql_type} ELSE NULL::{sql_type} END"
+    )
+
+
+def _normalized_nationality_expr(column_expr: str) -> str:
+    return (
+        "CASE "
+        f"WHEN {column_expr} IS NULL OR BTRIM({column_expr}) = '' THEN 'Unknown' "
+        f"WHEN LOWER({column_expr}) LIKE '%egypt%' "
+        f"  OR LOWER({column_expr}) LIKE '%egyption%' "
+        f"  OR LOWER({column_expr}) LIKE '%egyptain%' "
+        f"  OR LOWER({column_expr}) LIKE '%egyptien%' "
+        f"  OR REGEXP_REPLACE(LOWER({column_expr}), '[^a-z]', '', 'g') IN ("
+        "      'egy', 'egyp', 'egp', 'eg', 'eyp',"
+        "      'egypt', 'egyptian', 'egyption', 'egyptain', 'egyptien', 'egyptient',"
+        "      'egiptian', 'egeptian', 'egyept', 'egytptian', 'egytptan',"
+        "      'egyptioan', 'egyptions', 'egyptianj', 'egyptians', 'egptient'"
+        "  ) "
+        f"  OR {column_expr} ~ 'مصر|مصري|مصرية|مصريه' "
+        "THEN 'Egyptian' "
+        f"ELSE INITCAP(BTRIM({column_expr})) END"
     )
 
 
@@ -271,6 +298,9 @@ async def get_patients(
     # Clinical/risk factor filters
     hasDiabetes: bool = Query(None, alias="hasDiabetes"),
     hasHypertension: bool = Query(None, alias="hasHypertension"),
+    hasDyslipidemia: bool = Query(None, alias="hasDyslipidemia"),
+    hasCoronaryDisease: bool = Query(None, alias="hasCoronaryDisease"),
+    hasHeartFailure: bool = Query(None, alias="hasHeartFailure"),
     hasSmoking: bool = Query(None, alias="hasSmoking"),
     hasObesity: bool = Query(None, alias="hasObesity"),
     hasFamilyHistory: bool = Query(None, alias="hasFamilyHistory"),
@@ -355,7 +385,7 @@ async def get_patients(
             )
             if family_history_col:
                 conditions.append(
-                    f"(COALESCE({family_history_col}, false) = :has_family_history)"
+                    f"(({_truthy_column_expr(family_history_col)}) = :has_family_history)"
                 )
             else:
                 conditions.append("(FALSE = :has_family_history)")
@@ -376,8 +406,9 @@ async def get_patients(
 
         # Geographic filters
         if nationality:
-            if "nationality" in columns:
-                conditions.append("nationality = :nationality")
+            conditions.append(
+                f"({_normalized_nationality_expr(expr['nationality_expr'])} = :nationality)"
+            )
             params["nationality"] = nationality
 
         # Region (freeform match against nationality/current_city/current_city_category)
@@ -416,7 +447,9 @@ async def get_patients(
                 "other_co_morbidities_risk_factors_choice_diabetes_mellitus",
             )
             if diabetes_col:
-                conditions.append(f"COALESCE({diabetes_col}, false) = :has_diabetes")
+                conditions.append(
+                    f"(({_truthy_column_expr(diabetes_col)}) = :has_diabetes)"
+                )
             else:
                 conditions.append("FALSE = :has_diabetes")
             params["has_diabetes"] = hasDiabetes
@@ -431,11 +464,52 @@ async def get_patients(
             )
             if hypertension_col:
                 conditions.append(
-                    f"COALESCE({hypertension_col}, false) = :has_hypertension"
+                    f"(({_truthy_column_expr(hypertension_col)}) = :has_hypertension)"
                 )
             else:
                 conditions.append("FALSE = :has_hypertension")
             params["has_hypertension"] = hasHypertension
+
+        if hasDyslipidemia is not None:
+            dyslipidemia_col = _first_column(
+                columns,
+                "has_dyslipidemia",
+                "dyslipidemia",
+            )
+            if dyslipidemia_col:
+                conditions.append(
+                    f"(({_truthy_column_expr(dyslipidemia_col)}) = :has_dyslipidemia)"
+                )
+            else:
+                conditions.append("FALSE = :has_dyslipidemia")
+            params["has_dyslipidemia"] = hasDyslipidemia
+
+        if hasCoronaryDisease is not None:
+            coronary_disease_col = _first_column(
+                columns,
+                "heart_attack_or_angina",
+            )
+            if coronary_disease_col:
+                conditions.append(
+                    f"(({_truthy_column_expr(coronary_disease_col)}) = :has_coronary_disease)"
+                )
+            else:
+                conditions.append("FALSE = :has_coronary_disease")
+            params["has_coronary_disease"] = hasCoronaryDisease
+
+        if hasHeartFailure is not None:
+            heart_failure_col = _first_column(
+                columns,
+                "prior_heart_failure",
+                "has_heart_failure",
+            )
+            if heart_failure_col:
+                conditions.append(
+                    f"(({_truthy_column_expr(heart_failure_col)}) = :has_heart_failure)"
+                )
+            else:
+                conditions.append("FALSE = :has_heart_failure")
+            params["has_heart_failure"] = hasHeartFailure
 
         if hasSmoking is not None:
             smoking_col = _first_column(
@@ -445,7 +519,9 @@ async def get_patients(
                 "do_you_smoke_shisha_or_cigarettes_or_both",
             )
             if smoking_col:
-                conditions.append(f"COALESCE({smoking_col}, false) = :has_smoking")
+                conditions.append(
+                    f"(({_truthy_column_expr(smoking_col)}) = :has_smoking)"
+                )
             else:
                 conditions.append("FALSE = :has_smoking")
             params["has_smoking"] = hasSmoking

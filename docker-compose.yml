@@ -347,7 +347,7 @@ services:
       # Shared outputs directory (Step 1 writes master_schema.csv; Step 2 reads it)
       - ./outputs:/opt/nifi/outputs
       # BioLink pipeline scripts (lexicon CSV + helper modules, read-only)
-      - ./pipeline:/opt/nifi/biolink_scripts:ro
+      - ./nifi/pipeline:/opt/nifi/biolink_scripts:ro
     depends_on:
       postgres:
         condition: service_healthy

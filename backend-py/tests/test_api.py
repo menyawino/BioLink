@@ -98,34 +98,37 @@ class TestAuthEndpoints:
 class TestPatientEndpoints:
     """Test patient-related endpoints."""
 
-    def test_get_patients(self, client: TestClient):
+    def test_get_patients(self, client: TestClient, auth_headers: dict):
         """Test getting patients list."""
-        response = client.get("/api/patients")
+        response = client.get("/api/patients", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list) or isinstance(data, dict)
 
-    def test_search_patients(self, client: TestClient):
+    def test_search_patients(self, client: TestClient, auth_headers: dict):
         """Test patient search functionality."""
-        response = client.get("/api/patients?search=test&limit=10")
+        response = client.get("/api/patients?search=test&limit=10", headers=auth_headers)
         assert response.status_code == 200
 
 
 class TestChatEndpoints:
     """Test chat/AI endpoints."""
 
-    def test_chat_endpoint(self, client: TestClient):
+    def test_chat_endpoint(self, client: TestClient, auth_headers: dict):
         """Test chat endpoint."""
         response = client.post(
-            "/api/chat", json={"message": "How many patients are there?"}
+            "/api/chat",
+            headers=auth_headers,
+            json={"message": "How many patients are there?"},
         )
         # May return 200 or error depending on LLM availability
         assert response.status_code in [200, 500, 503]
 
-    def test_chat_with_history(self, client: TestClient):
+    def test_chat_with_history(self, client: TestClient, auth_headers: dict):
         """Test chat with conversation history."""
         response = client.post(
             "/api/chat",
+            headers=auth_headers,
             json={
                 "message": "Show me the data",
                 "history": [
@@ -140,49 +143,80 @@ class TestChatEndpoints:
 class TestAnalyticsEndpoints:
     """Test analytics endpoints."""
 
-    def test_analytics_overview(self, client: TestClient):
+    def test_analytics_overview(self, client: TestClient, auth_headers: dict):
         """Test analytics overview endpoint."""
-        response = client.get("/api/analytics/overview")
-        assert response.status_code in [200, 404]  # May not be implemented
+        response = client.get("/api/analytics/overview", headers=auth_headers)
+        assert response.status_code == 200
 
-    def test_demographics(self, client: TestClient):
+    def test_demographics(self, client: TestClient, auth_headers: dict):
         """Test demographics endpoint."""
-        response = client.get("/api/analytics/demographics")
-        assert response.status_code in [200, 404]
+        response = client.get("/api/analytics/demographics", headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_cohort_filters(self, client: TestClient, auth_headers: dict):
+        """Test live cohort filter metadata endpoint."""
+        response = client.get("/api/analytics/cohort-filters", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "genders" in data["data"]
+        assert "nationalities" in data["data"]
+        assert "regions" in data["data"]
+        assert "diagnoses" in data["data"]
+        assert "riskFactors" in data["data"]
+        assert "dataTypes" in data["data"]
 
 
 class TestHarmonizationEndpoints:
     """Test harmonization endpoints."""
 
-    def test_harmonization_tiers(self, client: TestClient):
+    def test_harmonization_tiers(self, client: TestClient, auth_headers: dict):
         """Test harmonization tiers endpoint."""
-        response = client.get("/api/harmonization/tiers")
+        response = client.get("/api/harmonization/tiers", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert "data" in data
+        assert isinstance(data["data"], list)
+        assert len(data["data"]) > 0
 
-    def test_provenance_summary(self, client: TestClient):
+    def test_provenance_summary(self, client: TestClient, auth_headers: dict):
         """Test provenance summary endpoint."""
-        response = client.get("/api/harmonization/provenance/summary")
+        response = client.get(
+            "/api/harmonization/provenance/summary", headers=auth_headers
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
+        assert data["data"]["total_records"] > 0
 
-    def test_provenance_records(self, client: TestClient):
+    def test_provenance_records(self, client: TestClient, auth_headers: dict):
         """Test provenance records endpoint with filters."""
-        response = client.get("/api/harmonization/provenance?limit=10")
+        response = client.get(
+            "/api/harmonization/provenance?limit=10", headers=auth_headers
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert "data" in data
+        assert len(data["data"]) > 0
 
-    def test_comparability_report(self, client: TestClient):
+    def test_comparability_report(self, client: TestClient, auth_headers: dict):
         """Test comparability report endpoint."""
-        response = client.get("/api/harmonization/comparability")
+        response = client.get("/api/harmonization/comparability", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
+        assert data["data"]
+
+    def test_dictionary(self, client: TestClient, auth_headers: dict):
+        """Test harmonization data dictionary endpoint."""
+        response = client.get("/api/harmonization/dictionary", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "data" in data
+        assert isinstance(data["data"], list)
 
 
 @pytest.mark.integration

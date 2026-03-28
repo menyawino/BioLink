@@ -69,7 +69,8 @@
       "scripts": {
             "dev": "vite",
             "build": "vite build",
-            "mcp:server": "echo 'MCP server runs in container. Use: docker-compose up -d mcp'",
+            "mcp:server": "node mcp/server.mjs",
+            "mcp:smoke": "node tests/mcp-smoke.mjs",
             "start:backend": "echo 'Backend runs in container. Use: docker-compose up -d backend'",
             "import:patients": "echo 'Data import runs in container. Use: docker-compose exec backend python -m app.scripts.import_patients_csv'"
       }

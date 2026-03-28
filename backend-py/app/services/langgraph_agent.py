@@ -11,6 +11,8 @@ import io
 import logging
 import numpy as np
 
+from app.services.ollama_model_resolver import build_chat_ollama
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,8 +49,10 @@ class SQLAgentService:
 
         if llm is None:
             try:
-                self.llm = ChatOllama(
-                    base_url=ollama_base_url, model=model, temperature=0
+                self.llm = build_chat_ollama(
+                    ollama_base_url,
+                    model,
+                    temperature=0,
                 )
                 logger.info(f"LLM initialized with model {model}")
             except Exception as e:

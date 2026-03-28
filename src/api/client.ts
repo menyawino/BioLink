@@ -1,7 +1,17 @@
 /// <reference types="vite/client" />
 
 // BioLink API Configuration
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+function getDefaultApiBaseUrl() {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:3001';
+  }
+
+  const url = new URL(window.location.origin);
+  url.port = '3001';
+  return url.toString().replace(/\/$/, '');
+}
+
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || getDefaultApiBaseUrl();
 
 // ── Token storage ──────────────────────────────────────────────────
 

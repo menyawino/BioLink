@@ -11,6 +11,16 @@ sleep 10
 echo "Testing backend health..."
 curl -s http://localhost:3001/health | jq . || echo "Backend health check failed"
 
+echo "Authenticating..."
+TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin&password=admin" | jq -r '.access_token // empty')
+
+if [ -z "$TOKEN" ]; then
+  echo "Authentication failed"
+  exit 1
+fi
+
 # Test frontend
 echo "Testing frontend..."
 curl -s -I http://localhost:3000 | head -1 || echo "Frontend not responding"
@@ -20,22 +30,25 @@ echo ""
 echo "Testing SQL Agent..."
 
 echo "1. Testing patient count query..."
-curl -X POST http://localhost:3001/api/chat/sql-agent \
+curl -X POST http://localhost:3001/api/chat \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"message": "How many patients are in the database?"}' \
   --max-time 60 | jq .data.content 2>/dev/null || echo "Query timed out or failed"
 
 echo ""
 echo "2. Testing age distribution query (with visualization)..."
-curl -X POST http://localhost:3001/api/chat/sql-agent \
+curl -X POST http://localhost:3001/api/chat \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"message": "Show me the age distribution of patients"}' \
   --max-time 120 | jq .data.content 2>/dev/null || echo "Query timed out or failed"
 
 echo ""
 echo "3. Testing EF values query..."
-curl -X POST http://localhost:3001/api/chat/sql-agent \
+curl -X POST http://localhost:3001/api/chat \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"message": "What are the average EF values for males vs females?"}' \
   --max-time 120 | jq .data.content 2>/dev/null || echo "Query timed out or failed"
 

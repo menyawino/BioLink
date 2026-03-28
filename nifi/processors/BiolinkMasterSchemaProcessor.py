@@ -2,7 +2,7 @@
 BioLink Master Schema Processor for Apache NiFi 2.8.0 — Step 1 of 2
 
 Reads the full BHS and EHVol CSV files from the shared data directory,
-runs the two-stage column-matching pipeline (TF-IDF + rule-based validation),
+runs the two-stage SapBERT column-matching pipeline,
 and writes master_schema.csv to the shared outputs directory.
 
 Pipeline position:
@@ -18,27 +18,23 @@ Properties:
   EHVol CSV Path      - /opt/nifi/db/EHVol_Full.csv
   Schema Output Path  - /opt/nifi/outputs/master_schema.csv
   Match Threshold     - cosine similarity floor (default 0.35)
-  Top K               - TF-IDF candidates per column (default 5)
-  Lexicon Path        - optional clinical lexicon CSV
-                        (default /opt/nifi/biolink_scripts/clinical_lexicon.csv)
+    Top K               - SapBERT candidates per column (default 5)
+    Lexicon Path        - optional clinical lexicon CSV
+                                                (default /opt/nifi/biolink_scripts/clinical_lexicon.csv)
 """
 
 import csv
-import io
 import json
-import math
 import os
 import re
 import subprocess
-import string
-from collections import defaultdict
 from datetime import datetime, timezone
 
 from nifiapi.flowfiletransform import FlowFileTransform, FlowFileTransformResult
 from nifiapi.properties import PropertyDescriptor, ExpressionLanguageScope
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Shared string helpers  (mirror pipeline/two_stage_match.py)
+# Shared string helpers  (mirror nifi/pipeline/two_stage_match.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _APOS_RE = re.compile(r"['\u2018\u2019\u0060\u00b4]")
@@ -200,300 +196,6 @@ def get_default_strategy(category: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TF-IDF helpers (no sklearn needed — pure Python implementation)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _ngrams(text: str, n: int) -> list[str]:
-    return [text[i:i+n] for i in range(len(text) - n + 1)]
-
-
-def _tokenize(col: str) -> list[str]:
-    """Return a bag of character 2–4-grams + word 1–2-grams from expanded column name."""
-    expanded = expand_name(col)
-    tokens: list[str] = []
-    # word n-grams (1-2)
-    words = expanded.split()
-    tokens.extend(words)
-    for i in range(len(words) - 1):
-        tokens.append(f"{words[i]} {words[i+1]}")
-    # char n-grams (2-4) on expanded text without spaces
-    compact = expanded.replace(" ", "_")
-    for n in (2, 3, 4):
-        tokens.extend(_ngrams(compact, n))
-    return tokens
-
-
-def _build_tfidf(columns: list[str]):
-    """Build TF-IDF vectors for a list of column names.
-    Returns (doc_tokens, idf_dict) where doc_tokens[i] is the token freq dict."""
-    doc_tokens: list[dict[str, float]] = []
-    df: dict[str, int] = defaultdict(int)
-    for col in columns:
-        toks = _tokenize(col)
-        freq: dict[str, float] = defaultdict(float)
-        for t in toks:
-            freq[t] += 1.0
-        # normalize by doc length
-        total = sum(freq.values()) or 1.0
-        for t in freq:
-            freq[t] /= total
-            df[t] += 1
-        doc_tokens.append(dict(freq))
-
-    N = len(columns)
-    idf: dict[str, float] = {t: math.log((N + 1) / (cnt + 1)) + 1.0 for t, cnt in df.items()}
-    # apply idf
-    for vec in doc_tokens:
-        for t in vec:
-            vec[t] *= idf.get(t, 1.0)
-    # L2-normalize
-    for vec in doc_tokens:
-        norm = math.sqrt(sum(v * v for v in vec.values())) or 1.0
-        for t in vec:
-            vec[t] /= norm
-    return doc_tokens, idf
-
-
-def _cosine(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
-    common = set(vec_a) & set(vec_b)
-    if not common:
-        return 0.0
-    return sum(vec_a[t] * vec_b[t] for t in common)
-
-
-def stage1_candidates(
-    cols_a: list[str],
-    cols_b: list[str],
-    top_k: int = 5,
-    threshold: float = 0.35,
-) -> list[tuple[str, str, float]]:
-    """
-    Return (col_a, col_b, cosine_score) pairs where score >= threshold.
-    Uses a pure-Python TF-IDF to avoid sklearn dependency in the container.
-    """
-    all_cols = cols_a + cols_b
-    vecs, _ = _build_tfidf(all_cols)
-    vecs_a = vecs[:len(cols_a)]
-    vecs_b = vecs[len(cols_a):]
-
-    candidates: list[tuple[str, str, float]] = []
-    for i, ca in enumerate(cols_a):
-        scores = [(j, _cosine(vecs_a[i], vecs_b[j])) for j in range(len(cols_b))]
-        scores.sort(key=lambda x: x[1], reverse=True)
-        for j, score in scores[:top_k]:
-            if score >= threshold:
-                candidates.append((ca, cols_b[j], round(score, 4)))
-    return candidates
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Stage 2 validation
-# ─────────────────────────────────────────────────────────────────────────────
-
-_TYPE_COMPAT: dict[str, frozenset[str]] = {
-    "numeric":     frozenset(["numeric", "binary"]),
-    "binary":      frozenset(["binary", "numeric", "categorical"]),
-    "categorical": frozenset(["categorical", "multi_cat", "binary", "text"]),
-    "multi_cat":   frozenset(["multi_cat", "categorical", "text"]),
-    "text":        frozenset(["text", "categorical", "multi_cat"]),
-    "date":        frozenset(["date"]),
-    "unknown":     frozenset(["numeric", "binary", "categorical", "multi_cat", "text", "date", "unknown"]),
-}
-
-_VETO_PAIRS: frozenset[frozenset[str]] = frozenset([
-    frozenset(["numeric", "text"]),
-    frozenset(["date", "numeric"]),
-    frozenset(["date", "binary"]),
-    frozenset(["date", "categorical"]),
-])
-
-
-def _type_compatible(dtype_a: str, dtype_b: str) -> bool:
-    if dtype_a == dtype_b:
-        return True
-    pair = frozenset([dtype_a, dtype_b])
-    if pair in _VETO_PAIRS:
-        return False
-    return dtype_b in _TYPE_COMPAT.get(dtype_a, frozenset())
-
-
-def _jaccard_sets(set_a: set, set_b: set) -> float:
-    if not set_a and not set_b:
-        return 1.0
-    union = set_a | set_b
-    return len(set_a & set_b) / len(union) if union else 0.0
-
-
-def stage2_validate(
-    candidates: list[tuple[str, str, float]],
-    dtype_a: dict[str, str],
-    dtype_b: dict[str, str],
-    cat_vals_a: dict[str, set[str]],
-    cat_vals_b: dict[str, set[str]],
-    threshold: float = 0.35,
-) -> list[dict]:
-    """
-    Apply rule-based validation to TF-IDF candidates and compute composite score.
-    Returns list of accepted match dicts.
-    """
-    accepted: list[dict] = []
-    for col_a, col_b, tfidf_score in candidates:
-        da = dtype_a.get(col_a, "unknown")
-        db = dtype_b.get(col_b, "unknown")
-        cat_a = _col_category(col_a)
-        cat_b = _col_category(col_b)
-
-        # Hard veto: incompatible types
-        if not _type_compatible(da, db):
-            continue
-
-        # Semantic boost for same category
-        cat_bonus = 0.10 if cat_a == cat_b and cat_a != "clinical" else 0.0
-
-        # Categorical Jaccard score
-        jac = 0.0
-        if da in ("categorical", "binary") and db in ("categorical", "binary"):
-            va = cat_vals_a.get(col_a, set())
-            vb = cat_vals_b.get(col_b, set())
-            jac = _jaccard_sets(va, vb)
-
-        # Composite score (weights: tfidf=0.50, cat_bonus=0.20, jaccard=0.30)
-        composite = tfidf_score * 0.50 + cat_bonus * 0.20 + jac * 0.30
-
-        if composite < threshold:
-            continue
-
-        # Choose master column name (prefer dataset A)
-        master_col = col_a
-
-        accepted.append({
-            "master_col":    master_col,
-            "source_a_cols": col_a,
-            "source_b_cols": col_b,
-            "category":      cat_a if cat_a != "clinical" else cat_b,
-            "final_score":   round(composite, 4),
-            "coalesce_strategy": get_default_strategy(cat_a if cat_a != "clinical" else cat_b),
-            "pii_flag":      is_pii_column(master_col),
-        })
-
-    # Deduplicate: keep best score per (col_a, col_b) pair
-    seen: dict[tuple[str, str], dict] = {}
-    for m in accepted:
-        key = (m["source_a_cols"], m["source_b_cols"])
-        if key not in seen or m["final_score"] > seen[key]["final_score"]:
-            seen[key] = m
-
-    return sorted(seen.values(), key=lambda x: (-x["final_score"], x["master_col"]))
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CSV header + sample reader
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _read_csv_headers_and_samples(
-    path: str,
-    sample_rows: int = 200,
-) -> tuple[list[str], dict[str, list[str]], dict[str, set[str]]]:
-    """Return (snake_headers, col_samples_dict, cat_values_dict)."""
-    headers: list[str] = []
-    col_samples: dict[str, list[str]] = {}
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.reader(f)
-        raw_headers = next(reader)
-        headers = [to_snake(h) for h in raw_headers]
-        for h in headers:
-            col_samples[h] = []
-        for i, row in enumerate(reader):
-            if i >= sample_rows:
-                break
-            for j, val in enumerate(row):
-                if j < len(headers):
-                    col_samples[headers[j]].append(val)
-
-    # Infer dtypes
-    dtype_map: dict[str, str] = {h: infer_dtype(col_samples[h]) for h in headers}
-
-    # Build categorical value sets
-    cat_vals: dict[str, set[str]] = {}
-    for h in headers:
-        if dtype_map[h] in ("categorical", "binary"):
-            cat_vals[h] = {v.strip().lower() for v in col_samples[h] if v.strip()}
-
-    return headers, dtype_map, cat_vals
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Master schema generation
-# ─────────────────────────────────────────────────────────────────────────────
-
-_SCHEMA_HEADER = [
-    "master_col", "source_a_cols", "source_b_cols",
-    "category", "final_score", "coalesce_strategy", "pii_flag",
-]
-
-
-def generate_master_schema(
-    bhs_path: str,
-    ehvol_path: str,
-    output_path: str,
-    threshold: float = 0.35,
-    top_k: int = 5,
-    lexicon_path: str | None = None,
-) -> tuple[int, int]:
-    """
-    Run full matching pipeline and write master_schema.csv.
-    Returns (total_matched, pii_count).
-    """
-    _load_lexicon(lexicon_path)
-
-    headers_a, dtype_a, cat_a = _read_csv_headers_and_samples(bhs_path)
-    headers_b, dtype_b, cat_b = _read_csv_headers_and_samples(ehvol_path)
-
-    candidates = stage1_candidates(headers_a, headers_b, top_k=top_k, threshold=threshold)
-    matches = stage2_validate(candidates, dtype_a, dtype_b, cat_a, cat_b, threshold=threshold)
-
-    used_a = {m["source_a_cols"] for m in matches if m.get("source_a_cols")}
-    used_b = {m["source_b_cols"] for m in matches if m.get("source_b_cols")}
-    used_master = {m["master_col"] for m in matches if m.get("master_col")}
-
-    def _append_passthrough(col: str, source_side: str) -> None:
-        base = col
-        master_col = base
-        suffix = 2
-        while master_col in used_master:
-            master_col = f"{base}_{suffix}"
-            suffix += 1
-        used_master.add(master_col)
-        category = _col_category(col)
-        matches.append({
-            "master_col":         master_col,
-            "source_a_cols":      col if source_side == "a" else "",
-            "source_b_cols":      col if source_side == "b" else "",
-            "category":           category,
-            "final_score":        0.0,
-            "coalesce_strategy":  get_default_strategy(category),
-            "pii_flag":           is_pii_column(col),
-        })
-
-    for col in headers_a:
-        if col not in used_a:
-            _append_passthrough(col, "a")
-
-    for col in headers_b:
-        if col not in used_b:
-            _append_passthrough(col, "b")
-
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_SCHEMA_HEADER)
-        writer.writeheader()
-        writer.writerows(sorted(matches, key=lambda x: (-float(x.get("final_score", 0.0)), x.get("master_col", ""))))
-
-    pii_count = sum(1 for m in matches if m["pii_flag"])
-    return len(matches), pii_count
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # NiFi Processor
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -510,7 +212,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
     class ProcessorDetails:
         version = "1.0.0"
         description = (
-            "Step 1 of the script-aligned ETL: executes pipeline/two_stage_match.py "
+            "Step 1 of the script-aligned ETL: executes nifi/pipeline/two_stage_match.py "
             "inside the NiFi container to generate outputs/master_schema.csv using "
             "the same matching logic documented for the registry pipeline."
         )
@@ -554,7 +256,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
     )
     TOP_K = PropertyDescriptor(
         name="Top K",
-        description="Number of TF-IDF candidate pairs to evaluate per column.",
+        description="Number of SapBERT candidate pairs to evaluate per column.",
         required=False,
         default_value="5",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
@@ -564,14 +266,6 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         description="Minimum final composite score to accept a pair (script default 0.50).",
         required=False,
         default_value="0.50",
-        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
-    )
-    USE_SAPBERT = PropertyDescriptor(
-        name="Use SapBERT",
-        description="Set to true to allow SapBERT if installed; false keeps the TF-IDF-only script path.",
-        required=False,
-        default_value="false",
-        allowable_values=["true", "false"],
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     LEXICON_PATH = PropertyDescriptor(
@@ -588,7 +282,7 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
     property_descriptors = [
         REPOSITORY_ROOT,
         BHS_CSV_PATH, EHVOL_CSV_PATH, SCHEMA_OUTPUT_PATH,
-        MATCH_THRESHOLD, TOP_K, MIN_FINAL_SCORE, USE_SAPBERT, LEXICON_PATH,
+        MATCH_THRESHOLD, TOP_K, MIN_FINAL_SCORE, LEXICON_PATH,
     ]
 
     def __init__(self, **kwargs):
@@ -605,11 +299,10 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         threshold   = float(context.getProperty(self.MATCH_THRESHOLD).getValue() or "0.35")
         top_k       = int(context.getProperty(self.TOP_K).getValue() or "5")
         min_final   = float(context.getProperty(self.MIN_FINAL_SCORE).getValue() or "0.50")
-        use_sapbert = (context.getProperty(self.USE_SAPBERT).getValue() or "false").strip().lower() == "true"
         lexicon     = (context.getProperty(self.LEXICON_PATH).getValue() or "").strip() or None
 
         # Validate inputs
-        script_path = os.path.join(repo_root, "scripts", "two_stage_match.py")
+        script_path = os.path.join(repo_root, "nifi", "pipeline", "two_stage_match.py")
         if not os.path.isfile(script_path):
             msg = f"BiolinkMasterSchemaProcessor: ETL script not found at '{script_path}'"
             return FlowFileTransformResult(
@@ -638,8 +331,6 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
                 "--min-final-score",
                 str(min_final),
             ]
-            if not use_sapbert:
-                command.append("--no-sapbert")
 
             env = os.environ.copy()
             if lexicon:

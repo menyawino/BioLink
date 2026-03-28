@@ -32,13 +32,49 @@ INDEXES = {
     """,
 }
 
-# Indexes for EHVOL view
-EHVOL_INDEXES = {
-    "idx_ehvol_dna_id": "CREATE INDEX IF NOT EXISTS idx_ehvol_dna_id ON EHVOL(dna_id)",
-    "idx_ehvol_age": "CREATE INDEX IF NOT EXISTS idx_ehvol_age ON EHVOL(age)",
-    "idx_ehvol_gender": "CREATE INDEX IF NOT EXISTS idx_ehvol_gender ON EHVOL(gender)",
-    "idx_ehvol_city": "CREATE INDEX IF NOT EXISTS idx_ehvol_city ON EHVOL(current_city)",
+PARTICIPANT_INDEX_COLUMNS = {
+    "dna_id": "btree",
+    "participant_id": "btree",
+    "record_id": "btree",
+    "age": "btree",
+    "gender": "btree",
+    "current_city": "btree",
+    "enrollment_date": "btree",
 }
+
+
+def _existing_columns(conn, table_name: str) -> set[str]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _create_participant_indexes(conn, table_name: str):
+    columns = _existing_columns(conn, table_name)
+    if not columns:
+        return
+
+    for column_name in sorted(columns & set(PARTICIPANT_INDEX_COLUMNS.keys())):
+        index_name = f"idx_{table_name}_{column_name}"
+        try:
+            conn.execute(
+                text(
+                    f'CREATE INDEX IF NOT EXISTS {index_name} ON "{table_name}" ("{column_name}")'
+                )
+            )
+            conn.commit()
+            logger.info(f"✓ Created index: {index_name}")
+        except Exception as e:
+            logger.warning(f"✗ Failed to create index {index_name}: {e}")
+            conn.rollback()
 
 
 def create_indexes():
@@ -55,27 +91,23 @@ def create_indexes():
                 logger.warning(f"✗ Failed to create index {name}: {e}")
                 conn.rollback()
 
-        # Create EHVOL view indexes
-        logger.info("Creating EHVOL view indexes...")
-        for name, sql in EHVOL_INDEXES.items():
-            try:
-                conn.execute(text(sql))
-                conn.commit()
-                logger.info(f"✓ Created index: {name}")
-            except Exception as e:
-                logger.warning(f"✗ Failed to create index {name}: {e}")
-                conn.rollback()
+        logger.info("Creating participant table indexes...")
+        for table_name in ["bhs_participants", "ehvol_participants"]:
+            _create_participant_indexes(conn, table_name)
 
         logger.info("Index creation complete!")
 
 
 def drop_indexes():
     """Drop all custom indexes (useful for migrations)."""
-    all_indexes = {**INDEXES, **EHVOL_INDEXES}
-
     with engine.connect() as conn:
         logger.info("Dropping indexes...")
-        for name in all_indexes.keys():
+        all_indexes = list(INDEXES.keys())
+        for table_name in ["bhs_participants", "ehvol_participants"]:
+            for column_name in PARTICIPANT_INDEX_COLUMNS:
+                all_indexes.append(f"idx_{table_name}_{column_name}")
+
+        for name in all_indexes:
             try:
                 conn.execute(text(f"DROP INDEX IF EXISTS {name}"))
                 conn.commit()
@@ -91,7 +123,8 @@ def analyze_tables():
         logger.info("Analyzing tables...")
         try:
             conn.execute(text("ANALYZE patients"))
-            conn.execute(text("ANALYZE EHVOL"))
+            conn.execute(text("ANALYZE bhs_participants"))
+            conn.execute(text("ANALYZE ehvol_participants"))
             conn.commit()
             logger.info("✓ Table analysis complete")
         except Exception as e:
@@ -108,7 +141,7 @@ def get_index_stats():
                 indexname,
                 indexdef
             FROM pg_indexes 
-            WHERE tablename IN ('patients', 'EHVOL')
+            WHERE tablename IN ('patients', 'bhs_participants', 'ehvol_participants')
             ORDER BY tablename, indexname
         """))
         return result.fetchall()

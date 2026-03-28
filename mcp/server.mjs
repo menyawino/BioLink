@@ -18,6 +18,9 @@ if (!databaseUrl) {
 }
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
+const allowedTables = new Set(["patients", "ehvol", "patient_genomic_variants"]);
+let patientColumnsPromise;
+const patientDisplayNameSql = "COALESCE(NULLIF(name_english, ''), NULLIF(name_arabic, ''), CAST(record_id AS TEXT), dna_id)";
 
 const server = new Server(
   {
@@ -31,18 +34,95 @@ const server = new Server(
   }
 );
 
-function ensureSelect(sql) {
-  const normalized = sql.trim().toLowerCase();
-  return normalized.startsWith("select") || normalized.startsWith("with");
+function clampLimit(limit, fallback = 500) {
+  const parsed = Number(limit);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(Math.trunc(parsed), 2000));
 }
 
-async function runQuery(sql, params = [], limit = 500) {
-  if (!ensureSelect(sql)) {
+function extractTables(sql) {
+  const tables = new Set();
+  const tablePattern = /\b(?:from|join)\s+(?:public\.)?"?([a-zA-Z_][\w]*)"?/gi;
+
+  for (const match of sql.matchAll(tablePattern)) {
+    tables.add(match[1].toLowerCase());
+  }
+
+  return tables;
+}
+
+function sanitizeSelectSql(sql, limit = 500) {
+  const trimmed = (sql || "").trim();
+  if (!trimmed) {
+    throw new Error("SQL must not be empty.");
+  }
+
+  if (trimmed.includes(";")) {
+    throw new Error("Multiple SQL statements are not allowed.");
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (!normalized.startsWith("select") && !normalized.startsWith("with")) {
     throw new Error("Only SELECT queries are allowed.");
   }
 
-  const limitedSql = `${sql}\nLIMIT ${Number.isFinite(limit) ? Math.max(1, Math.min(limit, 2000)) : 500}`;
-  const result = await pool.query(limitedSql, params);
+  if (/\b(drop|delete|update|insert|alter|create|truncate|copy)\b/i.test(trimmed)) {
+    throw new Error("Unsafe SQL detected.");
+  }
+
+  const tables = extractTables(trimmed);
+  if (tables.size && [...tables].some((table) => !allowedTables.has(table))) {
+    throw new Error("Query references disallowed tables.");
+  }
+
+  if (/\blimit\b/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `${trimmed}\nLIMIT ${clampLimit(limit)}`;
+}
+
+async function getPatientColumns() {
+  if (!patientColumnsPromise) {
+    patientColumnsPromise = pool
+      .query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'patients'`
+      )
+      .then((result) => new Set(result.rows.map((row) => row.column_name)))
+      .catch(() => new Set());
+  }
+
+  return patientColumnsPromise;
+}
+
+async function rewriteSqlColumns(sql) {
+  if (!sql) {
+    return sql;
+  }
+
+  const columns = await getPatientColumns();
+  let rewritten = sql;
+
+  if (columns.has("current_city") && /\bcity\b/i.test(rewritten)) {
+    rewritten = rewritten.replace(/\bcity\b/gi, "current_city");
+  }
+
+  if (columns.has("current_city_category") && /\bcity_category\b/i.test(rewritten)) {
+    rewritten = rewritten.replace(/\bcity_category\b/gi, "current_city_category");
+  }
+
+  return rewritten;
+}
+
+async function runQuery(sql, params = [], limit = 500) {
+  const rewrittenSql = await rewriteSqlColumns(sql);
+  const safeSql = sanitizeSelectSql(rewrittenSql, limit);
+  const result = await pool.query(safeSql, params);
   return result.rows;
 }
 
@@ -216,7 +296,7 @@ async function handleSearchPatients(args) {
 
   if (search) {
     params.push(`%${search}%`);
-    clauses.push(`(dna_id ILIKE $${params.length} OR nationality ILIKE $${params.length} OR current_city_category ILIKE $${params.length})`);
+    clauses.push(`(${patientDisplayNameSql} ILIKE $${params.length} OR CAST(dna_id AS TEXT) ILIKE $${params.length})`);
   }
   if (gender) {
     params.push(gender.toLowerCase());
@@ -232,10 +312,10 @@ async function handleSearchPatients(args) {
   }
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const sql = `SELECT dna_id, age, gender, nationality, current_city_category, echo_ef, mri_ef
-      FROM EHVOL
+  const sql = `SELECT dna_id, ${patientDisplayNameSql} AS name, age, gender, enrollment_date
+    FROM patients
       ${where}
-      ORDER BY dna_id`;
+    ORDER BY enrollment_date DESC NULLS LAST, dna_id`;
 
   const rows = await runQuery(sql, params, limit || 50);
 
@@ -267,7 +347,21 @@ async function handleGetPatientDetails(args) {
 }
 
 async function handleBuildCohort(args) {
-  const { age_min, age_max, gender, has_diabetes, has_hypertension, has_echo, has_mri, limit } = toolSchemas.build_cohort.parse(args);
+  const {
+    age_min,
+    age_max,
+    gender,
+    has_diabetes,
+    has_hypertension,
+    has_echo,
+    has_mri,
+    has_imaging,
+    has_labs,
+    has_genomics,
+    has_family_history,
+    region,
+    limit,
+  } = toolSchemas.build_cohort.parse(args);
   const clauses = [];
   const params = [];
 
@@ -284,28 +378,35 @@ async function handleBuildCohort(args) {
     clauses.push(`LOWER(gender) = $${params.length}`);
   }
   if (has_diabetes !== undefined) {
-    clauses.push(`COALESCE(diabetes_mellitus, false) = ${has_diabetes}`);
+    params.push(has_diabetes);
+    clauses.push(`COALESCE(diabetes_mellitus, false) = $${params.length}`);
   }
   if (has_hypertension !== undefined) {
-    clauses.push(`COALESCE(high_blood_pressure, false) = ${has_hypertension}`);
+    params.push(has_hypertension);
+    clauses.push(`COALESCE(high_blood_pressure, false) = $${params.length}`);
   }
   if (has_echo !== undefined) {
-    clauses.push(`(echo_ef IS NOT NULL) = ${has_echo}`);
+    params.push(has_echo);
+    clauses.push(`(echo_ef IS NOT NULL) = $${params.length}`);
   }
   if (has_mri !== undefined) {
-    clauses.push(`(mri_ef IS NOT NULL) = ${has_mri}`);
+    params.push(has_mri);
+    clauses.push(`(mri_ef IS NOT NULL) = $${params.length}`);
   }
 
   if (has_imaging !== undefined) {
-    clauses.push(`((mri_ef IS NOT NULL OR echo_ef IS NOT NULL) = ${has_imaging})`);
+    params.push(has_imaging);
+    clauses.push(`((mri_ef IS NOT NULL OR echo_ef IS NOT NULL) = $${params.length})`);
   }
 
   if (has_labs !== undefined) {
-    clauses.push(`((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = ${has_labs})`);
+    params.push(has_labs);
+    clauses.push(`((hba1c IS NOT NULL OR troponin_i IS NOT NULL) = $${params.length})`);
   }
 
   if (has_family_history !== undefined) {
-    clauses.push(`((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = ${has_family_history})`);
+    params.push(has_family_history);
+    clauses.push(`((COALESCE(history_sudden_death, false) OR COALESCE(history_premature_cad, false)) = $${params.length})`);
   }
 
   if (has_genomics !== undefined) {
@@ -323,10 +424,10 @@ async function handleBuildCohort(args) {
 
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
-  const sql = `SELECT dna_id, age, gender, nationality, echo_ef, mri_ef, diabetes_mellitus, high_blood_pressure
+  const sql = `SELECT dna_id, ${patientDisplayNameSql} AS name, age, gender, nationality, echo_ef, mri_ef, diabetes_mellitus, high_blood_pressure, enrollment_date
       FROM patients
       ${where}
-      ORDER BY dna_id`;
+    ORDER BY enrollment_date DESC NULLS LAST, dna_id`;
 
   const rows = await runQuery(sql, params, limit || 200);
 
@@ -343,12 +444,12 @@ async function handleBuildCohort(args) {
 async function handleRegistryOverview() {
   const sql = `
     SELECT
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE LOWER(gender) IN ('male','m')) AS male,
-      COUNT(*) FILTER (WHERE LOWER(gender) IN ('female','f')) AS female,
-      AVG(age) AS avg_age,
-      COUNT(*) FILTER (WHERE echo_ef IS NOT NULL) AS with_echo,
-      COUNT(*) FILTER (WHERE mri_ef IS NOT NULL) AS with_mri
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE LOWER(gender) IN ('male','m'))::int AS male,
+      COUNT(*) FILTER (WHERE LOWER(gender) IN ('female','f'))::int AS female,
+      ROUND(AVG(age)::numeric, 1)::float8 AS avg_age,
+      COUNT(*) FILTER (WHERE echo_ef IS NOT NULL)::int AS with_echo,
+      COUNT(*) FILTER (WHERE mri_ef IS NOT NULL)::int AS with_mri
     FROM patients
   `;
   const rows = await runQuery(sql, [], 1);
@@ -373,8 +474,8 @@ async function handleDemographics() {
         WHEN age < 70 THEN '60-69'
         ELSE '70+'
       END AS age_group,
-      COUNT(*) FILTER (WHERE LOWER(gender) IN ('male','m')) AS male,
-      COUNT(*) FILTER (WHERE LOWER(gender) IN ('female','f')) AS female
+      COUNT(*) FILTER (WHERE LOWER(gender) IN ('male','m'))::int AS male,
+      COUNT(*) FILTER (WHERE LOWER(gender) IN ('female','f'))::int AS female
     FROM patients
     WHERE age IS NOT NULL
     GROUP BY age_group
@@ -382,7 +483,7 @@ async function handleDemographics() {
   `;
 
   const nationalitySql = `
-    SELECT nationality, COUNT(*) AS count
+    SELECT nationality, COUNT(*)::int AS count
     FROM patients
     WHERE nationality IS NOT NULL AND nationality <> ''
     GROUP BY nationality
@@ -407,7 +508,7 @@ async function handleEnrollmentTrends() {
   const sql = `
     SELECT
       TO_CHAR(DATE_TRUNC('month', enrollment_date), 'YYYY-MM') AS month,
-      COUNT(*) AS enrolled
+      COUNT(*)::int AS enrolled
     FROM patients
     WHERE enrollment_date IS NOT NULL
     GROUP BY month
@@ -433,7 +534,7 @@ async function handleDataIntersections() {
         WHEN echo_ef IS NULL AND mri_ef IS NOT NULL THEN 'MRI only'
         ELSE 'No Echo/MRI'
       END AS combination,
-      COUNT(*) AS count
+      COUNT(*)::int AS count
     FROM patients
     GROUP BY combination
     ORDER BY count DESC
@@ -498,7 +599,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     throw new Error(`Unknown tool: ${name}`);
   }
 
-  return handler(args);
+  try {
+    return await handler(args);
+  } catch (error) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              error: error instanceof Error ? error.message : String(error),
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
 });
 
 const transport = new StdioServerTransport();

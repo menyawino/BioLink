@@ -8,6 +8,7 @@ from langchain_ollama import ChatOllama
 from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.services.ollama_model_resolver import build_chat_ollama
 from app.rag.embedding import embed_query
 from app.rag.vector_store import similarity_search
 from app.rag.patient_registry import fetch_patient_ids_by_filters, fetch_patients_by_ids
@@ -17,10 +18,15 @@ logger = logging.getLogger(__name__)
 
 class RagAgentService:
     def __init__(self):
-        self.llm = ChatOllama(
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_model,
+        self.llm = build_chat_ollama(
+            settings.ollama_base_url,
+            settings.ollama_model,
             temperature=0,
+            fallback_models=[
+                settings.ollama_data_model,
+                settings.ollama_orchestrator_model,
+                settings.ollama_medical_model,
+            ],
         )
 
     async def _extract_filters(self, question: str) -> dict:

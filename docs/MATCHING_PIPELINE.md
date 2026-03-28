@@ -50,13 +50,12 @@ distributions and clinical rules.
 ## 2. Pipeline overview
 
 ```
-db_only_bhs.csv          db_only_ehvol.csv
-      │                         │
-      └──────[Stage 1]──────────┘
-         Clinical lexicon expansion
-         TF-IDF (char 2-4gram + word 1-2gram)
-         Optional: SapBERT sentence embeddings
-              ↓ N candidates (threshold ≥ 0.35)
+BHS_Full.csv             EHVol_Full.csv
+    │                         │
+    └──────[Stage 1]──────────┘
+       Clinical lexicon expansion
+       SapBERT sentence embeddings
+          ↓ N candidates (threshold ≥ 0.35)
       ┌──────[Stage 2]──────────┐
       │  2a  Rule-based vetoes  │
       │  2b  Type compatibility │
@@ -66,9 +65,7 @@ db_only_bhs.csv          db_only_ehvol.csv
       │  2d  Composite scoring  │  ← weighted: name / range / type-bonus
       └─────────────────────────┘
               ↓
-  matched_pairs_validated.csv   (all candidates + verdicts)
-  matched_pairs_accepted.csv    (clean accepted pairs)
-  match_validation_report.json  (stats + top-30)
+    master_schema.csv             (canonical schema for downstream ETL)
 ```
 
 ---
@@ -78,7 +75,7 @@ db_only_bhs.csv          db_only_ehvol.csv
 ### 3a. Clinical lexicon expansion
 
 Before any embedding, each snake_case column name is expanded to natural
-language using `pipeline/clinical_lexicon.csv`:
+language using `nifi/pipeline/clinical_lexicon.csv`:
 
 ```
 ecg_date        → "electrocardiogram date"
@@ -99,34 +96,27 @@ The lexicon (`clinical_lexicon.csv`) is a CSV with columns:
 The file is loaded at import time. Add new rows to improve expansion coverage
 without touching the Python script.
 
-### 3b. TF-IDF embedding
+### 3b. SapBERT embedding
 
-Two TF-IDF vectorizers run in parallel on the expanded names:
-
-| Vectorizer  | n-gram range | Purpose                               |
-|-------------|--------------|---------------------------------------|
-| character   | (2, 4)       | Catch morphological variants          |
-| word        | (1, 2)       | Catch semantic token overlap          |
-
-Final similarity = `0.5 × char_cosine + 0.5 × word_cosine`.
-
-### 3c. Optional SapBERT upgrade
-
-If `sentence-transformers` is installed, the pipeline silently upgrades to
+ The matcher uses
 [`cambridgeltl/SapBERT-from-PubMedBERT-fulltext`](https://huggingface.co/cambridgeltl/SapBERT-from-PubMedBERT-fulltext) \[1\],
 a biomedical entity encoder pre-trained on UMLS synonyms via a self-alignment
-objective on synonym pairs \[3\]. Falls back to TF-IDF automatically without any
-flag change. Bi-encoder similarity search is particularly effective for
+objective on synonym pairs \[3\]. Bi-encoder similarity search is particularly effective for
 medical entity linking where surface form variation is large \[3\].
 
 Install:
 ```bash
-pip install sentence-transformers
+pip install torch sentence-transformers
 ```
 
-Run (SapBERT is default when installed, suppress with `--no-sapbert`):
+If SapBERT fails because `torch` is broken, repair the environment with:
 ```bash
-python pipeline/two_stage_match.py
+./venv/bin/pip install --force-reinstall --no-cache-dir torch
+```
+
+Run:
+```bash
+python nifi/pipeline/two_stage_match.py
 ```
 
 ---
@@ -235,14 +225,14 @@ Default weights (`_DEFAULT_WEIGHTS`):
 
 | Weight key | Default | Meaning                 |
 |------------|---------|-------------------------|
-| `name`     | 0.55    | TF-IDF / SapBERT score  |
+| `name`     | 0.55    | SapBERT score           |
 | `range`    | 0.25    | Distribution overlap     |
 | `cat`      | 0.10    | Reserved (categorical)   |
 | `type`     | 0.10    | Same-dtype bonus         |
 
 Override at runtime:
 ```bash
-python pipeline/two_stage_match.py --weights name:0.6,range:0.3,cat:0.0,type:0.1
+python nifi/pipeline/two_stage_match.py --weights name:0.6,range:0.3,cat:0.0,type:0.1
 ```
 
 > **Tuning guidance**: label ~50 pairs (clinician review of top-30 accepted + all
@@ -252,7 +242,7 @@ python pipeline/two_stage_match.py --weights name:0.6,range:0.3,cat:0.0,type:0.1
 
 ## 6. Clinical lexicon
 
-**File**: `pipeline/clinical_lexicon.csv`
+**File**: `nifi/pipeline/clinical_lexicon.csv`
 
 Format:
 ```csv
@@ -271,42 +261,17 @@ lvef,left ventricular ejection fraction systolic function,echo,10230-1,
 
 ## 7. Outputs
 
-### Step 1 — matching outputs
+### Step 1 — matching output
 
 | File | Description |
 |------|-------------|
-| `outputs/matched_pairs_validated.csv` | All 240 candidate pairs with full diagnostics |
-| `outputs/matched_pairs_accepted.csv`  | 171 accepted pairs; clean for downstream use |
-| `outputs/master_schema.csv`           | **One row per accepted pair** — canonical names, PII flags, coalesce strategies |
-| `outputs/match_validation_report.json`| Run stats, weights, rejection reasons, top-30, category breakdown |
+| `outputs/master_schema.csv` | Canonical schema from SapBERT matching, validation, PII flags, and coalesce strategies |
 
 ### Step 2 — unified registry
 
 | File | Description |
 |------|-------------|
 | `outputs/unified_registry.csv` | PII-free, harmonised registry (4,943 rows × 159 clinical columns) |
-| `outputs/match_heatmap.html`   | Interactive HTML heatmap + score bar chart (from `_viz_matches.py`) |
-
-### Column schema: `matched_pairs_validated.csv`
-
-| Column          | Type    | Description                                          |
-|-----------------|---------|------------------------------------------------------|
-| `name_a`        | str     | Column from BHS (dataset A)                          |
-| `category_a`    | str     | Clinical domain of `name_a` (from lexicon/DOMAIN_TAGS) |
-| `name_b`        | str     | Column from EHVol (dataset B)                        |
-| `category_b`    | str     | Clinical domain of `name_b` (from lexicon/DOMAIN_TAGS) |
-| `name_score`    | float   | Stage 1 cosine similarity (TF-IDF or SapBERT)        |
-| `type_a`        | str     | Inferred dtype of `name_a`                           |
-| `type_b`        | str     | Inferred dtype of `name_b`                           |
-| `type_compat`   | bool    | Whether the two dtypes are compatible                |
-| `range_score`   | float   | IQR Jaccard / year Jaccard / categorical Jaccard      |
-| `range_ci_low`  | float   | 90% bootstrap CI lower bound (numeric only)          |
-| `range_ci_high` | float   | 90% bootstrap CI upper bound (numeric only)          |
-| `cat_overlap`   | float   | Top-N value Jaccard (binary/categorical only)        |
-| `final_score`   | float   | Composite weighted score                             |
-| `verdict`       | str     | `ACCEPTED` or `REJECTED`                             |
-| `reject_reason` | str     | Rejection reason code (empty if accepted)            |
-
 ### Column schema: `master_schema.csv`
 
 | Column              | Type   | Description                                                   |
@@ -330,63 +295,44 @@ cd /path/to/BioLink/Code
 python -m venv venv && source venv/bin/activate
 pip install pandas numpy scikit-learn scipy rapidfuzz
 # Optional — for SapBERT:
-pip install sentence-transformers
-```
-
-### Generate the input name lists (if not already present)
-
-```bash
-python pipeline/generate_schema_sql.py   # or whichever script writes db_only_*.csv
+pip install torch sentence-transformers
 ```
 
 ### Run matching
 
 ```bash
-# Default (TF-IDF, threshold=0.35, top-k=5)
-python pipeline/two_stage_match.py --no-sapbert
-
-# With SapBERT (downloads ~400 MB on first run)
-python pipeline/two_stage_match.py
+# SapBERT matching (downloads ~400 MB on first run)
+python nifi/pipeline/two_stage_match.py
 
 # Custom weights + stricter categorical threshold
-python pipeline/two_stage_match.py \
+python nifi/pipeline/two_stage_match.py \
     --weights name:0.6,range:0.3,cat:0.0,type:0.1 \
     --cat-threshold 0.4 \
     --threshold 0.40 \
-    --top-k 5 \
-    --no-sapbert
+    --top-k 5
 
 # More bootstrap samples for tighter CIs (slower)
-python pipeline/two_stage_match.py --n-boot 500 --no-sapbert
+python nifi/pipeline/two_stage_match.py --n-boot 500
 
 # Auto-tune threshold using a gold label set (generates seed file on first run)
-python pipeline/two_stage_match.py --auto-threshold --no-sapbert
-```
-
-### Visualise accepted pairs
-
-```bash
-# Generates outputs/match_heatmap.html (category heatmap + score bar chart)
-python pipeline/_viz_matches.py
-# Open in browser
-open outputs/match_heatmap.html
+python nifi/pipeline/two_stage_match.py --auto-threshold
 ```
 
 ### Step 2 — apply master schema to datasets
 
 ```bash
 # Apply to BHS + EHVol (generates outputs/unified_registry.csv)
-python pipeline/apply_schema.py \
+python nifi/pipeline/apply_schema.py \
     outputs/master_schema.csv \
     db/BHS_Full.csv db/EHVol_Full.csv
 
 # Adding a new cohort: just re-run Step 2 with all datasets
-python pipeline/apply_schema.py \
+python nifi/pipeline/apply_schema.py \
     outputs/master_schema.csv \
     db/BHS_Full.csv db/EHVol_Full.csv db/NewCohort.csv
 
 # Drop columns with zero coverage (all NaN across all cohorts)
-python pipeline/apply_schema.py \
+python nifi/pipeline/apply_schema.py \
     outputs/master_schema.csv \
     db/BHS_Full.csv db/EHVol_Full.csv \
     --drop-empty-cols
@@ -396,21 +342,15 @@ python pipeline/apply_schema.py \
 
 ```bash
 # 1. Update master schema (Step 1 — re-runs matching)
-python pipeline/two_stage_match.py --no-sapbert
+python nifi/pipeline/two_stage_match.py
 
 # 2. Re-apply to ALL datasets including new cohort (Step 2)
-python pipeline/apply_schema.py \
+python nifi/pipeline/apply_schema.py \
     outputs/master_schema.csv \
     db/BHS_Full.csv db/EHVol_Full.csv db/NewCohort.csv
 
 # 3. Analysis-ready: outputs/unified_registry.csv is PII-free, fully harmonised
 ```
-
-```bash
-python pipeline/_compare_matches.py
-```
-
----
 
 ## 9. Configuration reference
 
@@ -418,7 +358,6 @@ python pipeline/_compare_matches.py
 |--------------------|---------|-------------------------------------------------------|
 | `--threshold`      | `0.35`  | Stage 1 cosine cutoff (lower = more candidates)       |
 | `--top-k`          | `5`     | Max Stage 1 candidates per column                    |
-| `--no-sapbert`     | off     | Force TF-IDF even if `sentence-transformers` present  |
 | `--weights`        | default | Override score weights (comma-separated key:value)    |
 | `--cat-threshold`  | `0.30`  | Min categorical value Jaccard to accept               |
 | `--n-boot`         | `100`   | Bootstrap iterations for numeric CI (0 = skip)        |
@@ -428,7 +367,7 @@ python pipeline/_compare_matches.py
 
 ## 12. Step 2 — apply_schema.py
 
-`pipeline/apply_schema.py` consumes `outputs/master_schema.csv` (generated by
+`nifi/pipeline/apply_schema.py` consumes `outputs/master_schema.csv` (generated by
 Step 1) and applies it to one or more raw CSV datasets. The result is a
 single PII-free, harmonised registry ready for analysis.
 
@@ -478,60 +417,34 @@ the lexicon + schema to improve matching coverage.
 
 ## 10. Benchmark vs. original approach
 
-### 10a. Pipeline comparison
+### 10a. Validation notes
 
-Results from the last pipeline run (BHS × EHVol, 680 × 138 columns):
-
-| Dataset Pair        | Candidates | Accepted | Rejected | Precision (manual) | Recall (manual) | Top FS |
-|---------------------|------------|----------|----------|--------------------|-----------------|--------|
-| BHS/EHVol (v2, TF-IDF) | 240     | **171**  | **69**   | ~92%               | ~88%            | 0.971  |
-| BHS/EHVol (LLM orig)   | 86      | 86       | 0        | ~55%               | ~40%            | 0.82   |
-
-> Precision / Recall are manual estimates from domain-expert spot-checks on
-> the top-30 accepted pairs. Automated F1 requires a gold-label set; run
-> `--auto-threshold` to generate the seed annotation file.
-
-### 10b. Feature comparison
-
-| Feature                               | Original (`llm_style_match.py`) | v2 two-stage pipeline |
-|---------------------------------------|---------------------------------|-----------------------|
-| Candidate pairs                       | 86                              | 240                   |
-| Accepted pairs                        | 86 (no filter)                  | **171**               |
-| Rejected (false positives caught)     | 0                               | **69**                |
-| Known false positives eliminated      | —                               | **4+** (confirmed)    |
-| New clinically valid pairs found      | —                               | **154+**              |
-| Bootstrap CIs for numeric pairs \[2\]  | No                              | Yes (90% CI)          |
-| Categorical value overlap check       | No                              | Yes (top-5 Jaccard)   |
-| Configurable score weights            | No                              | Yes (CLI + default)   |
-| Clinical lexicon (CSV-driven)         | No                              | Yes (40 terms)        |
-| Lexicon category tags per pair        | No                              | Yes (`category_a/b`)  |
-| Threshold auto-tuning                 | No                              | Yes (`--auto-threshold`) |
-| HTML visualisation                    | No                              | Yes (`_viz_matches.py`) |
-
-Confirmed false positives removed (v2):
+Confirmed false positives removed by the current SapBERT pipeline:
 - `corrected_qt_interval` ↔ `pr_interval` (zero numeric range overlap)
 - `lvh` ↔ `lvm` (type mismatch: categorical vs numeric)
 - `date_medications` ↔ `list_these_medications` (type mismatch: date vs multi_cat)
 - `marital_status` ↔ `status` (known false positive rule)
 
-### 10c. Category-pair breakdown (v2 accepted pairs)
+Automated F1 still requires a gold-label set; run `--auto-threshold` to generate
+the seed annotation file when you want threshold tuning or a labelled audit set.
+
+### 10b. Category coverage
 
 Category assignments come from `_col_category()` — lexicon lookup + DOMAIN_TAGS.
-Populate this table by running `python pipeline/_viz_matches.py` and checking the
-`outputs/match_heatmap.html` breakdown, or inspect `match_validation_report.json`
-(`category_summary` key) after a run.
+Use `outputs/master_schema.csv` to review how many accepted columns land in each
+clinical category after a run.
 
-| Category A   | Category B   | Pairs | Notes                               |
-|--------------|--------------|-------|-------------------------------------|
-| unknown      | unknown      | ~80   | Cols not yet in lexicon             |
-| ecg          | ecg          | ~12   | QTc, PR, QRS interval equivalents  |
-| echo         | echo         | ~9    | EF, TAPSE, chamber size             |
-| lab          | lab          | ~8    | Troponin, BNP, Hb variants          |
-| vitals       | vitals       | ~7    | Weight, height, BMI, BP             |
-| date         | date         | ~5    | Echo date, MRI date                 |
-| mri          | mri          | ~4    | CMR findings, MRI date              |
+| Category     | Typical matches | Notes                            |
+|--------------|-----------------|----------------------------------|
+| unknown      | highest volume  | Cols not yet in lexicon          |
+| ecg          | moderate        | QTc, PR, QRS interval families   |
+| echo         | moderate        | EF, TAPSE, chamber size          |
+| lab          | moderate        | Troponin, BNP, Hb variants       |
+| vitals       | moderate        | Weight, height, BMI, BP          |
+| date         | lower           | Echo date, MRI date              |
+| mri          | lower           | CMR findings, MRI date           |
 
-> Exact counts vary per run; re-populate from `match_validation_report.json`.
+> Exact counts vary per run; derive them directly from `master_schema.csv`.
 > Adding more rows to `clinical_lexicon.csv` will shift counts from _unknown_
 > into named categories — this is how to track lexicon coverage improvement.
 
@@ -578,16 +491,14 @@ them to a lightweight clinician review form. Feed confirmed labels back as:
 - Weight tuning using the labelled set.
 
 ### 11e. Scale
-For schemas with 10 000+ columns, replace the dense TF-IDF matrix with
-[`sparse_dot_topn`](https://github.com/ing-bank/sparse_dot_topn) to compute
-only the top-K cosine similarities per row in sparse format. Current
-`(680 × 138)` matrix is comfortably in-memory.
+SapBERT is now the required Stage 1 matcher. For materially larger schemas,
+the next optimization target is embedding generation and top-K similarity
+retrieval rather than a TF-IDF fallback path.
 
-### 11f. SapBERT / domain-adapted embeddings
-Install `sentence-transformers` and run without `--no-sapbert` to use the
-biomedical entity encoder. Expected improvement: better recall for equivalent
-concepts expressed with entirely different surface forms (e.g.
-`diastolic_blood_pressure` ↔ `bp_diastolic`).
+### 11f. SapBERT runtime
+The pipeline requires a working `sentence-transformers` and `torch` install.
+If model import or load fails, treat that as an environment issue and repair
+the runtime rather than switching to a weaker fallback matcher.
 
 ---
 
@@ -599,8 +510,8 @@ concepts expressed with entirely different surface forms (e.g.
     Entity Representations.** *Proc. NAACL 2021*, pp. 4228–4238.
     <https://aclanthology.org/2021.naacl-main.334/>  
     *SapBERT:* contrastive self-alignment on UMLS synonym pairs, enabling
-    near-zero-shot biomedical entity linking — the basis for the optional
-    Stage 1 embedding upgrade in this pipeline.
+    near-zero-shot biomedical entity linking — the basis for the required
+    Stage 1 matcher in this pipeline.
 
 \[2\] Drennan I, et al. **Automated Data Harmonization in Clinical Research.**
     *PMC12391522* (2025).
@@ -618,4 +529,4 @@ concepts expressed with entirely different surface forms (e.g.
 
 ---
 
-*Last updated: 2026-02-26. Pipeline version: v3 (categories, auto-threshold, viz, master-schema, apply-schema).*
+*Last updated: 2026-02-26. Pipeline version: v4 (SapBERT-only master-schema and apply-schema flow).* 

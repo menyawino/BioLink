@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 import logging
 from datetime import UTC, datetime
 from threading import Lock
@@ -24,8 +24,10 @@ ETL_UPLOAD_READ_DIR = os.getenv(
 
 
 class ETLRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     table: str = "ehvol_full"
-    schema: str = "public"
+    schema_name: str = Field(default="public", alias="schema")
     csv: str | None = None
     datasets: list[str] = Field(default_factory=lambda: ["ehvol", "bhs"])
     dataset_name: str | None = None
@@ -95,7 +97,7 @@ def _run_wrapper(job_id: str, req: ETLRequest):
         result = trigger_etl_pipeline(
             ETLParams(
                 table="bhs_full" if primary_dataset == "bhs" else "ehvol_full",
-                schema=req.schema,
+                schema_name=req.schema_name,
                 csv=etl_csv_path,
                 dataset_name=primary_dataset,
                 datasets=requested_datasets,

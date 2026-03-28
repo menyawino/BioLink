@@ -3,7 +3,7 @@ Authentication routes for BioLink API.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Body
@@ -365,7 +365,7 @@ async def update_profile(
     if body.full_name is not None:
         user_row.full_name = body.full_name
 
-    user_row.updated_at = datetime.utcnow()
+    user_row.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(user_row)
 
@@ -389,7 +389,7 @@ async def change_password(
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     user_row.hashed_password = get_password_hash(body.new_password)
-    user_row.updated_at = datetime.utcnow()
+    user_row.updated_at = datetime.now(UTC)
     db.commit()
 
     return {"message": "Password changed successfully"}
@@ -446,7 +446,7 @@ async def admin_update_user(
             raise HTTPException(status_code=409, detail="Email already in use")
         user_row.email = body.email
 
-    user_row.updated_at = datetime.utcnow()
+    user_row.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(user_row)
 

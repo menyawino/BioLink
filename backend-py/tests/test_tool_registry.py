@@ -27,6 +27,12 @@ class ToolRegistrySafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.registry._sanitize_select_sql("SELECT * FROM secret_table", 100)
 
+    def test_allows_ehvol_case_insensitively(self):
+        sql = self.registry._sanitize_select_sql(
+            "SELECT COUNT(*) AS count FROM EHVOL", 100
+        )
+        self.assertIn("FROM EHVOL", sql)
+
     def test_rejects_copy(self):
         with self.assertRaises(ValueError):
             self.registry._sanitize_select_sql("COPY patients TO '/tmp/out.csv'", 100)

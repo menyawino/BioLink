@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from app.database import get_db
+from app.diagnoses import get_diagnosis_definitions
 from app.routes._dataset_union import aligned_union_sql
 from app.routes.patients import (
+    _first_column,
     _dataset_field_exprs,
     _mri_sql_expr,
     _registry_source_table,
     _source_columns,
+    _truthy_column_expr,
 )
 import logging
 
@@ -81,6 +84,58 @@ def _safe_column(db, table_names: list[str], column: str) -> bool:
         {"col": column, "tables": table_names},
     ).fetchone()
     return rows is not None
+
+
+def _normalized_gender_sql(column: str = "gender") -> str:
+    return (
+        "CASE "
+        f"WHEN {column} IS NULL OR BTRIM({column}) = '' THEN 'Unknown' "
+        f"WHEN LOWER(BTRIM({column})) IN ('male', 'm') THEN 'Male' "
+        f"WHEN LOWER(BTRIM({column})) IN ('female', 'f') THEN 'Female' "
+        f"ELSE INITCAP(BTRIM({column})) END"
+    )
+
+
+def _normalized_nationality_sql(column: str = "nationality") -> str:
+    return (
+        "CASE "
+        f"WHEN {column} IS NULL OR BTRIM({column}) = '' THEN 'Unknown' "
+        f"WHEN LOWER({column}) LIKE '%egypt%' "
+        f"  OR LOWER({column}) LIKE '%egyption%' "
+        f"  OR LOWER({column}) LIKE '%egyptain%' "
+        f"  OR LOWER({column}) LIKE '%egyptien%' "
+        f"  OR REGEXP_REPLACE(LOWER({column}), '[^a-z]', '', 'g') IN ("
+        "      'egy', 'egyp', 'egp', 'eg', 'eyp',"
+        "      'egypt', 'egyptian', 'egyption', 'egyptain', 'egyptien', 'egyptient',"
+        "      'egiptian', 'egeptian', 'egyept', 'egytptian', 'egytptan',"
+        "      'egyptioan', 'egyptions', 'egyptianj', 'egyptians', 'egptient'"
+        "  ) "
+        f"  OR {column} ~ 'مصر|مصري|مصرية|مصريه' "
+        "THEN 'Egyptian' "
+        f"ELSE INITCAP(BTRIM({column})) END"
+    )
+
+
+def _distinct_option_rows(db, source: str, value_sql: str, alias: str, limit: int = 12):
+    return db.execute(
+        text(
+            f"""
+            SELECT {alias}, COUNT(*) AS count
+            FROM (
+                SELECT {value_sql} AS {alias}
+                FROM {source}
+            ) options
+            WHERE {alias} IS NOT NULL AND BTRIM({alias}) <> ''
+            GROUP BY {alias}
+            ORDER BY count DESC, {alias} ASC
+            LIMIT {limit}
+            """
+        )
+    ).fetchall()
+
+
+def _build_flag_expr(column: str | None) -> str:
+    return _truthy_column_expr(column) if column else "FALSE"
 
 
 @router.get("/overview")
@@ -165,30 +220,12 @@ async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
             ORDER BY age_group
         """)).fetchall()
 
-        nationality_results = db.execute(text(f"""
-            SELECT
-                CASE
-                    WHEN nationality IS NULL OR BTRIM(nationality) = '' THEN 'Unknown'
-                    WHEN LOWER(nationality) LIKE '%egypt%'
-                      OR LOWER(nationality) LIKE '%egyption%'
-                      OR LOWER(nationality) LIKE '%egyptain%'
-                      OR LOWER(nationality) LIKE '%egyptien%'
-                                            OR REGEXP_REPLACE(LOWER(nationality), '[^a-z]', '', 'g') IN (
-                                                    'egy', 'egyp', 'egp', 'eg', 'eyp',
-                                                    'egypt', 'egyptian', 'egyption', 'egyptain', 'egyptien', 'egyptient',
-                                                    'egiptian', 'egeptian', 'egyept', 'egytptian', 'egytptan',
-                                                    'egyptioan', 'egyptions', 'egyptianj', 'egyptians', 'egptient'
-                                            )
-                      OR nationality ~ 'مصر|مصري|مصرية|مصريه'
-                    THEN 'Egyptian'
-                    ELSE INITCAP(BTRIM(nationality))
-                END AS nationality,
-                COUNT(*) AS count
-            FROM {source}
-            GROUP BY 1
-            ORDER BY count DESC
-            LIMIT 12
-        """)).fetchall()
+        nationality_results = _distinct_option_rows(
+            db,
+            source,
+            _normalized_nationality_sql(),
+            "nationality",
+        )
 
         return {
             "success": True,
@@ -206,6 +243,178 @@ async def demographics(dataset: str = Query("all"), db=Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Demographics analytics failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/cohort-filters")
+async def cohort_filters(dataset: str = Query("all"), db=Depends(get_db)):
+    try:
+        source_table = _registry_source_table(db, dataset)
+        columns = _source_columns(db, dataset, source_table)
+        expr = _dataset_field_exprs(columns, dataset or "all")
+        _, mri_present_expr = _mri_sql_expr(columns)
+
+        hypertension_expr = _build_flag_expr(
+            _first_column(
+                columns,
+                "has_hypertension",
+                "high_blood_pressure",
+                "do_you_have_hypertension",
+                "other_co_morbidities_risk_factors_choice_hypertension",
+            )
+        )
+        diabetes_expr = _build_flag_expr(
+            _first_column(
+                columns,
+                "has_diabetes",
+                "diabetes_mellitus",
+                "other_co_morbidities_risk_factors_choice_diabetes_mellitus",
+            )
+        )
+        dyslipidemia_expr = _build_flag_expr(
+            _first_column(columns, "has_dyslipidemia", "dyslipidemia")
+        )
+        coronary_disease_expr = _build_flag_expr(
+            _first_column(columns, "heart_attack_or_angina")
+        )
+        heart_failure_expr = _build_flag_expr(
+            _first_column(columns, "prior_heart_failure", "has_heart_failure")
+        )
+        smoking_expr = _build_flag_expr(
+            _first_column(
+                columns,
+                "is_smoker",
+                "current_smoker",
+                "do_you_smoke_shisha_or_cigarettes_or_both",
+            )
+        )
+        family_history_expr = _build_flag_expr(
+            _first_column(
+                columns,
+                "family_history_cad",
+                "history_premature_cad",
+                "history_of_premature_cad",
+            )
+        )
+        obesity_expr = f"COALESCE({expr['bmi_expr']}, 0) >= 30"
+        imaging_expr = f"({expr['echo_expr']} IS NOT NULL OR {mri_present_expr})"
+        echo_expr = f"({expr['echo_expr']} IS NOT NULL)"
+        labs_expr = f"({expr['hba1c_expr']} IS NOT NULL OR {expr['troponin_expr']} IS NOT NULL)"
+        genomics_expr = (
+            f"EXISTS (SELECT 1 FROM patient_genomic_variants v "
+            f"WHERE v.dna_id = CAST({expr['id_col']} AS TEXT))"
+        )
+
+        summary_row = db.execute(
+            text(
+                f"""
+                SELECT
+                    COUNT(*) FILTER (WHERE {diabetes_expr}) AS diabetes,
+                    COUNT(*) FILTER (WHERE {smoking_expr}) AS smoking,
+                    COUNT(*) FILTER (WHERE {family_history_expr}) AS family_history,
+                    COUNT(*) FILTER (WHERE {obesity_expr}) AS obesity,
+                    COUNT(*) FILTER (WHERE {hypertension_expr}) AS hypertension,
+                    COUNT(*) FILTER (WHERE {dyslipidemia_expr}) AS dyslipidemia,
+                    COUNT(*) FILTER (WHERE {coronary_disease_expr}) AS coronary_disease,
+                    COUNT(*) FILTER (WHERE {heart_failure_expr}) AS heart_failure,
+                    COUNT(*) FILTER (WHERE {imaging_expr}) AS imaging,
+                    COUNT(*) FILTER (WHERE {echo_expr}) AS echocardiography,
+                    COUNT(*) FILTER (WHERE {mri_present_expr}) AS cardiac_mri,
+                    COUNT(*) FILTER (WHERE {labs_expr}) AS clinical_labs,
+                    COUNT(*) FILTER (WHERE {genomics_expr}) AS genomics
+                FROM {source_table}
+                """
+            )
+        ).fetchone()
+
+        gender_rows = _distinct_option_rows(
+            db,
+            source_table,
+            _normalized_gender_sql(expr["gender_expr"]),
+            "label",
+            limit=8,
+        )
+        nationality_rows = _distinct_option_rows(
+            db,
+            source_table,
+            _normalized_nationality_sql(expr["nationality_expr"]),
+            "label",
+            limit=12,
+        )
+        region_rows = _distinct_option_rows(
+            db,
+            source_table,
+            (
+                "COALESCE("
+                f"NULLIF(BTRIM({expr['current_city_category_expr']}), ''), "
+                f"NULLIF(BTRIM({expr['city_expr']}), '')"
+                ")"
+            ),
+            "label",
+            limit=12,
+        )
+
+        diagnosis_counts = {
+            "hypertension": summary_row[4] or 0,
+            "diabetes": summary_row[0] or 0,
+            "dyslipidemia": summary_row[5] or 0,
+            "cad": summary_row[6] or 0,
+            "heart_failure": summary_row[7] or 0,
+        }
+
+        diagnosis_labels = {
+            definition["key"]: definition["condition"]
+            for definition in get_diagnosis_definitions()
+        }
+
+        diagnoses = [
+            {"label": diagnosis_labels[key], "count": count}
+            for key, count in diagnosis_counts.items()
+            if count > 0 and key in diagnosis_labels
+        ]
+
+        risk_factors = [
+            {"label": "Diabetes", "count": summary_row[0] or 0},
+            {"label": "Smoking", "count": summary_row[1] or 0},
+            {"label": "Family History", "count": summary_row[2] or 0},
+            {"label": "Obesity", "count": summary_row[3] or 0},
+            {"label": "High Blood Pressure", "count": summary_row[4] or 0},
+            {"label": "Dyslipidemia", "count": summary_row[5] or 0},
+        ]
+
+        data_types = [
+            {"label": "Imaging", "count": summary_row[8] or 0},
+            {"label": "Echocardiography", "count": summary_row[9] or 0},
+            {"label": "Cardiac MRI", "count": summary_row[10] or 0},
+            {"label": "Clinical Labs", "count": summary_row[11] or 0},
+            {"label": "Genomics", "count": summary_row[12] or 0},
+        ]
+
+        return {
+            "success": True,
+            "data": {
+                "genders": [
+                    {"label": row[0], "count": row[1]}
+                    for row in gender_rows
+                    if row[1] > 0
+                ],
+                "nationalities": [
+                    {"label": row[0], "count": row[1]}
+                    for row in nationality_rows
+                    if row[1] > 0
+                ],
+                "regions": [
+                    {"label": row[0], "count": row[1]}
+                    for row in region_rows
+                    if row[1] > 0
+                ],
+                "diagnoses": diagnoses,
+                "riskFactors": [item for item in risk_factors if item["count"] > 0],
+                "dataTypes": [item for item in data_types if item["count"] > 0],
+            },
+        }
+    except Exception as e:
+        logger.error(f"Cohort filter metadata failed: {e}")
         return {"success": False, "error": str(e)}
 
 

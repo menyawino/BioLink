@@ -76,7 +76,7 @@
         "identifier": "pg-schema-gen",
         "instanceIdentifier": "pg-schema-gen-instance",
         "name": "Schema Generation Pipeline (Step 1)",
-        "comments": "Runs scripts/two_stage_match.py via BiolinkMasterSchemaProcessor.",
+        "comments": "Runs nifi/pipeline/two_stage_match.py via BiolinkMasterSchemaProcessor.",
         "position": { "x": 100, "y": 1200 },
         "parameterContextName": "BioLink Parameters",
         "processGroups": [],
@@ -112,7 +112,6 @@
                 "Match Threshold": "0.35",
                 "Top K": "5",
                 "Min Final Score": "0.50",
-                "Use SapBERT": "false",
                 "Lexicon Path": "/opt/nifi/biolink_scripts/clinical_lexicon.csv"
               }
             }

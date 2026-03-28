@@ -28,6 +28,24 @@ interface WelcomeScreenProps {
   patientData?: any;
 }
 
+const starterPrompts = [
+  {
+    title: 'Scan the registry',
+    prompt: 'Show the patient registry and highlight the most complete records.',
+    badge: 'Navigation'
+  },
+  {
+    title: 'Build a cohort',
+    prompt: 'Build a cohort of patients over 60 with hypertension and imaging data.',
+    badge: 'Cohort'
+  },
+  {
+    title: 'Summarize analytics',
+    prompt: 'Summarize the key demographics and data completeness trends across the registry.',
+    badge: 'Analytics'
+  }
+];
+
 // Helper function to parse simple markdown
 const parseMarkdown = (text: string) => {
   // Handle images first: ![alt](url)
@@ -571,10 +589,10 @@ Rules:
   };
 
   return (
-    <div className="chat-shell flex h-full w-full max-w-5xl mx-auto flex-col">
+    <div className="chat-shell mx-auto flex w-full max-w-[76rem] flex-col">
       {/* Header */}
-      <div className="chat-hero border-b border-muted/20 pb-7 pt-4">
-        <div className="chat-hero-row flex flex-wrap items-center justify-between gap-4">
+      <div className="chat-hero border-b border-muted/20 pb-5 pt-1">
+        <div className="chat-hero-row flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-start space-x-4">
             <div className="chat-hero-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#00a2dd] to-[#efb01b]">
               <Sparkles className="h-5 w-5 text-white" />
@@ -603,10 +621,28 @@ Rules:
         </div>
       </div>
 
+      <div className="chat-starter-grid mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-3">
+        {starterPrompts.map((item) => (
+          <button
+            key={item.title}
+            type="button"
+            className="chat-starter-card text-left"
+            onClick={() => {
+              setInput(item.prompt);
+              inputRef.current?.focus();
+            }}
+          >
+            <span className="chat-starter-badge">{item.badge}</span>
+            <h2 className="mt-3 text-base font-semibold text-foreground">{item.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.prompt}</p>
+          </button>
+        ))}
+      </div>
+
       {/* Chat Area */}
-      <Card className="chat-surface mt-5 flex-1 flex-col overflow-hidden border-muted/40 shadow-sm">
-        <ScrollArea className="chat-scroll flex-1 p-4 md:p-6">
-          <div className="chat-thread space-y-6">
+      <Card className="chat-surface mt-3 flex min-h-0 flex-col overflow-hidden border-muted/40 shadow-sm xl:min-h-[28rem]">
+        <ScrollArea className="chat-scroll flex-1 p-4 md:p-5">
+          <div className="chat-thread space-y-5">
             {messages.map((message, index) => (
               <div
                 key={message.id}
@@ -623,8 +659,8 @@ Rules:
                 </Avatar>
 
                 {/* Message Content */}
-                <div className="max-w-[82%] space-y-2">
-                  <div className={`message-bubble rounded-2xl p-4 text-[0.95rem] leading-7 ${
+                <div className="max-w-[86%] space-y-2 xl:max-w-[78%]">
+                  <div className={`message-bubble rounded-2xl p-3.5 text-[0.95rem] leading-7 ${
                     message.role === 'user'
                       ? 'message-bubble-user rounded-tr-none bg-primary text-primary-foreground'
                       : 'message-bubble-assistant rounded-tl-none bg-muted/50 text-foreground'
@@ -733,7 +769,7 @@ Rules:
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="chat-input-shell border-t bg-background/50 p-4 backdrop-blur-sm">
+        <div className="chat-input-shell border-t bg-background/50 p-3 backdrop-blur-sm md:p-4">
           <form
             onSubmit={(e) => {
               e.preventDefault();

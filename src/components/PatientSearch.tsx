@@ -53,13 +53,15 @@ export function PatientSearch({ currentMrn, onPatientSelect }: PatientSearchProp
             <div className="relative flex-1">
               <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search by DNA ID..."
+                placeholder="Search by DNA ID, age, sex, or location..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-8"
               />
               {searchTerm && (
                 <button
+                  type="button"
+                  aria-label="Clear patient search"
                   onClick={handleClear}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >

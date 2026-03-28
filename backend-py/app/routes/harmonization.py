@@ -211,6 +211,12 @@ async def comparability_report(db=Depends(get_db)):
         return {"success": False, "error": str(e)}
 
 
+@router.get("/comparability-report")
+async def comparability_report_alias(db=Depends(get_db)):
+    """Backward-compatible alias for the comparability report endpoint."""
+    return await comparability_report(db)
+
+
 @router.get("/dictionary")
 async def data_dictionary(db=Depends(get_db)):
     """Return a data dictionary built from the _schema_registry and harmonization_tiers tables."""
@@ -218,14 +224,55 @@ async def data_dictionary(db=Depends(get_db)):
         if not _table_exists(db, "_schema_registry"):
             return {"success": True, "data": []}
 
-        rows = db.execute(text(
-            "SELECT sr.master_col, sr.data_type, sr.bhs_col, sr.ehvol_col, "
-            "       ht.tier, ht.unit, ht.loinc, ht.snomed, ht.phenotype_definition, "
-            "       ht.allowable_range "
-            "FROM _schema_registry sr "
-            "LEFT JOIN harmonization_tiers ht ON ht.master_col = sr.master_col "
-            "ORDER BY COALESCE(ht.tier, 99), sr.master_col"
-        )).fetchall()
+        if _table_exists(db, "harmonization_tiers"):
+            query = text(
+                "WITH registry AS ("
+                "    SELECT sr.pg_col_name AS master_col, "
+                "           MAX(sr.sql_type) AS data_type, "
+                "           MAX(CASE WHEN UPPER(sr.dataset) = 'BHS' THEN sr.original_name END) AS bhs_source, "
+                "           MAX(CASE WHEN UPPER(sr.dataset) = 'EHVOL' THEN sr.original_name END) AS ehvol_source, "
+                "           MAX(sr.ucum_unit) AS registry_unit, "
+                "           MAX(sr.loinc_code) AS registry_loinc, "
+                "           MAX(sr.snomed_code) AS registry_snomed "
+                "    FROM _schema_registry sr "
+                "    GROUP BY sr.pg_col_name"
+                ") "
+                "SELECT COALESCE(ht.master_col, registry.master_col) AS master_col, "
+                "       COALESCE(ht.data_type, registry.data_type) AS data_type, "
+                "       COALESCE(registry.bhs_source, '') AS bhs_source, "
+                "       COALESCE(registry.ehvol_source, '') AS ehvol_source, "
+                "       COALESCE(ht.tier, '') AS tier, "
+                "       COALESCE(ht.unit, registry.registry_unit, '') AS unit, "
+                "       COALESCE(ht.loinc, registry.registry_loinc, '') AS loinc, "
+                "       COALESCE(ht.snomed, registry.registry_snomed, '') AS snomed, "
+                "       COALESCE(ht.phenotype_definition, '') AS phenotype_definition, "
+                "       COALESCE(ht.allowable_range, '') AS allowable_range "
+                "FROM registry "
+                "FULL OUTER JOIN harmonization_tiers ht ON ht.master_col = registry.master_col "
+                "ORDER BY CASE "
+                "           WHEN NULLIF(COALESCE(ht.tier, ''), '') ~ '^[0-9]+$' THEN CAST(ht.tier AS INTEGER) "
+                "           ELSE 999 "
+                "         END, "
+                "         COALESCE(ht.master_col, registry.master_col)"
+            )
+        else:
+            query = text(
+                "SELECT sr.pg_col_name AS master_col, "
+                "       MAX(sr.sql_type) AS data_type, "
+                "       MAX(CASE WHEN UPPER(sr.dataset) = 'BHS' THEN sr.original_name END) AS bhs_source, "
+                "       MAX(CASE WHEN UPPER(sr.dataset) = 'EHVOL' THEN sr.original_name END) AS ehvol_source, "
+                "       '' AS tier, "
+                "       COALESCE(MAX(sr.ucum_unit), '') AS unit, "
+                "       COALESCE(MAX(sr.loinc_code), '') AS loinc, "
+                "       COALESCE(MAX(sr.snomed_code), '') AS snomed, "
+                "       '' AS phenotype_definition, "
+                "       '' AS allowable_range "
+                "FROM _schema_registry sr "
+                "GROUP BY sr.pg_col_name "
+                "ORDER BY sr.pg_col_name"
+            )
+
+        rows = db.execute(query).fetchall()
 
         data = [
             {

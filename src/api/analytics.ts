@@ -1,5 +1,6 @@
 import { get } from './client';
 import type {
+  CohortFilterOptions,
   RegistryOverview,
   DemographicsData,
   ClinicalMetrics,
@@ -20,6 +21,10 @@ function withDataset(path: string, dataset: DatasetFilter = 'all') {
 // Get registry overview statistics
 export async function getRegistryOverview(dataset: DatasetFilter = 'all') {
   return get<RegistryOverview>(withDataset('/api/analytics/overview', dataset));
+}
+
+export async function getCohortFilterOptions(dataset: DatasetFilter = 'all') {
+  return get<CohortFilterOptions>(withDataset('/api/analytics/cohort-filters', dataset));
 }
 
 // Get demographics breakdown

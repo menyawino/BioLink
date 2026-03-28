@@ -3,9 +3,9 @@
 Two-stage clinical column matching pipeline.
 
 Stage 1 – Candidate generation
-  Expands snake_case names via a clinical lexicon CSV (pipeline/clinical_lexicon.csv)
-  then embeds with TF-IDF char+word n-grams, or SapBERT when sentence-transformers
-  is installed. Keeps pairs with cosine similarity ≥ STAGE1_THRESHOLD (default 0.35).
+        Expands snake_case names via a clinical lexicon CSV (nifi/pipeline/clinical_lexicon.csv)
+    then embeds with SapBERT sentence embeddings. Keeps pairs with cosine
+    similarity ≥ STAGE1_THRESHOLD (default 0.35).
 
 Stage 2 – Validation via data-level + rule-based filters
   For each candidate pair:
@@ -25,16 +25,14 @@ Score weights (defaults, override with --weights name:0.55,range:0.25,cat:0.10,t
   + type_same_bonus × W_type        (+1 if both columns have identical dtype)
   = final_score  (clipped to [0, 1])
 
-Outputs
-  outputs/matched_pairs_validated.csv   – all candidates with verdict + diagnostics
-  outputs/matched_pairs_accepted.csv    – accepted pairs only (clean, for downstream)
-  outputs/match_validation_report.json  – aggregate stats + top-30 accepted
+Output
+    outputs/master_schema.csv             – canonical schema for downstream ETL
 
 Usage
-  python pipeline/two_stage_match.py [--threshold 0.35] [--top-k 5] [--no-sapbert]
-  python pipeline/two_stage_match.py --weights name:0.6,range:0.3,cat:0.05,type:0.05
-  python pipeline/two_stage_match.py --cat-threshold 0.3 --n-boot 200
-    python pipeline/two_stage_match.py --min-final-score 0.50
+    python nifi/pipeline/two_stage_match.py [--threshold 0.35] [--top-k 5]
+    python nifi/pipeline/two_stage_match.py --weights name:0.6,range:0.3,cat:0.05,type:0.05
+    python nifi/pipeline/two_stage_match.py --cat-threshold 0.3 --n-boot 200
+        python nifi/pipeline/two_stage_match.py --min-final-score 0.50
 """
 
 from __future__ import annotations
@@ -58,22 +56,22 @@ warnings.filterwarnings("ignore")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS = ROOT / "outputs"
 DB = ROOT / "db"
 
 BHS_CSV = DB / "BHS_Full.csv"
 EHVOL_CSV = DB / "EHVol_Full.csv"
-BHS_ONLY = OUTPUTS / "db_only_bhs.csv"
-EHVOL_ONLY = OUTPUTS / "db_only_ehvol.csv"
 
 # ---------------------------------------------------------------------------
 # Clinical abbreviation / domain expansion lexicon
-# Primary source: pipeline/clinical_lexicon.csv (acronym,expansion,category,...)
+# Primary source: nifi/pipeline/clinical_lexicon.csv (acronym,expansion,category,...)
 # Fallback: hardcoded dict below (used when CSV is missing or unreadable).
 # ---------------------------------------------------------------------------
 
-LEXICON_CSV = Path(__file__).parent / "clinical_lexicon.csv"
+LEXICON_CSV = Path(
+    os.environ.get("BIOLINK_LEXICON_PATH", Path(__file__).parent / "clinical_lexicon.csv")
+)
 
 _ABBREV_FALLBACK: Dict[str, str] = {
     "bnp": "B-type natriuretic peptide cardiac biomarker",
@@ -190,7 +188,7 @@ def _col_category(name: str) -> str:
 # Tune by passing --weights name:N,range:N,cat:N,type:N (values must sum to 1.0).
 # ---------------------------------------------------------------------------
 _DEFAULT_WEIGHTS: Dict[str, float] = {
-    "name":  0.55,   # TF-IDF / SapBERT cosine name similarity
+    "name":  0.55,   # SapBERT cosine name similarity
     "range": 0.25,   # IQR overlap (numeric) / year Jaccard (date) / val Jaccard (cat)
     "cat":   0.10,   # categorical top-N value Jaccard (separate from range for cat cols)
     "type":  0.10,   # bonus when both columns have identical inferred dtype
@@ -293,12 +291,6 @@ def load_dataframe(path: Path) -> Tuple[pd.DataFrame, Dict[str, str]]:
     df.columns = final_cols
     mapping = dict(zip(final_cols, orig_cols))
     return df, mapping
-
-
-def read_list(path: Path) -> List[str]:
-    if not path.exists():
-        return []
-    return [l.strip() for l in path.read_text().splitlines() if l.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +433,7 @@ def bootstrap_numeric_overlap(
     vals_a = pd.to_numeric(s_a.dropna(), errors="coerce").dropna().to_numpy()
     vals_b = pd.to_numeric(s_b.dropna(), errors="coerce").dropna().to_numpy()
 
-    if len(vals_a) < 5 or len(vals_b) < 5:
+    if n_boot <= 0 or len(vals_a) < 5 or len(vals_b) < 5:
         point = numeric_range_overlap(s_a, s_b)
         return (round(point, 3), round(point, 3))
 
@@ -565,62 +557,30 @@ def rule_veto(col_a: str, col_b: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Stage 1: Candidate generation (TF-IDF cosine + optional SapBERT)
+# Stage 1: Candidate generation (SapBERT cosine)
 # ---------------------------------------------------------------------------
-
-def _tfidf_similarity_matrix(names_a: List[str], names_b: List[str]) -> np.ndarray:
-    """Return (len_a × len_b) cosine-similarity matrix using TF-IDF."""
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-
-    expanded_a = [expand_name(n) for n in names_a]
-    expanded_b = [expand_name(n) for n in names_b]
-
-    vectorizer = TfidfVectorizer(
-        analyzer="char_wb",
-        ngram_range=(2, 4),
-        min_df=1,
-        sublinear_tf=True,
-    )
-    all_docs = expanded_a + expanded_b
-    vectorizer.fit(all_docs)
-    vecs_a = vectorizer.transform(expanded_a)
-    vecs_b = vectorizer.transform(expanded_b)
-
-    # Also add word-level TF-IDF
-    word_vec = TfidfVectorizer(
-        analyzer="word",
-        ngram_range=(1, 2),
-        min_df=1,
-        sublinear_tf=True,
-    )
-    word_vec.fit(all_docs)
-    wvecs_a = word_vec.transform(expanded_a)
-    wvecs_b = word_vec.transform(expanded_b)
-
-    sim_char = cosine_similarity(vecs_a, vecs_b)
-    sim_word = cosine_similarity(wvecs_a, wvecs_b)
-    return 0.5 * sim_char + 0.5 * sim_word
-
 
 def _sapbert_similarity_matrix(names_a: List[str], names_b: List[str]) -> Optional[np.ndarray]:
     """
-    Optional: use SapBERT for clinically-aware embeddings.
-    Returns None if sentence-transformers is not installed.
+    Use SapBERT for clinically-aware embeddings.
     """
     try:
         from sentence_transformers import SentenceTransformer
         from sklearn.metrics.pairwise import cosine_similarity
-    except ImportError:
-        return None
+    except Exception as e:
+        raise RuntimeError(
+            "SapBERT dependencies failed to import. "
+            "Repair the environment with ./venv/bin/pip install --force-reinstall --no-cache-dir torch "
+            "and ensure sentence-transformers is installed. "
+            f"Original error: {type(e).__name__}: {e}"
+        )
 
     model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
     print(f"  [SapBERT] Loading model {model_name} …", file=sys.stderr)
     try:
         model = SentenceTransformer(model_name)
     except Exception as e:
-        print(f"  [SapBERT] Load failed: {e}", file=sys.stderr)
-        return None
+        raise RuntimeError(f"SapBERT model load failed: {e}")
 
     expanded_a = [expand_name(n) for n in names_a]
     expanded_b = [expand_name(n) for n in names_b]
@@ -634,23 +594,14 @@ def stage1_candidates(
     names_b: List[str],
     threshold: float = 0.35,
     top_k: int = 5,
-    use_sapbert: bool = True,
 ) -> List[Tuple[str, str, float]]:
     """
     Returns list of (name_a, name_b, name_score) candidate pairs.
-    Attempts SapBERT first; falls back to TF-IDF.
+    Uses SapBERT sentence embeddings.
     """
-    sim = None
-    method = "tfidf"
-    if use_sapbert:
-        sim = _sapbert_similarity_matrix(names_a, names_b)
-        if sim is not None:
-            method = "sapbert"
+    sim = _sapbert_similarity_matrix(names_a, names_b)
 
-    if sim is None:
-        sim = _tfidf_similarity_matrix(names_a, names_b)
-
-    print(f"  Stage 1 ({method}): similarity matrix {sim.shape}", file=sys.stderr)
+    print(f"  Stage 1 (sapbert): similarity matrix {sim.shape}", file=sys.stderr)
 
     candidates = []
     for i, na in enumerate(names_a):
@@ -973,13 +924,13 @@ def infer_standard_vocab(master_col: str, source_cols: List[str]) -> str:
 
 
 def generate_master_schema(
-    accepted_csv: Path,
+    accepted_input,
     output_path: Path,
     all_cols_a: Optional[List[str]] = None,
     all_cols_b: Optional[List[str]] = None,
 ) -> None:
     """
-    Convert matched_pairs_accepted.csv → master_schema.csv.
+    Convert accepted matches → master_schema.csv.
 
     One row per accepted pair.
     - master_col:        canonical snake-case name (from name_a, de-duplicated)
@@ -998,7 +949,10 @@ def generate_master_schema(
             master_schema.csv. Columns not mapped by the matching guidelines are
             included as passthrough rows (kept as-is, single-sided source mapping).
     """
-    df = pd.read_csv(accepted_csv)
+    if isinstance(accepted_input, (str, Path)):
+        df = pd.read_csv(accepted_input)
+    else:
+        df = pd.DataFrame(list(accepted_input))
     if df.empty:
         print("[master_schema] No accepted pairs — nothing to write.", file=sys.stderr)
         return
@@ -1136,7 +1090,6 @@ def auto_tune_threshold(
     df_b: pd.DataFrame,
     names_a: List[str],
     names_b: List[str],
-    use_sapbert: bool = False,
     weights: Optional[Dict[str, float]] = None,
     cat_threshold: float = 0.30,
     n_boot: int = 0,
@@ -1157,7 +1110,7 @@ def auto_tune_threshold(
     if not gold_path.exists():
         print("\n[auto-threshold] 'gold_labels.csv' not found – generating seed file …")
         seed_cands = stage1_candidates(
-            names_a, names_b, threshold=0.35, top_k=5, use_sapbert=use_sapbert
+            names_a, names_b, threshold=0.35, top_k=5
         )
         seed_sorted = sorted(seed_cands, key=lambda x: -x[2])
         high = seed_sorted[:20]
@@ -1191,7 +1144,7 @@ def auto_tune_threshold(
     print(f"{'Thresh':>8}  {'TP':>4}  {'FP':>4}  {'FN':>4}  {'Prec':>6}  {'Rec':>6}  {'F1':>6}")
     for thresh in thresholds:
         cands = stage1_candidates(
-            names_a, names_b, threshold=thresh, top_k=5, use_sapbert=use_sapbert
+            names_a, names_b, threshold=thresh, top_k=5
         )
         validated = stage2_validate(
             cands, df_a, df_b,
@@ -1225,8 +1178,6 @@ def main():
                         help="Stage 1 cosine similarity threshold (default 0.35)")
     parser.add_argument("--top-k", type=int, default=5,
                         help="Max candidates per column in Stage 1 (default 5)")
-    parser.add_argument("--no-sapbert", action="store_true",
-                        help="Skip SapBERT and use TF-IDF only")
     parser.add_argument(
         "--weights",
         type=str,
@@ -1282,30 +1233,22 @@ def main():
 
     OUTPUTS.mkdir(exist_ok=True)
 
-    # ---- Load column name lists ----
-    bhs_names = read_list(BHS_ONLY)
-    ehvol_names = read_list(EHVOL_ONLY)
-    print(f"BHS-only columns: {len(bhs_names)}")
-    print(f"EHVol-only columns: {len(ehvol_names)}")
-
     # ---- Load full DataFrames for data-level checks ----
     print("Loading DataFrames for data-level checks …")
     df_bhs, _map_bhs = load_dataframe(BHS_CSV)
     df_ehvol, _map_ehvol = load_dataframe(EHVOL_CSV)
     print(f"  BHS: {df_bhs.shape}  |  EHVol: {df_ehvol.shape}")
-
-    # Filter to only-columns present in the schema (the unmatched ones)
-    # (BHS df may contain ALL columns incl. shared; we only want to match unmatched)
-    df_bhs_sub = df_bhs[[c for c in bhs_names if c in df_bhs.columns]]
-    df_ehvol_sub = df_ehvol[[c for c in ehvol_names if c in df_ehvol.columns]]
-    print(f"  Subset BHS: {df_bhs_sub.shape}  |  Subset EHVol: {df_ehvol_sub.shape}")
+    bhs_names = list(df_bhs.columns)
+    ehvol_names = list(df_ehvol.columns)
+    df_bhs_sub = df_bhs
+    df_ehvol_sub = df_ehvol
+    print(f"  Matching all columns: BHS={len(bhs_names)}  |  EHVol={len(ehvol_names)}")
 
     # ---- Auto-threshold tuning (runs then overrides args.threshold) ----
     if args.auto_threshold:
         args.threshold = auto_tune_threshold(
             df_bhs_sub, df_ehvol_sub,
             bhs_names, ehvol_names,
-            use_sapbert=not args.no_sapbert,
             weights=weights,
             cat_threshold=args.cat_threshold,
             n_boot=0,   # skip bootstrap during scan for speed
@@ -1319,7 +1262,6 @@ def main():
         names_b=ehvol_names,
         threshold=args.threshold,
         top_k=args.top_k,
-        use_sapbert=not args.no_sapbert,
     )
 
     # ---- Stage 2 ----
@@ -1348,22 +1290,6 @@ def main():
     for reason, count in sorted(reject_reasons.items(), key=lambda x: -x[1]):
         print(f"    {reason}: {count}")
 
-    # ---- Write outputs ----
-    out_csv = OUTPUTS / "matched_pairs_validated.csv"
-    fieldnames = [
-        "name_a", "category_a", "name_b", "category_b", "name_score",
-        "type_a", "type_b", "type_compat",
-        "range_score", "range_ci_low", "range_ci_high",
-        "cat_overlap",
-        "final_score", "verdict", "reject_reason",
-    ]
-    with out_csv.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        w.writeheader()
-        for r in sorted(results, key=lambda x: -x["final_score"]):
-            w.writerow(r)
-
-    # accepted-only CSV mirrors the original format + new diagnostic columns
     # Summarise accepted pairs by category pair for reporting
     from collections import Counter
     cat_counts: Counter = Counter(
@@ -1374,21 +1300,6 @@ def main():
         for (ca, cb), cnt in cat_counts.most_common()
     ]
 
-    out_accepted = OUTPUTS / "matched_pairs_accepted.csv"
-    with out_accepted.open("w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["name_a", "category_a", "name_b", "category_b",
-                    "name_score", "type_a", "type_b",
-                    "range_score", "range_ci_low", "range_ci_high",
-                    "cat_overlap", "final_score"])
-        for r in sorted(accepted, key=lambda x: -x["final_score"]):
-            w.writerow([
-                r["name_a"], r["category_a"], r["name_b"], r["category_b"],
-                r["name_score"], r["type_a"], r["type_b"],
-                r["range_score"], r["range_ci_low"], r["range_ci_high"],
-                r["cat_overlap"], r["final_score"],
-            ])
-
     # Category breakdown summary
     print("\n  Category-pair breakdown (top-10):")
     for entry in category_summary[:10]:
@@ -1397,41 +1308,14 @@ def main():
     # ---- Generate master schema ----
     out_master = OUTPUTS / "master_schema.csv"
     generate_master_schema(
-        out_accepted,
+        accepted,
         output_path=out_master,
         all_cols_a=list(df_bhs.columns),
         all_cols_b=list(df_ehvol.columns),
     )
 
-    report = {
-        "total_candidates": len(results),
-        "accepted": len(accepted),
-        "rejected": len(rejected),
-        "rejection_reasons": dict(reject_reasons),
-        "stage1_threshold": args.threshold,
-        "top_k": args.top_k,
-        "score_weights": weights,
-        "cat_threshold": args.cat_threshold,
-        "n_boot": args.n_boot,
-        "min_final_score": args.min_final_score,
-        "category_summary": category_summary,
-        "top_accepted": [
-            {k: r[k] for k in ("name_a", "category_a", "name_b", "category_b",
-                                "name_score", "type_a", "type_b",
-                                "range_score", "range_ci_low", "range_ci_high",
-                                "cat_overlap", "final_score")}
-            for r in sorted(accepted, key=lambda x: -x["final_score"])[:30]
-        ],
-    }
-    out_report = OUTPUTS / "match_validation_report.json"
-    with out_report.open("w") as f:
-        json.dump(report, f, indent=2)
-
     print(f"\nWrote:")
-    print(f"  {out_csv}")
-    print(f"  {out_accepted}")
     print(f"  {out_master}")
-    print(f"  {out_report}")
 
 
 if __name__ == "__main__":

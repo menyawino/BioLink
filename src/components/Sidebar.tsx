@@ -110,12 +110,12 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
                 style={{ "--stagger-index": index + 1 } as CSSProperties}
                 onClick={() => onViewChange(item.id)}
               >
-                <div className="flex items-center space-x-3 w-full">
+                <div className="flex items-start space-x-3 w-full">
                   <Icon className="h-4 w-4 flex-shrink-0" />
                   <div className="flex-1 text-left min-w-0">
-                    <span className="text-sm truncate block">{item.label}</span>
+                    <span className="text-sm block leading-tight">{item.label}</span>
                     <p className={cn(
-                      "text-xs mt-1 truncate",
+                      "text-xs mt-1 whitespace-normal leading-relaxed",
                       isActive 
                         ? "text-sidebar-primary-foreground/80" 
                         : "text-sidebar-foreground/60"
@@ -164,6 +164,7 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
             className="justify-center text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={logout}
             title="Sign out"
+            aria-label="Sign out"
           >
             <LogOut className="h-4 w-4" />
           </Button>

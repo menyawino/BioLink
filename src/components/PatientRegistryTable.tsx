@@ -6,7 +6,7 @@ import { Badge } from "./ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
-import { Search, Filter, Download, Plus, Eye, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
+import { Search, Download, Eye, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
 import { usePatients } from "../hooks/usePatients";
 import type { DatasetFilter } from "../api/patients";
 import type { Patient } from "../api/types";
@@ -125,8 +125,8 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
 
   return (
     <div className="registry-shell space-y-5">
-      <div className="registry-hero flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-2">
+      <div className="registry-hero flex flex-wrap items-end justify-between gap-4 xl:flex-nowrap xl:items-start">
+        <div className="space-y-2 xl:max-w-3xl">
           <span className="section-kicker">Registry Workspace</span>
           <div>
             <h2 className="section-title">Patient Registry</h2>
@@ -136,7 +136,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
           </div>
         </div>
 
-        <div className="registry-meta-grid grid gap-3 sm:grid-cols-3">
+        <div className="registry-meta-grid grid w-full gap-3 sm:grid-cols-3 xl:w-[33rem] xl:flex-shrink-0">
           <div className="metric-tile">
             <span className="metric-label">Visible on page</span>
             <strong className="metric-value">{patients.length}</strong>
@@ -163,21 +163,20 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
               <Badge variant="outline" className="registry-badge">
                 {patients.length} patients
               </Badge>
-              <Button size="sm" className="registry-primary-action">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Patient
-              </Button>
+              <Badge variant="secondary" className="px-3 py-1 text-xs font-medium">
+                Read-only live registry
+              </Badge>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Filters and Search */}
-          <div className="registry-toolbar flex flex-wrap items-center gap-3">
-            <div className="registry-search-group flex-1 min-w-[18rem]">
+          <div className="registry-toolbar flex flex-wrap items-center gap-3 xl:flex-nowrap xl:items-center">
+            <div className="registry-search-group flex-1 min-w-[18rem] xl:min-w-[22rem]">
               <div className="relative">
                 <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search by DNA ID, nationality, city..."
+                  placeholder="Search by patient ID, city, nationality, or cohort clue..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="registry-search-input pl-10"
@@ -207,10 +206,9 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
               </SelectContent>
             </Select>
 
-            <Button variant="outline" size="sm" className="registry-toolbar-button">
-              <Filter className="h-4 w-4 mr-2" />
-              More Filters
-            </Button>
+            <Badge variant="outline" className="registry-toolbar-status px-3 py-2 text-xs font-medium">
+              {activeFilters === 0 ? "No filters applied" : `${activeFilters} filter${activeFilters === 1 ? '' : 's'} applied`}
+            </Badge>
 
             <Button 
               variant="outline" 
@@ -232,7 +230,8 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                 <span className="ml-2 text-muted-foreground">Loading patients...</span>
               </div>
             ) : (
-            <Table className="registry-table">
+            <div className="overflow-x-auto">
+            <Table className="registry-table min-w-[78rem]">
               <TableHeader className="registry-table-header">
                 <TableRow>
                   <TableHead className="w-12">
@@ -333,6 +332,7 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                 )}
               </TableBody>
             </Table>
+            </div>
             )}
           </div>
 

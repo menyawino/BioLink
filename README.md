@@ -56,6 +56,8 @@ BioLink now features a **complete agentic system** powered by AI with function c
 - **`./bin/setup-and-test.sh`**: Complete first-time setup with system checks, dependency installation, and testing
 - **`./bin/run.sh`**: Quick start for machines that already have the environment set up
 - **`./bin/quick_test.sh`**: Run basic functionality tests against running services
+- **`npm run mcp:server`**: Start the local stdio MCP server from `mcp/server.mjs`
+- **`npm run mcp:smoke`**: Run the MCP smoke test against the local stdio server and PostgreSQL-backed tools
 
 ---
 
@@ -214,10 +216,10 @@ Recommended processors:
 Backend endpoint `/api/etl/run` now triggers a NiFi processor that executes the
 same ETL plan defined in `docs/README_registry_pipeline.md`:
 
-- `pipeline/two_stage_match.py`
-- `pipeline/apply_schema.py`
-- `pipeline/omop_etl.py`
-- `pipeline/omop_quality.py`
+- `nifi/pipeline/two_stage_match.py`
+- `nifi/pipeline/apply_schema.py`
+- `nifi/pipeline/omop_etl.py`
+- `nifi/pipeline/omop_quality.py`
 
 ```bash
 curl -X POST http://localhost:3001/api/etl/run \

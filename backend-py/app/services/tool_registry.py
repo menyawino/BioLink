@@ -26,7 +26,7 @@ class ToolRegistry:
             "chart_from_sql": self.chart_from_sql,
             "run_etl": self.run_etl,
         }
-        self._allowed_tables = {"patients", "EHVOL", "patient_genomic_variants"}
+        self._allowed_tables = {"patients", "ehvol", "patient_genomic_variants"}
         self._max_limit = 500
         self._engine = engine_override
         self._patient_columns = None
@@ -44,7 +44,7 @@ class ToolRegistry:
         """Trigger the ETL pipeline."""
         params = ETLParams(
             table=args.get("table", "ehvol_full"),
-            schema=args.get("schema", "public"),
+            schema_name=args.get("schema", "public"),
             dataset_name=args.get("dataset_name"),
             dbt_select=args.get("dbt_select"),
         )

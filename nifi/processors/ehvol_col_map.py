@@ -1,7 +1,7 @@
     # Auto-generated — EHVol column map for NiFi BiolinkSchemaStandardizerProcessor
-# Source: pipeline/generate_schema_sql.py  →  standardized_columns.csv
+# Source: nifi/pipeline/generate_schema_sql.py  →  standardized_columns.csv
 # Format: {original_col_name: (pg_col_name, coerce_func_name)}
-# DO NOT EDIT by hand; re-run pipeline/generate_schema_sql.py instead.
+# DO NOT EDIT by hand; re-run nifi/pipeline/generate_schema_sql.py instead.
 COLUMN_MAP = {
     'Consent Scan': ('consent_scan', 'to_str'),  # SDTM SV.ADMIN
     'Consent obtained?': ('consent_obtained', 'to_str'),  # SDTM SV.ADMIN

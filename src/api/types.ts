@@ -256,6 +256,20 @@ export interface RegistryOverview {
   withEcg: number;
 }
 
+export interface CohortFilterOption {
+  label: string;
+  count: number;
+}
+
+export interface CohortFilterOptions {
+  genders: CohortFilterOption[];
+  nationalities: CohortFilterOption[];
+  regions: CohortFilterOption[];
+  diagnoses: CohortFilterOption[];
+  riskFactors: CohortFilterOption[];
+  dataTypes: CohortFilterOption[];
+}
+
 export interface DemographicsData {
   ageGender: Array<{
     age_group: string;
@@ -354,6 +368,19 @@ export interface HarmonizationTier {
   timing_window: string;
   allowable_range: string;
   fill_rate: number;
+}
+
+export interface HarmonizationDictionaryField {
+  master_col: string;
+  data_type: string;
+  bhs_source: string;
+  ehvol_source: string;
+  tier: string;
+  unit: string;
+  loinc: string;
+  snomed: string;
+  phenotype_definition: string;
+  allowable_range: string;
 }
 
 export interface ProvenanceRecord {

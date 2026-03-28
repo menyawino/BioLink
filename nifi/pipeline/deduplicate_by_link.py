@@ -5,7 +5,7 @@ Create a deduplicated unified registry by computing a stable pseudonymous
 rows with the same `link_id`.
 
 Usage:
-  python pipeline/deduplicate_by_link.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv
+    python nifi/pipeline/deduplicate_by_link.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv
 
 The script writes `outputs/unified_registry_dedup.csv` and prints counts.
 """
@@ -18,7 +18,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-# Ensure pipeline/ is on sys.path when running as a script
+# Ensure nifi/pipeline/ is on sys.path when running as a script
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from apply_schema import _load_csv, process_dataset

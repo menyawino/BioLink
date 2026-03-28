@@ -342,20 +342,20 @@ export function RegistryAnalytics() {
       </div>
 
       <Tabs defaultValue="demographics" className="space-y-4 analytics-tabs">
-        <TabsList className="view-tabs-list analytics-tabs-list grid w-full grid-cols-8">
+        <TabsList className="view-tabs-list view-tabs-scroll analytics-tabs-list w-full justify-start">
           <TabsTrigger value="demographics">Demographics</TabsTrigger>
           <TabsTrigger value="comorbidities">Comorbidities</TabsTrigger>
-          <TabsTrigger value="samples">Sample Analysis</TabsTrigger>
-          <TabsTrigger value="intersections">Data Intersections</TabsTrigger>
+          <TabsTrigger value="samples">Samples</TabsTrigger>
+          <TabsTrigger value="intersections">Intersections</TabsTrigger>
           <TabsTrigger value="completeness">Data Quality</TabsTrigger>
           <TabsTrigger value="harmonization">
             <Shield className="h-4 w-4 mr-1" />
             Harmonization
           </TabsTrigger>
-          <TabsTrigger value="trends">Enrollment Trends</TabsTrigger>
+          <TabsTrigger value="trends">Trends</TabsTrigger>
           <TabsTrigger value="geography">
             <Map className="h-4 w-4 mr-1" />
-            Geographic Mapping
+            Geography
           </TabsTrigger>
         </TabsList>
 

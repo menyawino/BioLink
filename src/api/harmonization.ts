@@ -1,10 +1,18 @@
 import { get } from './client';
 import type {
+  HarmonizationDictionaryField,
   HarmonizationTier,
   ProvenanceRecord,
   ProvenanceSummary,
   ComparabilityReport,
 } from './types';
+
+export async function getHarmonizationDictionary() {
+  return get<{
+    data: HarmonizationDictionaryField[];
+    total: number;
+  }>('/api/harmonization/dictionary');
+}
 
 // Get harmonization tier classification for all variables
 export async function getHarmonizationTiers() {

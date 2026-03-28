@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from app.config import settings
 from app.services.superset_client import SupersetClient
 import aiohttp
@@ -8,13 +8,15 @@ router = APIRouter()
 
 
 class SupersetProgrammaticRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     chart_title: str = "Gender Distribution"
     dashboard_title: str = "Programmatic Dashboard"
     viz_type: str = "bar"
     group_by: str = "gender"
     metric: str = "count"
     table_name: str | None = None
-    schema: str | None = None
+    schema_name: str | None = Field(default=None, alias="schema")
     create_dashboard: bool = True
 
 
@@ -27,7 +29,7 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
     client = SupersetClient.from_settings()
 
     table_name = req.table_name or settings.superset_default_table
-    schema = req.schema or settings.superset_default_schema
+    schema = req.schema_name or settings.superset_default_schema
     if not table_name:
         raise HTTPException(
             status_code=400, detail="Missing table_name and no default configured"

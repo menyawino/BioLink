@@ -341,7 +341,6 @@ def build_step1_group(client: NiFiClient, root_id: str) -> None:
             "Match Threshold": "0.35",
             "Top K": "5",
             "Min Final Score": "0.50",
-            "Use SapBERT": "false",
             "Lexicon Path": "/opt/nifi/biolink_scripts/clinical_lexicon.csv",
         },
         320,

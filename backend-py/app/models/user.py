@@ -2,7 +2,7 @@
 SQLAlchemy User model for authentication and authorization.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import (
     Column,
     String,
@@ -26,9 +26,14 @@ class UserModel(Base):
     role = Column(String(50), nullable=False, default="viewer")  # admin, researcher, viewer
     scopes = Column(ARRAY(String), nullable=False, default=list)
     disabled = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_login = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    last_login = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self):
         return f"<User(username='{self.username}', role='{self.role}')>"

@@ -30,7 +30,7 @@ Scientific properties
 
 Usage
 -----
-  python pipeline/apply_schema.py \\
+    python nifi/pipeline/apply_schema.py \\
       outputs/master_schema.csv \\
       db/BHS_Full.csv db/EHVol_Full.csv \\
       --output outputs/unified_registry.csv
@@ -472,10 +472,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python pipeline/apply_schema.py outputs/master_schema.csv \
+    python nifi/pipeline/apply_schema.py outputs/master_schema.csv \
       db/BHS_Full.csv db/EHVol_Full.csv
 
-  python pipeline/apply_schema.py outputs/master_schema.csv \
+    python nifi/pipeline/apply_schema.py outputs/master_schema.csv \\
       db/BHS_Full.csv db/EHVol_Full.csv db/NewCohort.csv \\
       --output outputs/unified_registry.csv
         """,

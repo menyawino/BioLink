@@ -6,7 +6,7 @@ import pytest
 import asyncio
 from typing import AsyncGenerator, Generator
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.database import engine
@@ -39,15 +39,22 @@ def client() -> Generator[TestClient, None, None]:
 @pytest.fixture
 async def async_client() -> AsyncGenerator[AsyncClient, None]:
     """Create an async test client."""
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
         yield ac
 
 
 @pytest.fixture
-def auth_headers() -> dict:
+def auth_headers(client: TestClient) -> dict:
     """Get authentication headers for testing."""
-    # This would normally get a real token
-    return {"Authorization": "Bearer test_token"}
+    response = client.post(
+        "/api/auth/token", data={"username": "admin", "password": "admin"}
+    )
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture

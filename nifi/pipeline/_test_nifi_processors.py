@@ -6,7 +6,7 @@ Usage (inside container):
   python3 /tmp/test_nifi.py
 
 Usage (local, with pipeline on path):
-  python3 pipeline/_test_nifi_processors.py
+    python3 nifi/pipeline/_test_nifi_processors.py
 """
 from __future__ import annotations
 import sys, os, csv, math, importlib.util, tempfile
@@ -98,7 +98,6 @@ df_b = pd.DataFrame({
 candidates_s2 = tsm.stage1_candidates(
     names_a=BHS_COLS, names_b=EHVOL_COLS,
     threshold=0.10, top_k=5,
-    use_sapbert=False,
 )
 print(f"  Stage 1 candidates: {len(candidates_s2)}")
 
@@ -119,28 +118,27 @@ except Exception as exc:
     results, accepted = [], []
 
 with tempfile.TemporaryDirectory() as td:
-    accepted_csv = Path(td) / "matched_pairs_accepted.csv"
     master_out   = Path(td) / "master_schema.csv"
-
-    # Write accepted CSV in the expected format
-    fieldnames = ["name_a", "category_a", "name_b", "category_b",
-                  "name_score", "type_a", "type_b",
-                  "range_score", "range_ci_low", "range_ci_high",
-                  "cat_overlap", "final_score"]
-    with accepted_csv.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        w.writeheader()
-        # Always write the three shared columns as accepted (score=1.0)
-        for col in ("heart_rate", "bmi", "ecg_date"):
-            w.writerow({"name_a": col, "category_a": "vitals", "name_b": col,
-                        "category_b": "vitals", "name_score": 1.0,
-                        "type_a": "numeric", "type_b": "numeric",
-                        "range_score": 1.0, "range_ci_low": 0.9, "range_ci_high": 1.0,
-                        "cat_overlap": None, "final_score": 1.0})
+    accepted_rows = []
+    for col in ("heart_rate", "bmi", "ecg_date"):
+        accepted_rows.append({
+            "name_a": col,
+            "category_a": "vitals",
+            "name_b": col,
+            "category_b": "vitals",
+            "name_score": 1.0,
+            "type_a": "numeric",
+            "type_b": "numeric",
+            "range_score": 1.0,
+            "range_ci_low": 0.9,
+            "range_ci_high": 1.0,
+            "cat_overlap": None,
+            "final_score": 1.0,
+        })
 
     try:
         tsm.generate_master_schema(
-            accepted_csv,
+            accepted_rows,
             output_path=master_out,
             all_cols_a=BHS_COLS,
             all_cols_b=EHVOL_COLS,
@@ -221,18 +219,25 @@ with tempfile.TemporaryDirectory() as td:
 
     out_path = os.path.join(td, "registry.csv")
     prov_path = os.path.join(td, "prov.csv")
+    venn_path = os.path.join(td, "column_alignment_venn.png")
     _saved_argv = sys.argv[:]
     sys.argv = [
         "apply_schema.py",
         schema_path, bhs_path, ehvol_path,
         "--output", out_path,
         "--provenance-output", prov_path,
+        "--venn-output", venn_path,
         "--drop-empty-cols",
     ]
     try:
         aps.main()
     finally:
         sys.argv = _saved_argv
+
+    if os.path.exists(venn_path):
+        ok("Venn chart written to test temp directory")
+    else:
+        fail("Venn chart was not created in test temp directory")
 
     with open(out_path) as f:
         registry = list(csv.DictReader(f))
@@ -255,7 +260,7 @@ section("4. BiolinkMasterSchemaProcessor — embedded helper parity check")
 PROC_DIR = Path("/opt/nifi/nifi-python-extensions/extensions")
 if not PROC_DIR.exists():
     # Running locally — use source tree
-    PROC_DIR = Path(__file__).parent.parent / "nifi" / "processors"
+    PROC_DIR = Path(__file__).resolve().parents[1] / "processors"
 
 proc_path = PROC_DIR / "BiolinkMasterSchemaProcessor.py"
 if proc_path.exists():
@@ -285,7 +290,7 @@ if proc_path.exists():
 
     try:
         assert bms.to_snake("Heart Rate") == "heart_rate"
-        ok("BiolinkMasterSchemaProcessor.to_snake() matches pipeline helper")
+        ok("BiolinkMasterSchemaProcessor.to_snake() matches nifi/pipeline helper")
     except Exception as exc:
         fail(f"to_snake check: {exc}")
 

@@ -11,6 +11,7 @@ from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.services.ollama_model_resolver import build_chat_ollama
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +51,15 @@ class SqlAgentService:
         self.db = SQLDatabase.from_uri(
             settings.database_url, sample_rows_in_table_info=2, include_tables=None
         )
-        self.llm = ChatOllama(
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_model,
+        self.llm = build_chat_ollama(
+            settings.ollama_base_url,
+            settings.ollama_model,
             temperature=0,
+            fallback_models=[
+                settings.ollama_data_model,
+                settings.ollama_orchestrator_model,
+                settings.ollama_medical_model,
+            ],
         )
 
     async def run(self, message: str, history: Optional[List[dict]] = None) -> str:

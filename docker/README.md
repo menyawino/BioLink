@@ -6,6 +6,8 @@ This directory contains Docker-related configuration files.
 
 - `Dockerfile.frontend` - Dockerfile for building the frontend container
 
+Superset runtime initialization is driven from the repository root compose file and the config files under `config/superset/`.
+
 ## Related Files
 
 Docker Compose files are located in the project root:

@@ -23,12 +23,14 @@ export type AgentResponseChunk = {
   tool_call?: ToolCall;
 };
 
+import { API_BASE_URL, post } from './client';
+
 export async function chatWithAgent(
   messages: ChatMessage[],
   options?: { tools?: boolean; stream?: boolean; toolModelOverride?: string }
 ) {
   const baseUrl = import.meta.env.VITE_OLLAMA_BASE_URL || 'http://localhost:11434';
-  const defaultModel = import.meta.env.VITE_OLLAMA_MODEL || 'alibayram/medgemma:4b';
+  const defaultModel = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2:3b';
   const toolModel = options?.toolModelOverride || import.meta.env.VITE_OLLAMA_TOOL_MODEL || defaultModel;
   const model = options?.tools ? toolModel : defaultModel;
   const stream = options?.stream ?? true;
@@ -161,45 +163,24 @@ export async function chatWithOrchestrator(
   message: string,
   history: ChatMessage[] = []
 ) {
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-  const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      message,
-      history
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`Chat request failed: ${response.status}`);
+  const response = await post<any>('/api/chat', { message, history });
+  if (!response.success) {
+    throw new Error(response.error || 'Chat request failed');
   }
-
-  return response.json();
+  return response;
 }
 
 export async function callTool(toolName: string, args: any): Promise<string> {
-  // Call backend API endpoint for tools
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-  const response = await fetch(`${backendUrl.replace(/\/$/, '')}/api/tools/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      tool: toolName,
-      arguments: args
-    })
+  const result = await post<any>('/api/tools/', {
+    tool: toolName,
+    arguments: args
   });
 
-  if (!response.ok) {
-    throw new Error(`Tool call failed: ${response.status}`);
+  if (!result.success) {
+    throw new Error(result.error || 'Tool call failed');
   }
 
-  const result = await response.json();
-  return JSON.stringify(result, null, 2);
+  return JSON.stringify(result.data ?? result, null, 2);
 }
 
 export async function chatWithSqlAgent(

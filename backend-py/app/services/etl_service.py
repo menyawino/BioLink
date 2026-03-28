@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 import requests
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from app.database import engine
 from app.services import registry_loader
 
@@ -45,8 +45,10 @@ EHVOL_CANONICAL_FILENAME = "EHVol_Full.csv"
 
 
 class ETLParams(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     table: str = "ehvol_full"
-    schema: str = "public"
+    schema_name: str = Field(default="public", alias="schema")
     csv: str | None = None
     dataset_name: str | None = None
     datasets: list[str] | None = None

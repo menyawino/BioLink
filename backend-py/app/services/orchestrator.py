@@ -13,6 +13,7 @@ from langchain_ollama import ChatOllama
 from app.config import settings
 from app.services.audit import audit_event
 from app.services.intent_router import IntentRouter
+from app.services.ollama_model_resolver import build_chat_ollama
 from app.services.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -142,10 +143,15 @@ class MedicalAgentAdapter:
     name = "medical"
 
     def __init__(self) -> None:
-        self._llm = ChatOllama(
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_medical_model,
+        self._llm = build_chat_ollama(
+            settings.ollama_base_url,
+            settings.ollama_medical_model,
             temperature=0.2,
+            fallback_models=[
+                settings.ollama_model,
+                settings.ollama_data_model,
+                settings.ollama_orchestrator_model,
+            ],
         )
 
     async def run(
@@ -250,10 +256,15 @@ class DataAgentAdapter:
     _allowed_marks = {"bar", "line", "area", "point", "tick", "boxplot"}
 
     def __init__(self) -> None:
-        self._llm = ChatOllama(
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_data_model,
+        self._llm = build_chat_ollama(
+            settings.ollama_base_url,
+            settings.ollama_data_model,
             temperature=0,
+            fallback_models=[
+                settings.ollama_model,
+                settings.ollama_orchestrator_model,
+                settings.ollama_medical_model,
+            ],
         )
 
     async def run(
@@ -514,10 +525,15 @@ class ChatOrchestrator:
         self._router = router or IntentRouter()
         self._use_llm_router = use_llm_router
         self._orchestrator_llm = (
-            ChatOllama(
-                base_url=settings.ollama_base_url,
-                model=settings.ollama_orchestrator_model,
+            build_chat_ollama(
+                settings.ollama_base_url,
+                settings.ollama_orchestrator_model,
                 temperature=0,
+                fallback_models=[
+                    settings.ollama_model,
+                    settings.ollama_data_model,
+                    settings.ollama_medical_model,
+                ],
             )
             if use_llm_router
             else None

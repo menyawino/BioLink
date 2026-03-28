@@ -21,7 +21,7 @@ Outputs
 
 Usage
 -----
-  python pipeline/cohort_comparability.py \\
+    python nifi/pipeline/cohort_comparability.py \\
       --registry outputs/unified_registry.csv \\
       --tiers outputs/harmonization_tiers.csv
 """

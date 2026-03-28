@@ -7,6 +7,7 @@ from app.config import settings
 from app.database import test_connection
 from app.database import engine
 from app.db_bootstrap import ensure_schema
+from app.services.harmonization_loader import ensure_harmonization_artifacts_loaded
 from app.services.registry_loader import ensure_registry_snapshot_loaded
 from app.routes import (
     chat,
@@ -51,6 +52,13 @@ async def lifespan(app: FastAPI):
             logger.info("✓ Registry snapshot restored during startup")
     except Exception as e:
         logger.warning(f"Registry snapshot startup reload failed: {e}")
+
+    try:
+        harmonization_result = ensure_harmonization_artifacts_loaded(engine)
+        if harmonization_result.get("loaded"):
+            logger.info("✓ Harmonization artifacts synced during startup")
+    except Exception as e:
+        logger.warning(f"Harmonization artifact startup sync failed: {e}")
 
     # Bootstrap auth tables + seed default users
     try:
@@ -115,6 +123,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -39,6 +39,9 @@ export interface PatientsQueryParams {
   // Clinical/risk factor filters
   hasDiabetes?: boolean;
   hasHypertension?: boolean;
+  hasDyslipidemia?: boolean;
+  hasCoronaryDisease?: boolean;
+  hasHeartFailure?: boolean;
   hasSmoking?: boolean;
   hasObesity?: boolean;
   hasFamilyHistory?: boolean;
@@ -79,6 +82,9 @@ export async function getPatients(params: PatientsQueryParams = {}) {
   // Clinical/risk factor filters
   if (params.hasDiabetes !== undefined) queryParams.set('hasDiabetes', params.hasDiabetes.toString());
   if (params.hasHypertension !== undefined) queryParams.set('hasHypertension', params.hasHypertension.toString());
+  if (params.hasDyslipidemia !== undefined) queryParams.set('hasDyslipidemia', params.hasDyslipidemia.toString());
+  if (params.hasCoronaryDisease !== undefined) queryParams.set('hasCoronaryDisease', params.hasCoronaryDisease.toString());
+  if (params.hasHeartFailure !== undefined) queryParams.set('hasHeartFailure', params.hasHeartFailure.toString());
   if (params.hasSmoking !== undefined) queryParams.set('hasSmoking', params.hasSmoking.toString());
   if (params.hasObesity !== undefined) queryParams.set('hasObesity', params.hasObesity.toString());
   if (params.hasFamilyHistory !== undefined) queryParams.set('hasFamilyHistory', params.hasFamilyHistory.toString());

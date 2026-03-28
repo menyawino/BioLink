@@ -36,11 +36,16 @@ export function DataNotAvailable({ title, message, type = 'not-in-database' }: D
   };
 
   return (
-    <Card className="border-dashed">
-      <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-        {getIcon()}
-        <h3 className="mt-4 text-lg font-medium text-muted-foreground">{title}</h3>
-        <p className="mt-2 text-sm text-muted-foreground max-w-md">
+    <Card className="empty-state-card border-dashed">
+      <CardContent className="flex flex-col items-center justify-center px-6 py-12 text-center md:py-14">
+        <span className="empty-state-icon">
+          {getIcon()}
+        </span>
+        <p className="empty-state-kicker">
+          {type === 'feature-not-available' ? 'Feature Status' : 'Patient Data'}
+        </p>
+        <h3 className="empty-state-title">{title}</h3>
+        <p className="empty-state-text max-w-lg">
           {message || getDefaultMessage()}
         </p>
       </CardContent>
