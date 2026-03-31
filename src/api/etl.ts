@@ -16,6 +16,15 @@ export interface EtlRunAccepted {
   message: string;
 }
 
+export interface EtlStageManifest {
+  key: 'ingest' | 'match' | 'harmonize' | 'omop' | 'quality' | 'publish';
+  status: 'idle' | 'running' | 'complete' | 'failed' | 'optional';
+  source: string;
+  message: string;
+  observedAt: string;
+  details?: Record<string, unknown>;
+}
+
 export interface EtlJobStatus {
   jobId: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed';
@@ -25,6 +34,7 @@ export interface EtlJobStatus {
   request: EtlRunRequest;
   result: unknown;
   error: string | null;
+  lineage?: EtlStageManifest[];
 }
 
 export async function runEtl(payload: EtlRunRequest): Promise<ApiResponse<EtlRunAccepted>> {

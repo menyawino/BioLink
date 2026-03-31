@@ -3,7 +3,7 @@
  */
 
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -44,7 +44,7 @@ export function LoginPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(username, password);
+      await login(username.trim().toLowerCase(), password);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -67,7 +67,12 @@ export function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      await registerApi({ username, email, password, full_name: fullName || undefined });
+      await registerApi({
+        username: username.trim().toLowerCase(),
+        email: email.trim().toLowerCase(),
+        password,
+        full_name: fullName.trim() || undefined,
+      });
       setSuccess('Account created successfully. You can now log in.');
       setMode('login');
       resetForm(false);
@@ -84,7 +89,7 @@ export function LoginPage() {
         <div className="login-brand-panel hidden rounded-[2rem] border border-white/60 bg-white/72 p-8 shadow-[0_30px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:flex lg:flex-col lg:justify-between">
           <div className="space-y-8">
             <div className="space-y-4">
-              <img src={logo} alt="Magdi Yacoub Heart Foundation" className="h-[4.5rem] w-auto" />
+              <img src={logo} alt="Magdi Yacoub Heart Foundation" className="h-16 w-auto" />
               <div className="space-y-3">
                 <p className="section-kicker">Research platform</p>
                 <h1 className="section-title max-w-xl">Move from registry search to evidence without losing context.</h1>
@@ -133,9 +138,9 @@ export function LoginPage() {
 
           <Card className="login-card border-white/70 bg-white/86 shadow-[0_28px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl">
             <CardHeader className="space-y-1 pb-4">
-              <CardTitle className="text-xl text-center">
+              <h2 className="text-xl text-center font-semibold tracking-tight">
                 {mode === 'login' ? 'Sign In' : 'Create Account'}
-              </CardTitle>
+              </h2>
               <p className="text-center text-sm text-muted-foreground">
                 {mode === 'login'
                   ? 'Continue to the BioLink research workspace.'

@@ -248,6 +248,8 @@ export interface RegistryOverview {
   totalPatients: number;
   maleCount: number;
   femaleCount: number;
+  ageDataCount: number;
+  hasAgeData: boolean;
   averageAge: string;
   dataCompleteness: string;
   withMri: number;

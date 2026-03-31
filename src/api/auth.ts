@@ -3,7 +3,15 @@
  */
 
 import { API_BASE_URL, setTokens, clearTokens, getAccessToken } from './client';
-import type { AuthUser, LoginResponse, RegisterRequest, ChangePasswordRequest, UpdateProfileRequest, AdminUpdateUserRequest } from '../types/auth';
+import type {
+  AuthUser,
+  LoginResponse,
+  RegisterRequest,
+  ChangePasswordRequest,
+  UpdateProfileRequest,
+  AdminUpdateUserRequest,
+  AdminCreateUserRequest,
+} from '../types/auth';
 
 export async function loginApi(username: string, password: string): Promise<LoginResponse> {
   const formData = new URLSearchParams();
@@ -143,4 +151,23 @@ export async function adminDeleteUserApi(username: string): Promise<void> {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.detail || 'User deletion failed');
   }
+}
+
+export async function adminCreateUserApi(data: AdminCreateUserRequest): Promise<AuthUser> {
+  const token = getAccessToken();
+  const response = await fetch(`${API_BASE_URL}/api/auth/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'User creation failed');
+  }
+
+  return response.json();
 }

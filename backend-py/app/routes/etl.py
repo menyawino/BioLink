@@ -21,6 +21,7 @@ ETL_UPLOAD_WRITE_DIR = os.getenv(
 ETL_UPLOAD_READ_DIR = os.getenv(
     "ETL_UPLOAD_READ_DIR", os.getenv("ETL_SERVICE_UPLOAD_DIR", ETL_UPLOAD_WRITE_DIR)
 )
+LINEAGE_STAGE_ORDER = ["ingest", "match", "harmonize", "omop", "quality", "publish"]
 
 
 class ETLRequest(BaseModel):
@@ -50,6 +51,58 @@ def _update_job(job_id: str, **updates):
     with _jobs_lock:
         if job_id in _jobs:
             _jobs[job_id].update(updates)
+
+
+def _build_lineage_stage(
+    key: str,
+    status: str,
+    source: str,
+    message: str,
+    *,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    stage: dict[str, Any] = {
+        "key": key,
+        "status": status,
+        "source": source,
+        "message": message,
+        "observedAt": _utcnow(),
+    }
+    if details:
+        stage["details"] = details
+    return stage
+
+
+def _initial_lineage(skip_superset: bool) -> list[dict[str, Any]]:
+    return [
+        _build_lineage_stage("ingest", "idle", "backend-route", "Waiting for ETL execution to begin."),
+        _build_lineage_stage("match", "idle", "backend-route", "Waiting for NiFi processor configuration."),
+        _build_lineage_stage("harmonize", "idle", "backend-route", "Waiting for registry pipeline execution."),
+        _build_lineage_stage("omop", "idle", "backend-route", "Waiting for OMOP artifact observation."),
+        _build_lineage_stage("quality", "idle", "backend-route", "Waiting for quality artifact observation."),
+        _build_lineage_stage(
+            "publish",
+            "optional" if skip_superset else "idle",
+            "backend-route",
+            "Superset refresh is skipped for this run." if skip_superset else "Waiting for publication stage.",
+        ),
+    ]
+
+
+def _merge_lineage(job_id: str, stage: dict[str, Any]) -> None:
+    with _jobs_lock:
+        if job_id not in _jobs:
+            return
+        current = _jobs[job_id].get("lineage") or []
+        by_key = {
+            str(item.get("key")): item
+            for item in current
+            if isinstance(item, dict) and item.get("key")
+        }
+        by_key[str(stage.get("key"))] = stage
+        _jobs[job_id]["lineage"] = [
+            by_key[key] for key in LINEAGE_STAGE_ORDER if key in by_key
+        ]
 
 
 def _is_inline_csv(value: str | None) -> bool:
@@ -82,6 +135,15 @@ def _materialize_csv_for_etl(csv_value: str | None) -> tuple[str | None, str | N
 
 def _run_wrapper(job_id: str, req: ETLRequest):
     _update_job(job_id, status="running", startedAt=_utcnow())
+    _merge_lineage(
+        job_id,
+        _build_lineage_stage(
+            "ingest",
+            "running",
+            "backend-route",
+            "Preparing source CSV inputs for the scripted NiFi pipeline.",
+        ),
+    )
     etl_csv_path, local_written_csv = _materialize_csv_for_etl(req.csv)
 
     requested_datasets: list[str] = []
@@ -93,6 +155,20 @@ def _run_wrapper(job_id: str, req: ETLRequest):
         requested_datasets = ["ehvol", "bhs"]
 
     try:
+        _merge_lineage(
+            job_id,
+            _build_lineage_stage(
+                "ingest",
+                "complete",
+                "backend-route",
+                "Source inputs are ready for NiFi orchestration.",
+                details={
+                    "csv_path": etl_csv_path,
+                    "local_csv_path": local_written_csv,
+                    "datasets": requested_datasets,
+                },
+            ),
+        )
         primary_dataset = requested_datasets[0]
         result = trigger_etl_pipeline(
             ETLParams(
@@ -103,7 +179,8 @@ def _run_wrapper(job_id: str, req: ETLRequest):
                 datasets=requested_datasets,
                 dbt_select=req.dbt_select,
                 skip_superset=req.skip_superset,
-            )
+            ),
+            progress_callback=lambda stage: _merge_lineage(job_id, stage),
         )
 
         ok = bool(result.get("ok", False))
@@ -128,9 +205,22 @@ def _run_wrapper(job_id: str, req: ETLRequest):
             csvPath=etl_csv_path,
             localCsvPath=local_written_csv,
         )
+        for stage in result.get("result", {}).get("lineage") or []:
+            if isinstance(stage, dict):
+                _merge_lineage(job_id, stage)
         logger.info("ETL Result (%s): %s", job_id, result)
     except Exception as exc:
         logger.exception("ETL job failed: %s", job_id)
+        _merge_lineage(
+            job_id,
+            _build_lineage_stage(
+                "harmonize",
+                "failed",
+                "backend-route",
+                "ETL job failed before harmonization could complete.",
+                details={"error": str(exc)},
+            ),
+        )
         _update_job(
             job_id,
             status="failed",
@@ -170,6 +260,7 @@ async def webhook_trigger(
             "result": None,
             "error": None,
             "externalRunId": payload.runId,
+            "lineage": _initial_lineage(req.skip_superset),
         }
 
     background_tasks.add_task(_run_wrapper, job_id, req)
@@ -199,6 +290,7 @@ async def trigger_etl(req: ETLRequest, background_tasks: BackgroundTasks):
             "request": req.model_dump(),
             "result": None,
             "error": None,
+            "lineage": _initial_lineage(req.skip_superset),
         }
 
     background_tasks.add_task(_run_wrapper, job_id, req)

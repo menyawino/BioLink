@@ -267,12 +267,38 @@ class DataAgentAdapter:
             ],
         )
 
+    @staticmethod
+    def _looks_like_chart_request(message: str) -> bool:
+        text = (message or "").lower()
+        return any(
+            keyword in text
+            for keyword in ["chart", "plot", "graph", "visualize", "visualise"]
+        )
+
     async def run(
         self,
         message: str,
         history: Optional[List[Dict[str, str]]],
         tool_registry: ToolRegistry,
     ) -> AgentResult:
+        heuristic_sql = SqlAgentAdapter()._heuristic_sql(message)
+        if heuristic_sql and not self._looks_like_chart_request(message):
+            sql = self._ensure_limit(heuristic_sql, settings.sql_agent_default_limit)
+            result = tool_registry.call(
+                "query_sql",
+                {"sql": sql, "limit": settings.sql_agent_default_limit},
+            )
+            tool_call = ToolCall(
+                name="query_sql",
+                arguments={"sql": sql, "limit": settings.sql_agent_default_limit},
+            )
+            return AgentResult(
+                content=SqlAgentAdapter._format_result(sql, result),
+                agent=self.name,
+                tool_calls=[tool_call],
+                metadata={"count": result.get("count", 0), "fallback": "heuristic"},
+            )
+
         prompt = self._build_prompt(message, history)
         try:
             response = await _ainvoke_with_retries(
@@ -635,15 +661,26 @@ class ChatOrchestrator:
                 {"from": result.agent, "to": "medical"},
                 request_id,
             )
-            if hasattr(medical_agent, "run_handoff"):
-                return await medical_agent.run_handoff(message, history, result)
-            combined_message = (
-                f"User question: {message}\n\n"
-                f"Specialist agent ({result.agent}) summary:\n{result.content}"
-            )
-            return await medical_agent.run(
-                combined_message, history, self._tool_registry
-            )
+            try:
+                if hasattr(medical_agent, "run_handoff"):
+                    return await medical_agent.run_handoff(message, history, result)
+                combined_message = (
+                    f"User question: {message}\n\n"
+                    f"Specialist agent ({result.agent}) summary:\n{result.content}"
+                )
+                return await medical_agent.run(
+                    combined_message, history, self._tool_registry
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Medical handoff unavailable, returning specialist result instead: %r",
+                    exc,
+                )
+                result.metadata = {
+                    **result.metadata,
+                    "medical_handoff_error": type(exc).__name__,
+                }
+                return result
         return result
 
 

@@ -141,13 +141,13 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
             <span className="metric-label">Visible on page</span>
             <strong className="metric-value">{patients.length}</strong>
           </div>
-          <div className="metric-tile">
+          <div className={`metric-tile ${selectedPatients.length > 0 ? 'border-[#00a2dd]/30 bg-[#00a2dd]/5' : ''}`}>
             <span className="metric-label">Selected</span>
-            <strong className="metric-value">{selectedPatients.length}</strong>
+            <strong className={`metric-value ${selectedPatients.length > 0 ? 'text-[#00a2dd]' : ''}`}>{selectedPatients.length}</strong>
           </div>
-          <div className="metric-tile">
+          <div className={`metric-tile ${activeFilters > 0 ? 'border-amber-300 bg-amber-50/60' : ''}`}>
             <span className="metric-label">Active filters</span>
-            <strong className="metric-value">{activeFilters}</strong>
+            <strong className={`metric-value ${activeFilters > 0 ? 'text-amber-600' : ''}`}>{activeFilters}</strong>
           </div>
         </div>
       </div>
@@ -278,24 +278,24 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                           {patient.dna_id}
                         </button>
                       </TableCell>
-                      <TableCell>{patient.age ?? '-'}</TableCell>
-                      <TableCell>{patient.gender ?? '-'}</TableCell>
-                      <TableCell>{patient.nationality ?? '-'}</TableCell>
-                      <TableCell>{patient.enrollment_date ? new Date(patient.enrollment_date).toLocaleDateString() : '-'}</TableCell>
+                      <TableCell>{patient.age ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                      <TableCell>{patient.gender ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                      <TableCell>{patient.nationality ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                      <TableCell>{patient.enrollment_date ? new Date(patient.enrollment_date).toLocaleDateString() : <span className="text-muted-foreground/50">—</span>}</TableCell>
                       <TableCell>
                         {patient.systolic_bp && patient.diastolic_bp 
                           ? `${Math.round(Number(patient.systolic_bp))}/${Math.round(Number(patient.diastolic_bp))}`
-                          : '-'
+                          : <span className="text-muted-foreground/50">—</span>
                         }
                       </TableCell>
                       <TableCell>
-                        {patient.bmi ? Number(patient.bmi).toFixed(1) : '-'}
+                        {patient.bmi ? Number(patient.bmi).toFixed(1) : <span className="text-muted-foreground/50">—</span>}
                       </TableCell>
                       <TableCell>
-                        {patient.echo_ef ? `${patient.echo_ef}%` : '-'}
+                        {patient.echo_ef ? `${patient.echo_ef}%` : <span className="text-muted-foreground/50">—</span>}
                       </TableCell>
                       <TableCell>
-                        {patient.mri_ef ? `${patient.mri_ef}%` : '-'}
+                        {patient.mri_ef ? `${patient.mri_ef}%` : <span className="text-muted-foreground/50">—</span>}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">

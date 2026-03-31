@@ -29,7 +29,7 @@ import {
   TriangleAlert,
   Waypoints,
 } from 'lucide-react';
-import { getEtlJobStatus, listEtlJobs, runEtl, webhookTrigger, type EtlJobStatus, type EtlRunRequest } from '../api/etl';
+import { getEtlJobStatus, listEtlJobs, runEtl, webhookTrigger, type EtlJobStatus, type EtlRunRequest, type EtlStageManifest } from '../api/etl';
 
 type LineageStageKey = 'ingest' | 'match' | 'harmonize' | 'omop' | 'quality' | 'publish';
 type LineageStageStatus = 'idle' | 'running' | 'complete' | 'failed' | 'optional';
@@ -159,6 +159,50 @@ function statusTone(status: LineageStageStatus) {
   return 'border-slate-200 bg-white text-slate-700';
 }
 
+function stageStatusLabel(status: LineageStageStatus) {
+  if (status === 'running') return 'In flight';
+  if (status === 'complete') return 'Complete';
+  if (status === 'failed') return 'Blocked';
+  if (status === 'optional') return 'Skipped';
+  return 'Waiting';
+}
+
+function stageSurfaceTone(status: LineageStageStatus, selected: boolean) {
+  if (selected) {
+    return 'border-slate-900 bg-[linear-gradient(160deg,_rgba(15,23,42,1),_rgba(30,41,59,0.96))] text-white shadow-[0_22px_48px_rgba(15,23,42,0.22)]';
+  }
+  if (status === 'failed') {
+    return 'border-rose-200 bg-[linear-gradient(180deg,_rgba(255,241,242,1),_rgba(255,255,255,0.98))] text-rose-950';
+  }
+  if (status === 'running') {
+    return 'border-amber-200 bg-[linear-gradient(180deg,_rgba(255,251,235,1),_rgba(255,255,255,0.98))] text-amber-950';
+  }
+  if (status === 'complete') {
+    return 'border-emerald-200 bg-[linear-gradient(180deg,_rgba(236,253,245,1),_rgba(255,255,255,0.98))] text-emerald-950';
+  }
+  if (status === 'optional') {
+    return 'border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,1),_rgba(255,255,255,0.98))] text-slate-700';
+  }
+  return 'border-slate-200 bg-white text-slate-800';
+}
+
+function connectorTone(status: LineageStageStatus) {
+  if (status === 'failed') return 'bg-rose-300';
+  if (status === 'running') return 'bg-amber-300';
+  if (status === 'complete') return 'bg-emerald-300';
+  if (status === 'optional') return 'bg-slate-300';
+  return 'bg-slate-200';
+}
+
+function stageDotTone(status: LineageStageStatus, selected: boolean) {
+  if (selected) return 'bg-white ring-4 ring-white/15';
+  if (status === 'failed') return 'bg-rose-500 ring-4 ring-rose-100';
+  if (status === 'running') return 'bg-amber-500 ring-4 ring-amber-100';
+  if (status === 'complete') return 'bg-emerald-500 ring-4 ring-emerald-100';
+  if (status === 'optional') return 'bg-slate-400 ring-4 ring-slate-100';
+  return 'bg-slate-300 ring-4 ring-slate-100';
+}
+
 function stageBadgeVariant(status: LineageStageStatus): 'default' | 'secondary' | 'outline' | 'destructive' {
   if (status === 'failed') return 'destructive';
   if (status === 'complete') return 'default';
@@ -166,7 +210,31 @@ function stageBadgeVariant(status: LineageStageStatus): 'default' | 'secondary' 
   return 'outline';
 }
 
+function getStageManifest(job: EtlJobStatus | null, key: LineageStageKey): EtlStageManifest | null {
+  return job?.lineage?.find((stage) => stage.key === key) ?? null;
+}
+
 function inferLineageStages(job: EtlJobStatus | null): LineageStage[] {
+  const manifestStages = job?.lineage ?? [];
+  if (manifestStages.length > 0) {
+    return LINEAGE_BLUEPRINTS.map((stage) => {
+      const manifest = manifestStages.find((item) => item.key === stage.key);
+      if (!manifest) {
+        return {
+          ...stage,
+          status: stage.key === 'publish' && job?.request?.skip_superset ? 'optional' : 'idle',
+          metric: stage.description,
+        };
+      }
+
+      return {
+        ...stage,
+        status: manifest.status,
+        metric: manifest.message || stage.description,
+      };
+    });
+  }
+
   const requestedDatasets = getRequestedDatasets(job);
   const result = asRecord(job?.result);
   const runMode = typeof result?.mode === 'string' ? result.mode : 'script-aligned';
@@ -210,6 +278,14 @@ function inferLineageStages(job: EtlJobStatus | null): LineageStage[] {
 }
 
 function stageProgressPercent(job: EtlJobStatus | null) {
+  if (job?.lineage && job.lineage.length > 0) {
+    const weightedStages = job.lineage.reduce((total, stage) => {
+      if (stage.status === 'complete' || stage.status === 'optional') return total + 1;
+      if (stage.status === 'running') return total + 0.5;
+      return total;
+    }, 0);
+    return Math.round((weightedStages / LINEAGE_BLUEPRINTS.length) * 100);
+  }
   if (!job) return 0;
   if (job.status === 'queued') return 12;
   if (job.status === 'running') return 58;
@@ -253,6 +329,14 @@ export function EtlMonitor() {
   const selectedStageDetails = useMemo(
     () => lineageStages.find((stage) => stage.key === selectedStage) ?? lineageStages[0] ?? null,
     [lineageStages, selectedStage]
+  );
+  const selectedStageManifest = useMemo(
+    () => getStageManifest(selectedJob, selectedStage),
+    [selectedJob, selectedStage]
+  );
+  const completedStageCount = useMemo(
+    () => lineageStages.filter((stage) => stage.status === 'complete').length,
+    [lineageStages]
   );
 
   const pipelineStats = useMemo(() => {
@@ -470,6 +554,30 @@ export function EtlMonitor() {
                   </div>
                 </div>
 
+                <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
+                  <div className="rounded-[1.4rem] border border-slate-200 bg-[linear-gradient(135deg,_rgba(14,116,144,0.08),_rgba(255,255,255,0.94))] p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pipeline posture</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-900">Script-aligned NiFi flow</Badge>
+                      <Badge variant="outline" className="border-slate-300 bg-white text-slate-700">{getRequestedDatasets(selectedJob).join(' + ')}</Badge>
+                      <Badge variant="outline" className="border-slate-300 bg-white text-slate-700">{selectedJob?.request?.skip_superset ? 'Publish skipped' : 'Publish enabled'}</Badge>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                      The monitor reflects the seeded two-stage NiFi topology: schema generation first, then the scripted registry pipeline with OMOP, QA, and publication handoff.
+                    </p>
+                  </div>
+                  <div className="rounded-[1.4rem] border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current focus</p>
+                    <p className="mt-3 text-lg font-semibold text-slate-950">{selectedStageDetails?.title || 'Harmonize Registry'}</p>
+                    <p className="mt-1 text-sm text-slate-600">{selectedStageDetails ? stageStatusLabel(selectedStageDetails.status) : 'Waiting for run selection'}</p>
+                  </div>
+                  <div className="rounded-[1.4rem] border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Stage completion</p>
+                    <p className="mt-3 text-lg font-semibold text-slate-950">{completedStageCount}/{lineageStages.length}</p>
+                    <p className="mt-1 text-sm text-slate-600">Checkpoints cleared for the selected run.</p>
+                  </div>
+                </div>
+
                 <div className="rounded-[1.5rem] border border-slate-200 bg-white/80 p-5 shadow-sm backdrop-blur">
                   <div className="grid gap-5 xl:grid-cols-2">
                     <div>
@@ -632,6 +740,24 @@ export function EtlMonitor() {
                       </div>
                     </div>
                   ) : null}
+
+                  <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Pipeline heartbeat</p>
+                      <span className="text-xs text-slate-400">{completedStageCount} stages complete</span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      {lineageStages.map((stage) => (
+                        <div
+                          key={stage.key}
+                          className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${stage.key === selectedStage ? 'border-sky-300/40 bg-sky-400/10 text-white' : 'border-white/10 bg-white/5 text-slate-300'}`}
+                        >
+                          <span className={`h-2.5 w-2.5 rounded-full ${stage.status === 'running' ? 'animate-pulse' : ''} ${stage.key === selectedStage ? 'bg-sky-300' : stage.status === 'failed' ? 'bg-rose-400' : stage.status === 'running' ? 'bg-amber-400' : stage.status === 'complete' ? 'bg-emerald-400' : stage.status === 'optional' ? 'bg-slate-400' : 'bg-slate-500'}`} />
+                          <span>{stage.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
@@ -685,37 +811,66 @@ export function EtlMonitor() {
               <div>
                 <CardTitle className="text-xl text-slate-950">Visual lineage manager</CardTitle>
                 <CardDescription className="mt-1 max-w-3xl text-sm leading-6">
-                  Track how source cohorts move through matching, harmonization, OMOP shaping, quality checks, and publication. The node rail below is interactive and aligned to the selected ETL job.
+                  Track how source cohorts move through matching, harmonization, OMOP shaping, quality checks, and publication. The rail below is interactive, connected, and tuned for the scripted NiFi flow rather than a generic status grid.
                 </CardDescription>
               </div>
               <Badge variant="outline" className="border-slate-300 bg-slate-50 text-slate-700">Selected run: {selectedJob?.jobId || 'none'}</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {lineageStages.map((stage) => {
-                const Icon = stage.icon;
-                return (
-                  <button
-                    key={stage.key}
-                    type="button"
-                    onClick={() => setSelectedStage(stage.key)}
-                    className={`rounded-[1.4rem] border px-4 py-4 text-left shadow-sm transition ${stage.key === selectedStage ? 'border-slate-900 bg-slate-950 text-white shadow-[0_18px_36px_rgba(15,23,42,0.18)]' : statusTone(stage.status)}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${stage.key === selectedStage ? 'bg-white/10 text-white' : 'bg-slate-900 text-white'}`}>
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <Badge variant={stageBadgeVariant(stage.status)}>{stage.status}</Badge>
-                    </div>
-                    <div className="mt-4">
-                      <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${stage.key === selectedStage ? 'text-slate-300' : 'text-slate-500'}`}>{stage.subtitle}</p>
-                      <p className="mt-1 text-base font-semibold">{stage.title}</p>
-                      <p className={`mt-2 text-sm leading-6 ${stage.key === selectedStage ? 'text-slate-200' : 'text-slate-600'}`}>{stage.metric}</p>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="rounded-[1.6rem] border border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(255,255,255,1))] p-4 shadow-sm md:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">Scripted pipeline rail</p>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Each node maps to a real stage in the NiFi-driven ETL path. Select a node to inspect its inputs, outputs, and operator guidance.</p>
+                </div>
+                <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm">
+                  {selectedStageDetails ? `${selectedStageDetails.title}: ${stageStatusLabel(selectedStageDetails.status)}` : 'Select a stage'}
+                </div>
+              </div>
+
+              <div className="mt-5 overflow-x-auto pb-2">
+                <div className="flex min-w-max items-stretch gap-0 pr-4">
+                  {lineageStages.map((stage, index) => {
+                    const Icon = stage.icon;
+                    const isSelected = stage.key === selectedStage;
+
+                    return (
+                      <div key={stage.key} className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStage(stage.key)}
+                          className={`w-[220px] rounded-[1.4rem] border p-4 text-left transition ${stageSurfaceTone(stage.status, isSelected)}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>Stage {index + 1}</p>
+                              <p className="mt-2 text-base font-semibold">{stage.title}</p>
+                            </div>
+                            <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${isSelected ? 'bg-white/10 text-white' : 'bg-slate-900 text-white'}`}>
+                              <Icon className="h-4 w-4" />
+                            </span>
+                          </div>
+
+                          <div className="mt-5 flex items-center gap-3">
+                            <span className={`h-3 w-3 rounded-full ${stage.status === 'running' ? 'animate-pulse' : ''} ${stageDotTone(stage.status, isSelected)}`} />
+                            <span className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-slate-700'}`}>{stageStatusLabel(stage.status)}</span>
+                          </div>
+
+                          <p className={`mt-4 text-sm leading-6 ${isSelected ? 'text-slate-200' : 'text-slate-600'}`}>{stage.metric}</p>
+                          <p className={`mt-2 text-xs ${isSelected ? 'text-slate-400' : 'text-slate-500'}`}>{stage.subtitle}</p>
+                        </button>
+
+                        {index < lineageStages.length - 1 ? (
+                          <div className="flex w-14 shrink-0 items-center justify-center px-2">
+                            <div className={`h-1 w-full rounded-full ${connectorTone(stage.status)}`} />
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
@@ -729,6 +884,21 @@ export function EtlMonitor() {
                         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{selectedStageDetails.description}</p>
                       </div>
                       <Badge variant={stageBadgeVariant(selectedStageDetails.status)}>{selectedStageDetails.status}</Badge>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Stage state</p>
+                        <p className="mt-2 text-base font-semibold text-slate-950">{stageStatusLabel(selectedStageDetails.status)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Operator metric</p>
+                        <p className="mt-2 text-base font-semibold text-slate-950">{selectedStageDetails.metric}</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Owner</p>
+                        <p className="mt-2 text-base font-semibold text-slate-950">{selectedStageDetails.owner}</p>
+                      </div>
                     </div>
 
                     <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -756,8 +926,16 @@ export function EtlMonitor() {
                       </div>
                     </div>
 
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                      <span className="font-semibold text-slate-900">Stage owner:</span> {selectedStageDetails.owner}
+                    <div className="mt-4 grid gap-4 md:grid-cols-3">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                        <span className="font-semibold text-slate-900">Stage owner:</span> {selectedStageDetails.owner}
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                        <span className="font-semibold text-slate-900">Observed via:</span> {selectedStageManifest?.source || 'Derived monitor state'}
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                        <span className="font-semibold text-slate-900">Observed at:</span> {selectedStageManifest ? formatTimestamp(selectedStageManifest.observedAt) : 'Not observed'}
+                      </div>
                     </div>
                   </>
                 ) : null}

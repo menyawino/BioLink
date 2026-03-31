@@ -148,6 +148,7 @@ async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
                 COUNT(*) AS total,
                 COUNT(*) FILTER (WHERE LOWER(gender) IN ('male', 'm')) AS male,
                 COUNT(*) FILTER (WHERE LOWER(gender) IN ('female', 'f')) AS female,
+                COUNT(*) FILTER (WHERE age IS NOT NULL) AS with_age,
                 AVG(age) FILTER (WHERE age IS NOT NULL) AS avg_age,
                 COUNT(*) FILTER (WHERE echo_ef IS NOT NULL) AS with_echo
             FROM {source}
@@ -184,10 +185,12 @@ async def registry_overview(dataset: str = Query("all"), db=Depends(get_db)):
                 "totalPatients": total,
                 "maleCount": result[1] or 0,
                 "femaleCount": result[2] or 0,
-                "averageAge": f"{float(result[3] or 0):.1f}",
+                "ageDataCount": result[3] or 0,
+                "hasAgeData": bool(result[3]),
+                "averageAge": f"{float(result[4] or 0):.1f}",
                 "dataCompleteness": f"{float(avg_comp):.1f}",
                 "withMri": with_mri,
-                "withEcho": result[4] or 0,
+                "withEcho": result[5] or 0,
                 "withBothEchoMri": with_both,
                 "withEcg": 0,
             },

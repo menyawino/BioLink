@@ -92,9 +92,11 @@ def get_user(username: str) -> Optional[UserInDB]:
     from app.database import SessionLocal
     from app.models.user import UserModel
 
+    normalized_username = username.strip().lower()
+
     db = SessionLocal()
     try:
-        user_row = db.query(UserModel).filter(UserModel.username == username).first()
+        user_row = db.query(UserModel).filter(UserModel.username == normalized_username).first()
         if user_row is None:
             return None
         return UserInDB(
@@ -107,7 +109,7 @@ def get_user(username: str) -> Optional[UserInDB]:
             hashed_password=user_row.hashed_password,
         )
     except Exception as e:
-        logger.error(f"Error fetching user '{username}': {e}")
+        logger.error(f"Error fetching user '{normalized_username}': {e}")
         return None
     finally:
         db.close()
@@ -118,7 +120,9 @@ def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
     from app.database import SessionLocal
     from app.models.user import UserModel
 
-    user = get_user(username)
+    normalized_username = username.strip().lower()
+
+    user = get_user(normalized_username)
     if not user:
         return None
     if not verify_password(password, user.hashed_password):
@@ -127,7 +131,7 @@ def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
     # Update last_login timestamp
     db = SessionLocal()
     try:
-        db.query(UserModel).filter(UserModel.username == username).update(
+        db.query(UserModel).filter(UserModel.username == normalized_username).update(
             {"last_login": datetime.now(UTC)}
         )
         db.commit()

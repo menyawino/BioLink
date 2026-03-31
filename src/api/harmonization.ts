@@ -8,10 +8,7 @@ import type {
 } from './types';
 
 export async function getHarmonizationDictionary() {
-  return get<{
-    data: HarmonizationDictionaryField[];
-    total: number;
-  }>('/api/harmonization/dictionary');
+  return get<HarmonizationDictionaryField[]>('/api/harmonization/dictionary');
 }
 
 // Get harmonization tier classification for all variables

@@ -3,12 +3,17 @@ import os
 import shutil
 import time
 import uuid
+import asyncio
+from collections.abc import Callable
 from pathlib import Path
 
+import aiohttp
 import requests
 from pydantic import BaseModel, ConfigDict, Field
 from app.database import engine
+from app.config import settings
 from app.services import registry_loader
+from app.services.superset_client import SupersetClient
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,7 @@ NIFI_TRIGGER_DATASETS_PROPERTY = os.getenv(
 
 BHS_CANONICAL_FILENAME = "BHS_Full.csv"
 EHVOL_CANONICAL_FILENAME = "EHVol_Full.csv"
+LINEAGE_STAGE_ORDER = ["ingest", "match", "harmonize", "omop", "quality", "publish"]
 
 
 class ETLParams(BaseModel):
@@ -54,6 +60,151 @@ class ETLParams(BaseModel):
     datasets: list[str] | None = None
     dbt_select: str | None = None
     skip_superset: bool = False
+
+
+def _utcnow_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime())
+
+
+def _workspace_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _artifact_exists(relative_path: str) -> bool:
+    candidates = [
+        Path("/app") / relative_path,
+        _workspace_root() / relative_path,
+        Path.cwd() / relative_path,
+    ]
+    return any(candidate.exists() for candidate in candidates)
+
+
+def _build_stage_manifest(
+    key: str,
+    status: str,
+    source: str,
+    message: str,
+    *,
+    details: dict[str, object] | None = None,
+) -> dict[str, object]:
+    manifest: dict[str, object] = {
+        "key": key,
+        "status": status,
+        "source": source,
+        "message": message,
+        "observedAt": _utcnow_iso(),
+    }
+    if details:
+        manifest["details"] = details
+    return manifest
+
+
+def _upsert_lineage_stage(
+    lineage: list[dict[str, object]],
+    stage: dict[str, object],
+) -> list[dict[str, object]]:
+    by_key = {
+        str(item.get("key")): item
+        for item in lineage
+        if isinstance(item, dict) and item.get("key")
+    }
+    by_key[str(stage.get("key"))] = stage
+    return [by_key[key] for key in LINEAGE_STAGE_ORDER if key in by_key]
+
+
+def _superset_target_tables(requested_datasets: list[str]) -> list[str]:
+    targets = [settings.superset_default_table, "unified_registry"]
+    targets.extend(f"{dataset}_participants" for dataset in requested_datasets)
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for table_name in targets:
+        if not table_name:
+            continue
+        if table_name in seen:
+            continue
+        seen.add(table_name)
+        ordered.append(table_name)
+    return ordered
+
+
+async def _refresh_superset_registry_datasets_async(
+    requested_datasets: list[str],
+) -> dict[str, object]:
+    client = SupersetClient.from_settings()
+    schema_name = settings.superset_default_schema
+    table_names = _superset_target_tables(requested_datasets)
+
+    async with aiohttp.ClientSession(
+        cookie_jar=aiohttp.CookieJar(unsafe=True)
+    ) as session:
+        tokens = await client.bootstrap()
+        access_token = tokens["access_token"]
+        csrf_token = tokens["csrf_token"]
+
+        database_id = await client.get_or_create_database(
+            session,
+            access_token,
+            csrf_token,
+            settings.superset_database_name,
+            settings.superset_database_uri,
+        )
+
+        datasets: list[dict[str, object]] = []
+        for table_name in table_names:
+            dataset_id = await client.get_or_create_dataset(
+                session,
+                access_token,
+                csrf_token,
+                database_id,
+                schema_name,
+                table_name,
+            )
+            refresh_result = await client.refresh_dataset(
+                session,
+                access_token,
+                csrf_token,
+                dataset_id,
+            )
+            datasets.append(
+                {
+                    "table_name": table_name,
+                    "dataset_id": dataset_id,
+                    "refresh": refresh_result,
+                }
+            )
+
+    return {
+        "ok": True,
+        "database_name": settings.superset_database_name,
+        "schema": schema_name,
+        "datasets": datasets,
+    }
+
+
+def _sync_superset_registry_datasets(
+    requested_datasets: list[str],
+    *,
+    skip_superset: bool,
+) -> dict[str, object]:
+    if skip_superset:
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "skip-superset-requested",
+        }
+
+    try:
+        return asyncio.run(
+            _refresh_superset_registry_datasets_async(requested_datasets)
+        )
+    except Exception as exc:
+        logger.warning("Superset dataset refresh failed after ETL: %s", exc)
+        return {
+            "ok": False,
+            "skipped": False,
+            "error": str(exc),
+        }
 
 
 def _nifi_base_url() -> str:
@@ -204,6 +355,48 @@ def _run_once_processor(processor_id: str, headers: dict[str, str]) -> dict:
     )
     if response.status_code == 409 and "Current state is RUNNING" in response.text:
         return {"ok": True, "status_code": response.status_code, "already_running": True}
+    if response.status_code == 409 and "Current state is STOPPING" in response.text:
+        # NiFi can briefly report STOPPING while transitioning between runs.
+        for _ in range(30):
+            time.sleep(2)
+            latest = requests.get(
+                f"{NIFI_API_URL}/processors/{processor_id}",
+                headers=headers,
+                timeout=NIFI_REQUEST_TIMEOUT,
+                verify=NIFI_VERIFY_SSL,
+            )
+            if latest.status_code != 200:
+                continue
+            latest_entity = latest.json()
+            latest_state = latest_entity.get("component", {}).get("state")
+            latest_version = latest_entity.get("revision", {}).get("version", revision_version)
+            if latest_state != "STOPPED":
+                continue
+
+            retry_payload = {
+                "revision": {"version": latest_version, "clientId": str(uuid.uuid4())},
+                "state": "RUN_ONCE",
+                "disconnectedNodeAcknowledged": True,
+            }
+            retry = requests.put(
+                url,
+                json=retry_payload,
+                headers=headers,
+                timeout=NIFI_REQUEST_TIMEOUT,
+                verify=NIFI_VERIFY_SSL,
+            )
+            if retry.status_code in (200, 202):
+                return {"ok": True, "status_code": retry.status_code, "retried_from_stopping": True}
+            if retry.status_code == 409 and "Current state is RUNNING" in retry.text:
+                return {"ok": True, "status_code": retry.status_code, "already_running": True}
+            if retry.status_code == 409 and "Current state is STOPPING" in retry.text:
+                continue
+            return {"ok": False, "error": f"HTTP {retry.status_code}: {retry.text}"}
+
+        return {
+            "ok": False,
+            "error": "Processor remained in STOPPING state and could not be started",
+        }
     if response.status_code not in (200, 202):
         return {"ok": False, "error": f"HTTP {response.status_code}: {response.text}"}
     return {"ok": True, "status_code": response.status_code}
@@ -253,6 +446,18 @@ def _configure_processor_run_context(
         timeout=NIFI_REQUEST_TIMEOUT,
         verify=NIFI_VERIFY_SSL,
     )
+    if (
+        update_response.status_code == 400
+        and "while the Processor is running" in update_response.text
+    ):
+        logger.info(
+            "Skipping NiFi processor context update because processor is already running"
+        )
+        return {
+            "ok": True,
+            "trigger_token": trigger_token,
+            "context_update_skipped": "processor-running",
+        }
     if update_response.status_code not in (200, 201):
         return {
             "ok": False,
@@ -261,7 +466,11 @@ def _configure_processor_run_context(
     return {"ok": True, "trigger_token": trigger_token}
 
 
-def trigger_etl_pipeline(params: ETLParams) -> dict:
+def trigger_etl_pipeline(
+    params: ETLParams,
+    *,
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
+) -> dict:
     dataset = _infer_dataset(params)
     requested_datasets = _requested_datasets(params)
     expected_tables = ["unified_registry"] + [
@@ -273,6 +482,13 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
     baseline_counts = registry_loader.get_registry_counts(engine)
     baseline_run_id = registry_loader.get_latest_registry_run_id(engine)
     trigger_token = str(uuid.uuid4())
+    lineage: list[dict[str, object]] = []
+
+    def emit_stage(stage: dict[str, object]) -> None:
+        nonlocal lineage
+        lineage = _upsert_lineage_stage(lineage, stage)
+        if progress_callback is not None:
+            progress_callback(stage)
 
     logger.info(
         "Triggering NiFi script-aligned ETL pipeline dataset=%s processor=%s nifi_api=%s",
@@ -282,6 +498,19 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
     )
 
     try:
+        emit_stage(
+            _build_stage_manifest(
+                "match",
+                "running",
+                "backend-nifi-trigger",
+                "Configuring scripted NiFi processor context.",
+                details={
+                    "processor_id": processor_id,
+                    "trigger_token": trigger_token,
+                    "datasets": requested_datasets,
+                },
+            )
+        )
         configure_result = _configure_processor_run_context(
             processor_id,
             headers,
@@ -289,11 +518,65 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
             requested_datasets=requested_datasets,
         )
         if not configure_result.get("ok"):
-            return configure_result
+            emit_stage(
+                _build_stage_manifest(
+                    "match",
+                    "failed",
+                    "backend-nifi-trigger",
+                    "Failed to configure scripted NiFi processor context.",
+                    details={"error": configure_result.get("error")},
+                )
+            )
+            return {**configure_result, "lineage": lineage}
+
+        emit_stage(
+            _build_stage_manifest(
+                "match",
+                "complete",
+                "backend-nifi-trigger",
+                "Scripted NiFi processor context configured and ready to run.",
+                details={
+                    "processor_id": processor_id,
+                    "trigger_token": trigger_token,
+                    "datasets": requested_datasets,
+                },
+            )
+        )
+        emit_stage(
+            _build_stage_manifest(
+                "harmonize",
+                "running",
+                "nifi-processor",
+                "NiFi accepted the registry run and verification is in progress.",
+                details={"processor_id": processor_id, "trigger_token": trigger_token},
+            )
+        )
 
         run_result = _run_once_processor(processor_id, headers)
         if not run_result.get("ok"):
-            return run_result
+            emit_stage(
+                _build_stage_manifest(
+                    "harmonize",
+                    "failed",
+                    "nifi-processor",
+                    "NiFi rejected the scripted registry run.",
+                    details={"error": run_result.get("error")},
+                )
+            )
+            return {**run_result, "lineage": lineage}
+
+        emit_stage(
+            _build_stage_manifest(
+                "harmonize",
+                "running",
+                "nifi-processor",
+                "Waiting for registry tables and manifest events to confirm the load stage.",
+                details={
+                    "status_code": run_result.get("status_code"),
+                    "trigger_token": trigger_token,
+                },
+            )
+        )
 
         verification = registry_loader.wait_for_registry_repopulation(
             engine,
@@ -303,6 +586,84 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
             trigger_token=trigger_token,
         )
         if verification.get("verified"):
+            verification_manifest = verification.get("manifest") or {}
+            verification_source = (
+                str(verification_manifest.get("source") or "nifi-processor")
+                if isinstance(verification_manifest, dict)
+                else "nifi-processor"
+            )
+            emit_stage(
+                _build_stage_manifest(
+                    "harmonize",
+                    "complete",
+                    verification_source,
+                    "Registry tables were repopulated and verified.",
+                    details={
+                        "counts": verification.get("counts"),
+                        "run_id": verification.get("run_id"),
+                        "manifest": verification_manifest,
+                    },
+                )
+            )
+
+            omop_available = _artifact_exists("outputs/omop_cdm")
+            emit_stage(
+                _build_stage_manifest(
+                    "omop",
+                    "complete" if omop_available else "idle",
+                    "artifact-observer",
+                    "OMOP output directory detected." if omop_available else "OMOP output directory was not observed during this run.",
+                    details={"path": "outputs/omop_cdm"},
+                )
+            )
+
+            quality_report_available = _artifact_exists("outputs/data_quality_report.html")
+            comparability_available = _artifact_exists("outputs/comparability_report.json")
+            emit_stage(
+                _build_stage_manifest(
+                    "quality",
+                    "complete" if (quality_report_available or comparability_available) else "idle",
+                    "artifact-observer",
+                    "Quality artifacts detected." if (quality_report_available or comparability_available) else "Quality artifacts were not observed during this run.",
+                    details={
+                        "comparability_report": comparability_available,
+                        "quality_report": quality_report_available,
+                    },
+                )
+            )
+
+            if params.skip_superset:
+                emit_stage(
+                    _build_stage_manifest(
+                        "publish",
+                        "optional",
+                        "superset-sync",
+                        "Superset refresh was skipped for this ETL run.",
+                    )
+                )
+            else:
+                emit_stage(
+                    _build_stage_manifest(
+                        "publish",
+                        "running",
+                        "superset-sync",
+                        "Refreshing Superset-facing datasets.",
+                    )
+                )
+
+            superset_sync = _sync_superset_registry_datasets(
+                requested_datasets,
+                skip_superset=params.skip_superset,
+            )
+            emit_stage(
+                _build_stage_manifest(
+                    "publish",
+                    "optional" if superset_sync.get("skipped") else "complete" if superset_sync.get("ok") else "failed",
+                    "superset-sync",
+                    "Superset datasets refreshed." if superset_sync.get("ok") and not superset_sync.get("skipped") else "Superset refresh skipped for this run." if superset_sync.get("skipped") else "Superset dataset refresh failed.",
+                    details=superset_sync,
+                )
+            )
             return {
                 "ok": True,
                 "engine": "nifi",
@@ -316,6 +677,9 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
                 "verification_method": "nifi",
                 "counts": verification.get("counts"),
                 "run_id": verification.get("run_id"),
+                "manifest": verification_manifest if isinstance(verification_manifest, dict) else None,
+                "superset_sync": superset_sync,
+                "lineage": lineage,
                 "message": "NiFi script-aligned registry pipeline triggered and verified",
             }
 
@@ -328,6 +692,70 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
         if fallback.get("ok") and all(
             int(fallback_counts.get(table_name, 0)) > 0 for table_name in expected_tables
         ):
+            emit_stage(
+                _build_stage_manifest(
+                    "harmonize",
+                    "complete",
+                    "snapshot-fallback",
+                    "NiFi trigger accepted, then backend snapshot fallback restored registry tables.",
+                    details={"counts": fallback_counts, "run_id": fallback.get("run_id")},
+                )
+            )
+            emit_stage(
+                _build_stage_manifest(
+                    "omop",
+                    "complete" if _artifact_exists("outputs/omop_cdm") else "idle",
+                    "artifact-observer",
+                    "OMOP output directory detected." if _artifact_exists("outputs/omop_cdm") else "OMOP output directory was not observed during this run.",
+                    details={"path": "outputs/omop_cdm"},
+                )
+            )
+            quality_report_available = _artifact_exists("outputs/data_quality_report.html")
+            comparability_available = _artifact_exists("outputs/comparability_report.json")
+            emit_stage(
+                _build_stage_manifest(
+                    "quality",
+                    "complete" if (quality_report_available or comparability_available) else "idle",
+                    "artifact-observer",
+                    "Quality artifacts detected." if (quality_report_available or comparability_available) else "Quality artifacts were not observed during this run.",
+                    details={
+                        "comparability_report": comparability_available,
+                        "quality_report": quality_report_available,
+                    },
+                )
+            )
+            if params.skip_superset:
+                emit_stage(
+                    _build_stage_manifest(
+                        "publish",
+                        "optional",
+                        "superset-sync",
+                        "Superset refresh was skipped for this ETL run.",
+                    )
+                )
+            else:
+                emit_stage(
+                    _build_stage_manifest(
+                        "publish",
+                        "running",
+                        "superset-sync",
+                        "Refreshing Superset-facing datasets.",
+                    )
+                )
+
+            superset_sync = _sync_superset_registry_datasets(
+                requested_datasets,
+                skip_superset=params.skip_superset,
+            )
+            emit_stage(
+                _build_stage_manifest(
+                    "publish",
+                    "optional" if superset_sync.get("skipped") else "complete" if superset_sync.get("ok") else "failed",
+                    "superset-sync",
+                    "Superset datasets refreshed." if superset_sync.get("ok") and not superset_sync.get("skipped") else "Superset refresh skipped for this run." if superset_sync.get("skipped") else "Superset dataset refresh failed.",
+                    details=superset_sync,
+                )
+            )
             return {
                 "ok": True,
                 "engine": "nifi",
@@ -341,9 +769,26 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
                 "verification_method": "snapshot-fallback",
                 "counts": fallback_counts,
                 "run_id": fallback.get("run_id"),
+                "superset_sync": superset_sync,
+                "lineage": lineage,
                 "message": "NiFi trigger accepted; backend snapshot fallback restored registry tables",
             }
 
+        verification_manifest = verification.get("manifest") or {}
+        emit_stage(
+            _build_stage_manifest(
+                "harmonize",
+                "failed",
+                str(verification_manifest.get("source") or "nifi-processor") if isinstance(verification_manifest, dict) else "nifi-processor",
+                "Registry tables were not repopulated successfully.",
+                details={
+                    "counts": verification.get("counts"),
+                    "run_id": verification.get("run_id"),
+                    "manifest": verification_manifest,
+                    "error": verification.get("error"),
+                },
+            )
+        )
         return {
             "ok": False,
             "engine": "nifi",
@@ -355,8 +800,19 @@ def trigger_etl_pipeline(params: ETLParams) -> dict:
             "staged_csv": staged_csv,
             "verified": False,
             "counts": verification.get("counts"),
+            "manifest": verification_manifest if isinstance(verification_manifest, dict) else None,
+            "lineage": lineage,
             "error": verification.get("error") or "NiFi accepted RUN_ONCE but registry tables were not repopulated and snapshot fallback failed",
         }
     except Exception as exc:
         logger.error("Failed to trigger NiFi ETL pipeline: %s", exc)
-        return {"ok": False, "error": str(exc)}
+        emit_stage(
+            _build_stage_manifest(
+                "harmonize",
+                "failed",
+                "backend-nifi-trigger",
+                "Unexpected ETL exception while coordinating NiFi and registry verification.",
+                details={"error": str(exc)},
+            )
+        )
+        return {"ok": False, "error": str(exc), "lineage": lineage}

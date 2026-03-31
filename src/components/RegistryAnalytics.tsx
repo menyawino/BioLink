@@ -72,7 +72,10 @@ export function RegistryAnalytics() {
   // Transform nationality data and collapse minor segments into "Other"
   const nationalityChartData = demographics?.nationality
     ? (() => {
-        const sorted = [...demographics.nationality].sort((a, b) => b.count - a.count);
+        const knownOnly = demographics.nationality.filter(
+          (item: any) => item.nationality && item.nationality.toLowerCase() !== 'unknown'
+        );
+        const sorted = [...knownOnly].sort((a, b) => b.count - a.count);
         const top = sorted.slice(0, 6);
         const remainder = sorted.slice(6).reduce((sum, item) => sum + item.count, 0);
         const merged = remainder > 0
@@ -306,7 +309,7 @@ export function RegistryAnalytics() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between"><span>Gender Balance</span><span>{maleCount || 0} M / {femaleCount || 0} F</span></div>
-            <div className="flex justify-between"><span>Average Age</span><span>{stats?.averageAge || '0.0'} years</span></div>
+            <div className="flex justify-between"><span>Average Age</span><span>{stats?.hasAgeData ? `${stats.averageAge} years` : 'N/A'}</span></div>
             <div className="flex justify-between"><span>Top Nationality</span><span>{nationalityChartData?.[0]?.name || 'N/A'}</span></div>
             <div className="flex justify-between"><span>Top Burden</span><span>{conditionRates[0] ? `${conditionRates[0].condition} (${conditionRates[0].rate}%)` : 'N/A'}</span></div>
           </CardContent>
@@ -329,13 +332,19 @@ export function RegistryAnalytics() {
             <CardTitle>Immediate Priorities</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {dataGaps.length > 0 ? dataGaps.map(item => (
+            {compLoading ? (
+              <div className="space-y-2">
+                <div className="skeleton-block h-4 w-full rounded-full" />
+                <div className="skeleton-block h-4 w-4/5 rounded-full" />
+                <div className="skeleton-block h-4 w-3/5 rounded-full" />
+              </div>
+            ) : dataGaps.length > 0 ? dataGaps.map(item => (
               <div key={item.category} className="flex justify-between">
                 <span>{item.category}</span>
-                <span>{Math.round(item.availability)}% captured</span>
+                <span className={item.availability < 20 ? 'text-red-600 font-medium' : item.availability < 60 ? 'text-yellow-600' : 'text-green-600'}>{Math.round(item.availability)}% captured</span>
               </div>
             )) : (
-              <div>No data quality gaps available.</div>
+              <div className="text-muted-foreground text-xs">All data categories are meeting capture targets.</div>
             )}
           </CardContent>
         </Card>

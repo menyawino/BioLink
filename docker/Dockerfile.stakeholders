@@ -1,0 +1,30 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+
+RUN npm run build:stakeholders
+
+FROM nginx:1.27-alpine
+
+RUN apk add --no-cache curl
+
+COPY --from=build /app/build-stakeholders /usr/share/nginx/html
+COPY docker/nginx.stakeholders.conf /etc/nginx/conf.d/default.conf
+
+RUN adduser -D -u 1000 biolink && \
+    chown -R biolink:biolink /usr/share/nginx/html && \
+    chown -R biolink:biolink /var/cache/nginx && \
+    chown -R biolink:biolink /var/log/nginx && \
+    chown -R biolink:biolink /etc/nginx/conf.d
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

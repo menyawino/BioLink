@@ -191,6 +191,48 @@ class AdminUpdateUserRequest(BaseModel):
     email: Optional[str] = None
 
 
+class AdminCreateUserRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    full_name: Optional[str] = None
+    role: str = "viewer"
+    scopes: Optional[list[str]] = None
+    disabled: bool = False
+
+    @field_validator("username")
+    @classmethod
+    def username_alphanum(cls, v: str) -> str:
+        v = v.strip().lower()
+        if len(v) < 3 or len(v) > 150:
+            raise ValueError("Username must be 3-150 characters")
+        if not v.replace("_", "").replace("-", "").isalnum():
+            raise ValueError("Username must be alphanumeric (underscores/hyphens allowed)")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def role_valid(cls, v: str) -> str:
+        if v not in ("admin", "researcher", "viewer"):
+            raise ValueError("Invalid role")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def email_basic_validation(cls, v: str) -> str:
+        value = v.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Invalid email")
+        return value
+
+
 class UserResponse(BaseModel):
     username: str
     email: Optional[str]
@@ -315,20 +357,23 @@ async def logout(
 @limiter.limit(RateLimits.AUTH)
 async def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user. New users get 'viewer' role by default."""
+    normalized_username = body.username.strip().lower()
+    normalized_email = body.email.strip().lower()
+
     # Check duplicate username
-    if db.query(UserModel).filter(UserModel.username == body.username).first():
+    if db.query(UserModel).filter(UserModel.username == normalized_username).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
         )
     # Check duplicate email
-    if db.query(UserModel).filter(UserModel.email == body.email).first():
+    if db.query(UserModel).filter(UserModel.email == normalized_email).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
 
     new_user = UserModel(
-        username=body.username,
-        email=body.email,
+        username=normalized_username,
+        email=normalized_email,
         full_name=body.full_name,
         hashed_password=get_password_hash(body.password),
         role="viewer",
@@ -338,7 +383,7 @@ async def register(request: Request, body: RegisterRequest, db: Session = Depend
     db.commit()
     db.refresh(new_user)
 
-    logger.info(f"New user registered: {body.username}")
+    logger.info(f"New user registered: {normalized_username}")
 
     return serialize_user(new_user)
 
@@ -406,6 +451,54 @@ async def list_users(
     """Admin: list all users."""
     rows = db.query(UserModel).order_by(UserModel.created_at).all()
     return [serialize_user(r) for r in rows]
+
+
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(RateLimits.ADMIN)
+async def admin_create_user(
+    request: Request,
+    body: AdminCreateUserRequest,
+    _admin: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Admin: create a new user with explicit role/scopes/disabled status."""
+    normalized_username = body.username.strip().lower()
+    normalized_email = body.email.strip().lower()
+
+    if db.query(UserModel).filter(UserModel.username == normalized_username).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
+        )
+
+    if db.query(UserModel).filter(UserModel.email == normalized_email).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+        )
+
+    valid_scopes = {"admin", "read", "write", "delete"}
+    default_scopes_by_role = {
+        "admin": ["admin", "read", "write", "delete"],
+        "researcher": ["read", "write"],
+        "viewer": ["read"],
+    }
+    scopes = body.scopes if body.scopes is not None else default_scopes_by_role[body.role]
+    invalid_scopes = set(scopes) - valid_scopes
+    if invalid_scopes:
+        raise HTTPException(status_code=400, detail=f"Invalid scopes: {invalid_scopes}")
+
+    user_row = UserModel(
+        username=normalized_username,
+        email=normalized_email,
+        full_name=body.full_name,
+        hashed_password=get_password_hash(body.password),
+        role=body.role,
+        scopes=scopes,
+        disabled=body.disabled,
+    )
+    db.add(user_row)
+    db.commit()
+    db.refresh(user_row)
+    return serialize_user(user_row)
 
 
 @router.put("/users/{username}", response_model=UserResponse)

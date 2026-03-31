@@ -14,12 +14,26 @@ import { useCohortQuery, useCohortEstimate, useDownloadCohort } from "../hooks/u
 import { useCohortFilterOptions, useRegistryOverview } from "../hooks/useAnalytics";
 import type { CohortFilterOption, Patient } from "../api/types";
 import type { DatasetFilter, PatientsQueryParams } from "../api/patients";
+import { useApp } from "../context/AppContext";
 
 const DATASET_OPTIONS: Array<{ value: DatasetFilter; label: string }> = [
   { value: "all", label: "All registries" },
   { value: "ehvol", label: "EHVol" },
   { value: "bhs", label: "BHS" },
 ];
+
+const DEFAULT_AGE_RANGE: [number, number] = [0, 100];
+const SAVED_COHORTS_STORAGE_KEY = "biolink_saved_cohorts";
+
+interface SavedCohort {
+  id: number;
+  name: string;
+  size: number;
+  lastModified: string;
+  description: string;
+  dataset: DatasetFilter;
+  criteria: CohortCriteria;
+}
 
 interface CohortCriteria {
   demographics: {
@@ -44,13 +58,15 @@ interface CohortCriteria {
 }
 
 export function CohortBuilder() {
+  const { setCurrentView, setCohortCriteria, setCohortResults } = useApp();
   const [cohortName, setCohortName] = useState("");
   const [description, setDescription] = useState("");
   const [queryExecuted, setQueryExecuted] = useState(false);
   const [selectedDataset, setSelectedDataset] = useState<DatasetFilter>("all");
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [criteria, setCriteria] = useState<CohortCriteria>({
     demographics: {
-      ageRange: [18, 90],
+      ageRange: DEFAULT_AGE_RANGE,
       gender: [],
       nationality: []
     },
@@ -63,7 +79,7 @@ export function CohortBuilder() {
     },
     dataAvailability: {
       requiredData: [],
-      minimumCompleteness: 70
+      minimumCompleteness: 0
     },
     geographic: {
       regions: []
@@ -74,21 +90,25 @@ export function CohortBuilder() {
   const estimateParams = useMemo((): PatientsQueryParams => {
     const params: PatientsQueryParams = {
       dataset: selectedDataset,
-      // Demographics
-      ageMin: criteria.demographics.ageRange[0],
-      ageMax: criteria.demographics.ageRange[1],
       gender: criteria.demographics.gender.length > 0 ? criteria.demographics.gender[0] : undefined,
       
       // Temporal filters
       enrollmentDateFrom: criteria.temporal.enrollmentPeriod[0] || undefined,
       enrollmentDateTo: criteria.temporal.enrollmentPeriod[1] || undefined,
-      
-      // Data availability filters
-      minDataCompleteness: criteria.dataAvailability.minimumCompleteness,
-      
+
       // Geographic filters
       region: criteria.geographic.regions.length > 0 ? criteria.geographic.regions[0] : undefined,
     };
+
+    const [ageMin, ageMax] = criteria.demographics.ageRange;
+    if (ageMin !== DEFAULT_AGE_RANGE[0] || ageMax !== DEFAULT_AGE_RANGE[1]) {
+      params.ageMin = ageMin;
+      params.ageMax = ageMax;
+    }
+
+    if (criteria.dataAvailability.minimumCompleteness > 0) {
+      params.minDataCompleteness = criteria.dataAvailability.minimumCompleteness;
+    }
     
     // Map data availability requirements
     const requiredData = criteria.dataAvailability.requiredData;
@@ -140,18 +160,41 @@ export function CohortBuilder() {
   // Use patients from hook or empty array
   const patients = queryData || [];
   
-  const [savedCohorts] = useState([
+  const [savedCohorts, setSavedCohorts] = useState<SavedCohort[]>([
     { id: 1, name: "CAD High Risk", size: 389, lastModified: "2024-12-15" },
     { id: 2, name: "Heart Failure Cohort", size: 156, lastModified: "2024-12-10" },
     { id: 3, name: "Genomics Complete", size: 1108, lastModified: "2024-12-08" }
-  ]);
+  ].map((cohort) => ({
+    ...cohort,
+    description: "",
+    dataset: "all" as DatasetFilter,
+    criteria: {
+      demographics: { ageRange: DEFAULT_AGE_RANGE, gender: [], nationality: [] },
+      clinical: { diagnoses: [], riskFactors: [] },
+      temporal: { enrollmentPeriod: ["", ""] },
+      dataAvailability: { requiredData: [], minimumCompleteness: 0 },
+      geographic: { regions: [] },
+    },
+  })));
 
-  const availableGenders = filterOptions?.genders ?? [];
-  const availableNationalities = filterOptions?.nationalities ?? [];
-  const availableDiagnoses = filterOptions?.diagnoses ?? [];
-  const availableRiskFactors = filterOptions?.riskFactors ?? [];
-  const availableDataTypes = filterOptions?.dataTypes ?? [];
-  const availableRegions = filterOptions?.regions ?? [];
+  const isAgeFilteringAvailable = overview?.hasAgeData ?? false;
+
+  const availableGenders = (filterOptions?.genders ?? []).filter((option) => option.count > 0);
+  const availableNationalities = (filterOptions?.nationalities ?? []).filter(
+    (option) => option.count > 0 && option.label !== "Unknown" && option.count < totalPatients
+  );
+  const availableDiagnoses = (filterOptions?.diagnoses ?? []).filter(
+    (option) => option.count > 0 && option.count < totalPatients
+  );
+  const availableRiskFactors = (filterOptions?.riskFactors ?? []).filter(
+    (option) => option.count > 0 && option.count < totalPatients
+  );
+  const availableDataTypes = (filterOptions?.dataTypes ?? []).filter(
+    (option) => option.count > 0 && option.count < totalPatients
+  );
+  const availableRegions = (filterOptions?.regions ?? []).filter(
+    (option) => option.count > 0 && option.label !== "Unknown" && option.count < totalPatients
+  );
 
   useEffect(() => {
     if (!filterOptions) {
@@ -188,6 +231,54 @@ export function CohortBuilder() {
     }));
   }, [filterOptions, availableDataTypes, availableDiagnoses, availableGenders, availableNationalities, availableRegions, availableRiskFactors]);
 
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SAVED_COHORTS_STORAGE_KEY);
+      if (!stored) {
+        return;
+      }
+
+      const parsed = JSON.parse(stored) as SavedCohort[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setSavedCohorts(parsed);
+      }
+    } catch {
+      // Ignore malformed saved cohorts and keep seeded defaults.
+    }
+  }, []);
+
+  useEffect(() => {
+    setCohortCriteria({
+      dataset: selectedDataset,
+      criteria,
+      estimatedSize,
+    });
+  }, [criteria, estimatedSize, selectedDataset, setCohortCriteria]);
+
+  useEffect(() => {
+    setCohortResults(patients);
+  }, [patients, setCohortResults]);
+
+  useEffect(() => {
+    if (isAgeFilteringAvailable) {
+      return;
+    }
+
+    const [ageMin, ageMax] = criteria.demographics.ageRange;
+    if (ageMin === DEFAULT_AGE_RANGE[0] && ageMax === DEFAULT_AGE_RANGE[1]) {
+      return;
+    }
+
+    setCriteria((prev) => ({
+      ...prev,
+      demographics: {
+        ...prev.demographics,
+        ageRange: DEFAULT_AGE_RANGE,
+      },
+    }));
+    setActionMessage("Age filtering is unavailable for this dataset because the registry snapshot has no usable age values.");
+  }, [criteria.demographics.ageRange, isAgeFilteringAvailable]);
+
   const updateCriteria = (section: keyof CohortCriteria, field: string, value: any) => {
     setCriteria(prev => ({
       ...prev,
@@ -215,12 +306,72 @@ export function CohortBuilder() {
   const handleDatasetChange = (value: string) => {
     setSelectedDataset(value as DatasetFilter);
     setQueryExecuted(false);
+    setActionMessage(null);
   };
 
-  // Mock patient data for query results
   const handleExecuteQuery = async () => {
-    await executeQuery({ ...estimateParams, limit: 500 });
+    const params = { ...estimateParams, limit: 500 };
+    if (!isAgeFilteringAvailable) {
+      delete params.ageMin;
+      delete params.ageMax;
+    }
+
+    await executeQuery(params);
     setQueryExecuted(true);
+    setActionMessage(null);
+  };
+
+  const handleExportCriteria = () => {
+    const exportContent = JSON.stringify(
+      {
+        cohortName: cohortName || "Unnamed Cohort",
+        description,
+        dataset: selectedDataset,
+        criteria,
+        estimatedSize,
+      },
+      null,
+      2,
+    );
+
+    const blob = new Blob([exportContent], { type: "application/json" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cohort_criteria_${cohortName || "query"}_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    setActionMessage("Cohort criteria exported.");
+  };
+
+  const handleSaveCohort = () => {
+    const savedCohort: SavedCohort = {
+      id: Date.now(),
+      name: cohortName.trim() || `Cohort ${new Date().toLocaleDateString()}`,
+      size: estimatedSize,
+      lastModified: new Date().toISOString().split("T")[0],
+      description,
+      dataset: selectedDataset,
+      criteria,
+    };
+
+    const nextSavedCohorts = [savedCohort, ...savedCohorts.filter((cohort) => cohort.name !== savedCohort.name)].slice(0, 8);
+    setSavedCohorts(nextSavedCohorts);
+    window.localStorage.setItem(SAVED_COHORTS_STORAGE_KEY, JSON.stringify(nextSavedCohorts));
+    setActionMessage(`Saved ${savedCohort.name}.`);
+  };
+
+  const handleLoadCohort = (cohort: SavedCohort) => {
+    setCohortName(cohort.name);
+    setDescription(cohort.description);
+    setSelectedDataset(cohort.dataset);
+    setCriteria(cohort.criteria);
+    setQueryExecuted(false);
+    setActionMessage(`Loaded ${cohort.name}.`);
+  };
+
+  const handleViewOnMap = () => {
+    setCurrentView("analytics");
   };
 
   const handleDownloadCSV = () => {
@@ -286,7 +437,7 @@ export function CohortBuilder() {
           <div>
             <h2 className="section-title">Advanced Cohort Builder</h2>
             <p className="section-subtitle max-w-3xl">
-              Shape enrollment-ready cohorts with demographic, clinical, temporal, and data quality constraints in a tighter research workflow.
+              Shape cohorts with filters that are actually queryable in the current registry snapshot.
             </p>
           </div>
         </div>
@@ -302,7 +453,7 @@ export function CohortBuilder() {
           </div>
           <div className="metric-tile">
             <span className="metric-label">Min completeness</span>
-            <strong className="metric-value">{criteria.dataAvailability.minimumCompleteness}%</strong>
+            <strong className="metric-value">{criteria.dataAvailability.minimumCompleteness > 0 ? `${criteria.dataAvailability.minimumCompleteness}%` : 'Off'}</strong>
           </div>
         </div>
       </div>
@@ -396,7 +547,11 @@ export function CohortBuilder() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>Age Range: {criteria.demographics.ageRange[0]} - {criteria.demographics.ageRange[1]} years</Label>
+                <Label>
+                  Age Range: {criteria.demographics.ageRange[0] === DEFAULT_AGE_RANGE[0] && criteria.demographics.ageRange[1] === DEFAULT_AGE_RANGE[1]
+                    ? 'Off'
+                    : `${criteria.demographics.ageRange[0]} - ${criteria.demographics.ageRange[1]} years`}
+                </Label>
                 <Slider
                   value={criteria.demographics.ageRange}
                   onValueChange={(value: number[]) => updateCriteria('demographics', 'ageRange', value)}
@@ -404,7 +559,13 @@ export function CohortBuilder() {
                   min={0}
                   step={1}
                   className="mt-2"
+                  disabled={!isAgeFilteringAvailable}
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {isAgeFilteringAvailable
+                    ? 'Leave this at the full range unless you explicitly want to exclude patients by age.'
+                    : 'Disabled because this dataset does not currently contain usable age values.'}
+                </p>
               </div>
 
               <div>
@@ -443,10 +604,15 @@ export function CohortBuilder() {
                     {availableNationalities.length > 0 ? availableNationalities.map((nationality) => (
                       <SelectItem key={nationality.label} value={nationality.label}>{formatOptionLabel(nationality)}</SelectItem>
                     )) : (
-                      <SelectItem value="no-nationality-options" disabled>No nationality values available</SelectItem>
+                      <SelectItem value="no-nationality-options" disabled>No meaningful nationality values available</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
+                {availableNationalities.length === 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Hidden because the current dataset only contains unknown or non-segmenting nationality values.
+                  </p>
+                ) : null}
                 <div className="flex flex-wrap gap-2 mt-2">
                   {criteria.demographics.nationality.map((nationality) => (
                     <Badge key={nationality} variant="secondary">
@@ -590,13 +756,13 @@ export function CohortBuilder() {
                       <Label className="text-sm">{formatOptionLabel(dataType)}</Label>
                     </div>
                   )) : (
-                    <p className="text-sm text-muted-foreground">No live data availability facets found in the registry.</p>
+                    <p className="text-sm text-muted-foreground">No data-availability facets narrow this registry right now.</p>
                   )}
                 </div>
               </div>
 
               <div>
-                <Label>Minimum Data Completeness: {criteria.dataAvailability.minimumCompleteness}%</Label>
+                <Label>Minimum Data Completeness: {criteria.dataAvailability.minimumCompleteness > 0 ? `${criteria.dataAvailability.minimumCompleteness}%` : 'Off'}</Label>
                 <Slider
                   value={[criteria.dataAvailability.minimumCompleteness]}
                   onValueChange={(value: number[]) => updateCriteria('dataAvailability', 'minimumCompleteness', value[0])}
@@ -605,6 +771,9 @@ export function CohortBuilder() {
                   step={5}
                   className="mt-2"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Leave this at 0 unless you explicitly want to exclude sparse records.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -826,7 +995,11 @@ export function CohortBuilder() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Age Range:</span>
-                        <span className="font-medium">{criteria.demographics.ageRange[0]} - {criteria.demographics.ageRange[1]} years</span>
+                        <span className="font-medium">
+                          {criteria.demographics.ageRange[0] === DEFAULT_AGE_RANGE[0] && criteria.demographics.ageRange[1] === DEFAULT_AGE_RANGE[1]
+                            ? 'All ages'
+                            : `${criteria.demographics.ageRange[0]} - ${criteria.demographics.ageRange[1]} years`}
+                        </span>
                       </div>
                       {criteria.clinical.diagnoses.length > 0 && (
                         <div className="flex justify-between">
@@ -879,18 +1052,21 @@ export function CohortBuilder() {
               )}
               {queryLoading ? "Querying..." : "Execute Query"}
             </Button>
-            <Button variant="outline" className="w-full">
+            <Button variant="outline" className="w-full" onClick={handleSaveCohort}>
               <Save className="h-4 w-4 mr-2" />
               Save Cohort
             </Button>
-            <Button variant="outline" className="w-full">
+            <Button variant="outline" className="w-full" onClick={handleExportCriteria}>
               <Download className="h-4 w-4 mr-2" />
               Export Criteria
             </Button>
-            <Button variant="outline" className="w-full">
+            <Button variant="outline" className="w-full" onClick={handleViewOnMap}>
               <Map className="h-4 w-4 mr-2" />
               View on Map
             </Button>
+            {actionMessage ? (
+              <p className="text-sm text-muted-foreground">{actionMessage}</p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -907,7 +1083,7 @@ export function CohortBuilder() {
                     {cohort.size.toLocaleString()} patients • {cohort.lastModified}
                   </div>
                 </div>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" onClick={() => handleLoadCohort(cohort)}>
                   Load
                 </Button>
               </div>

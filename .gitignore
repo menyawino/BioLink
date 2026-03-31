@@ -161,6 +161,30 @@ test-results/
 tmp/
 *.tmp
 
+# Ad hoc and debug scripts
+tmp_*.mjs
+tmp_*.js
+debug_*.mjs
+debug_*.js
+verify_*.mjs
+verify_*.js
+*.adhoc.mjs
+*.adhoc.js
+*.adhoc.ts
+
+# Test files and directories
+tests/
+backend-py/tests/
+*.test.ts
+*.test.js
+*.test.py
+*.spec.ts
+*.spec.js
+*.spec.py
+test_*.py
+test_*.mjs
+test_*.js
+
 # ETL pipeline artifacts (NiFi/legacy)
 .checkpoints/
 .dead_letter/

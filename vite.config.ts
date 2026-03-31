@@ -55,14 +55,14 @@
       target: 'esnext',
       outDir: 'build',
         rollupOptions: {
+            input: {
+              main: path.resolve(__dirname, 'index.html'),
+              stakeholders: path.resolve(__dirname, 'stakeholders.html'),
+            },
           output: {
             manualChunks(id) {
               if (!id.includes('node_modules')) {
                 return undefined;
-              }
-
-              if (id.includes('@radix-ui')) {
-                return 'radix-vendor';
               }
 
               if (id.includes('recharts')) {

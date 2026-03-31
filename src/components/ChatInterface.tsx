@@ -486,7 +486,7 @@ Rules:
           .map(msg => ({ role: msg.role, content: msg.content }));
 
         const response = await chatWithOrchestrator(currentInput, history);
-        const content = response?.data?.content ?? response?.content ?? 'No response.';
+        const content = response.data?.content ?? 'No response.';
 
         setMessages(prev => [
           ...prev,
@@ -513,7 +513,7 @@ Rules:
           .map(msg => ({ role: msg.role, content: msg.content }));
 
         const response = await chatWithSqlAgent(currentInput, history);
-        const content = response?.data?.content ?? response?.content ?? 'No response.';
+        const content = response.data?.content ?? 'No response.';
 
         setMessages(prev => [
           ...prev,
@@ -790,6 +790,7 @@ Rules:
               type="submit"
               size="icon"
               disabled={!input.trim() || isLoading}
+              aria-label={isLoading ? 'Sending message' : 'Send message'}
               className="chat-send-button bg-[#00a2dd] hover:bg-[#0081b0]"
             >
               {isLoading ? (

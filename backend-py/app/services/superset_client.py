@@ -227,6 +227,21 @@ class SupersetClient:
             raise RuntimeError(f"Failed to create Superset dataset: {created}")
         return dataset_id
 
+    async def refresh_dataset(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        csrf_token: str,
+        dataset_id: int,
+    ) -> dict:
+        return await self._request(
+            session,
+            "PUT",
+            f"/api/v1/dataset/{dataset_id}/refresh",
+            access_token,
+            csrf_token,
+        )
+
     async def create_chart(
         self,
         session: aiohttp.ClientSession,

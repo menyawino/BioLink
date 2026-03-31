@@ -2,6 +2,7 @@
 API endpoint tests for BioLink.
 """
 
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 
@@ -94,6 +95,86 @@ class TestAuthEndpoints:
         data = response.json()
         assert data["username"] == "admin"
 
+    def test_register_and_login_normalizes_username(self, client: TestClient):
+        """Test registration/login work with mixed-case and surrounding whitespace."""
+        suffix = uuid.uuid4().hex[:8]
+        mixed_username = f"CaseUser_Test_{suffix}"
+        normalized_username = f"caseuser_test_{suffix}"
+        email = f"caseuser_test_{suffix}@example.org"
+
+        register_response = client.post(
+            "/api/auth/register",
+            json={
+                "username": f"  {mixed_username}  ",
+                "email": f"  {email.upper()}  ",
+                "password": "StrongPass123",
+                "full_name": "Case User",
+            },
+        )
+        assert register_response.status_code == 201
+        created_user = register_response.json()
+        assert created_user["username"] == normalized_username
+        assert created_user["email"] == email
+
+        login_response = client.post(
+            "/api/auth/token",
+            data={"username": f"  {normalized_username.upper()}  ", "password": "StrongPass123"},
+        )
+        assert login_response.status_code == 200
+        login_data = login_response.json()
+        assert "access_token" in login_data
+
+    def test_admin_can_manage_other_users(self, client: TestClient):
+        """Admin can create, list, update authorities, revoke, and delete users."""
+        login_response = client.post(
+            "/api/auth/token", data={"username": "admin", "password": "admin"}
+        )
+        assert login_response.status_code == 200
+        admin_token = login_response.json()["access_token"]
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+        create_response = client.post(
+            "/api/auth/users",
+            headers=admin_headers,
+            json={
+                "username": "admin_manage_test_user",
+                "email": "admin_manage_test_user@example.org",
+                "password": "StrongPass123",
+                "full_name": "Managed User",
+                "role": "viewer",
+                "scopes": ["read"],
+            },
+        )
+        assert create_response.status_code == 201
+        created = create_response.json()
+        assert created["username"] == "admin_manage_test_user"
+        assert created["role"] == "viewer"
+
+        list_response = client.get("/api/auth/users", headers=admin_headers)
+        assert list_response.status_code == 200
+        users = list_response.json()
+        assert any(u["username"] == "admin_manage_test_user" for u in users)
+
+        update_response = client.put(
+            "/api/auth/users/admin_manage_test_user",
+            headers=admin_headers,
+            json={
+                "role": "researcher",
+                "scopes": ["read", "write"],
+                "disabled": True,
+            },
+        )
+        assert update_response.status_code == 200
+        updated = update_response.json()
+        assert updated["role"] == "researcher"
+        assert updated["disabled"] is True
+        assert sorted(updated["scopes"]) == ["read", "write"]
+
+        delete_response = client.delete(
+            "/api/auth/users/admin_manage_test_user", headers=admin_headers
+        )
+        assert delete_response.status_code == 200
+
 
 class TestPatientEndpoints:
     """Test patient-related endpoints."""
@@ -147,6 +228,10 @@ class TestAnalyticsEndpoints:
         """Test analytics overview endpoint."""
         response = client.get("/api/analytics/overview", headers=auth_headers)
         assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "hasAgeData" in data["data"]
+        assert "ageDataCount" in data["data"]
 
     def test_demographics(self, client: TestClient, auth_headers: dict):
         """Test demographics endpoint."""

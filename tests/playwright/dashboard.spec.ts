@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 async function login(page: import('@playwright/test').Page) {
   await page.goto('http://localhost:3000');
-  await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
+  await expect(page.getByLabel('Username')).toBeVisible();
   await page.getByLabel('Username').fill('admin');
   await page.getByLabel('Password').fill('admin');
   await page.getByRole('button', { name: 'Sign In' }).click();

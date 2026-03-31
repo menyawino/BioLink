@@ -48,3 +48,13 @@ export interface AdminUpdateUserRequest {
   full_name?: string;
   email?: string;
 }
+
+export interface AdminCreateUserRequest {
+  username: string;
+  email: string;
+  password: string;
+  full_name?: string;
+  role?: string;
+  scopes?: string[];
+  disabled?: boolean;
+}

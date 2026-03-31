@@ -26,8 +26,12 @@ export function useCohortExport() {
 export function useCohortEstimate(params: PatientsQueryParams) {
   return useQuery<{ count: number }>(
     async () => {
-      const patients = await getPatients({ ...params, limit: 1000 });
-      return { count: patients?.length || 0 };
+      const response = await getPatients({ ...params, limit: 1000 });
+      return {
+        success: response.success,
+        data: { count: response.pagination?.total ?? response.data?.length ?? 0 },
+        error: response.error,
+      };
     },
     [JSON.stringify(params)], // Track all params changes
     { enabled: true }

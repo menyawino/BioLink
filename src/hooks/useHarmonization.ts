@@ -13,10 +13,7 @@ import type {
 } from '../api/types';
 
 export function useHarmonizationDictionary() {
-  return useQuery<{
-    data: HarmonizationDictionaryField[];
-    total: number;
-  }>(() => getHarmonizationDictionary(), []);
+  return useQuery<HarmonizationDictionaryField[]>(() => getHarmonizationDictionary(), []);
 }
 
 export function useHarmonizationTiers() {

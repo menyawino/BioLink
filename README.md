@@ -184,6 +184,7 @@ docker compose --profile optional up -d
 ```
 
 Frontend: http://localhost:3000
+Stakeholder site: http://localhost:3002
 Backend: http://localhost:3001
 Ollama: http://localhost:11434
 NiFi: https://localhost:8443/nifi
@@ -199,6 +200,30 @@ docker compose up -d --no-deps frontend-dev
 Frontend dev server: http://localhost:5173
 
 This service mounts the workspace into the container and runs Vite directly, so changes under `src/` appear immediately. It is intended for development alongside the regular backend container.
+
+### Separate Stakeholder Website
+
+The stakeholder presentation site can be built and hosted independently from the main application.
+
+Local development:
+
+```bash
+npm run dev:stakeholders
+```
+
+Independent production build:
+
+```bash
+npm run build:stakeholders
+```
+
+Independent Docker deployment:
+
+```bash
+docker compose up -d --build stakeholders
+```
+
+This serves the stakeholder site on `http://localhost:3002` and is intended for use behind its own domain or reverse proxy target.
 
 ### NiFi Ingestion (Local)
 

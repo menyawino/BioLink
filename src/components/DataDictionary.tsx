@@ -42,6 +42,26 @@ function includesInsensitive(value: string, search: string) {
   return value.toLowerCase().includes(search.toLowerCase());
 }
 
+function coverageLabel(field: HarmonizationDictionaryField) {
+  const hasBhs = Boolean(field.bhs_source);
+  const hasEhvol = Boolean(field.ehvol_source);
+
+  if (hasBhs && hasEhvol) return "BHS + EHVol";
+  if (hasBhs) return "BHS only";
+  if (hasEhvol) return "EHVol only";
+  return "Unmapped";
+}
+
+function coverageBadgeClass(label: string) {
+  if (label === "BHS + EHVol") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (label === "Unmapped") {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
 function exportRowsToCsv(rows: HarmonizationDictionaryField[]) {
   const headers = [
     "master_col",
@@ -83,22 +103,24 @@ function MetricCard({
   value,
   hint,
   icon: Icon,
+  accentClass,
 }: {
   title: string;
   value: string;
   hint: string;
   icon: typeof Database;
+  accentClass: string;
 }) {
   return (
-    <Card>
+    <Card className="border-slate-200 bg-gradient-to-br from-white to-slate-50/70">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">{title}</p>
+            <p className="text-sm font-medium text-slate-600">{title}</p>
             <p className="text-3xl font-semibold tracking-tight">{value}</p>
             <p className="text-sm text-muted-foreground">{hint}</p>
           </div>
-          <div className="rounded-full border p-3 text-slate-600">
+          <div className={`rounded-full border p-3 ${accentClass}`}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
@@ -123,7 +145,7 @@ export function DataDictionary() {
   } = useHarmonizationDictionary();
   const { data: provenanceSummary } = useProvenanceSummary();
 
-  const dictionaryFields = dictionaryResponse?.data ?? [];
+  const dictionaryFields = dictionaryResponse ?? [];
   const totalPatients = overview?.totalPatients?.toLocaleString() ?? "Unavailable";
 
   useEffect(() => {
@@ -198,6 +220,26 @@ export function DataDictionary() {
     });
   }, [coverageFilter, dictionaryFields, ontologyFilter, searchTerm, tierFilter]);
 
+  const activeFilterSummary = useMemo(() => {
+    const labels: string[] = [];
+    if (tierFilter !== "all") {
+      labels.push(titleCaseTier(tierFilter));
+    }
+    if (coverageFilter !== "all") {
+      if (coverageFilter === "both") labels.push("Mapped in both");
+      if (coverageFilter === "bhs") labels.push("BHS only");
+      if (coverageFilter === "ehvol") labels.push("EHVol only");
+      if (coverageFilter === "unmapped") labels.push("Unmapped");
+    }
+    if (ontologyFilter !== "all") {
+      labels.push(ontologyFilter === "coded" ? "Ontology mapped" : "Ontology pending");
+    }
+    if (searchTerm.trim()) {
+      labels.push(`Search: ${searchTerm.trim()}`);
+    }
+    return labels;
+  }, [coverageFilter, ontologyFilter, searchTerm, tierFilter]);
+
   useEffect(() => {
     if (!selectedField) {
       return;
@@ -257,24 +299,28 @@ export function DataDictionary() {
               value={dictionaryFields.length.toLocaleString()}
               hint="Master columns tracked in the harmonization registry"
               icon={TableProperties}
+              accentClass="border-slate-200 bg-white text-slate-700"
             />
             <MetricCard
               title="Mapped In Both Cohorts"
               value={derivedStats.mappedInBoth.toLocaleString()}
               hint="Fields with both BHS and EHVol source columns present"
               icon={Link2}
+              accentClass="border-emerald-200 bg-emerald-50 text-emerald-700"
             />
             <MetricCard
               title="Terminology Linked"
               value={derivedStats.terminologyMapped.toLocaleString()}
               hint="Fields carrying LOINC or SNOMED mappings"
               icon={ShieldCheck}
+              accentClass="border-indigo-200 bg-indigo-50 text-indigo-700"
             />
             <MetricCard
               title="Tier 1 Variables"
               value={derivedStats.tierOne.toLocaleString()}
               hint="Priority variables marked as top harmonization tier"
               icon={Database}
+              accentClass="border-amber-200 bg-amber-50 text-amber-700"
             />
           </div>
 
@@ -338,6 +384,20 @@ export function DataDictionary() {
                   Showing <span className="font-medium text-foreground">{filteredFields.length}</span> of <span className="font-medium text-foreground">{dictionaryFields.length}</span> tracked fields
                 </div>
               </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeFilterSummary.length === 0 ? (
+                  <Badge variant="outline" className="border-slate-200 bg-white text-slate-600">
+                    No active filters
+                  </Badge>
+                ) : (
+                  activeFilterSummary.map((summary) => (
+                    <Badge key={summary} variant="outline" className="border-slate-200 bg-white text-slate-700">
+                      {summary}
+                    </Badge>
+                  ))
+                )}
+              </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -384,7 +444,7 @@ export function DataDictionary() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="max-h-[720px] overflow-auto">
+                <div className="h-[560px] overflow-auto md:h-[720px]">
                   <Table>
                     <TableHeader className="sticky top-0 bg-background">
                       <TableRow>
@@ -412,17 +472,12 @@ export function DataDictionary() {
                         filteredFields.map((field) => {
                           const isSelected = selectedField?.master_col === field.master_col;
                           const hasOntology = Boolean(field.loinc || field.snomed);
-                          const hasBhs = Boolean(field.bhs_source);
-                          const hasEhvol = Boolean(field.ehvol_source);
-                          let coverageLabel = "Unmapped";
-                          if (hasBhs && hasEhvol) coverageLabel = "BHS + EHVol";
-                          else if (hasBhs) coverageLabel = "BHS only";
-                          else if (hasEhvol) coverageLabel = "EHVol only";
+                          const fieldCoverageLabel = coverageLabel(field);
 
                           return (
                             <TableRow
                               key={field.master_col}
-                              className={`cursor-pointer ${isSelected ? "bg-slate-50" : ""}`}
+                              className={`cursor-pointer transition-colors hover:bg-slate-50/80 ${isSelected ? "bg-slate-50" : ""}`}
                               onClick={() => setSelectedField(field)}
                             >
                               <TableCell>
@@ -438,16 +493,16 @@ export function DataDictionary() {
                               </TableCell>
                               <TableCell>{field.data_type || "Unknown"}</TableCell>
                               <TableCell>
-                                <Badge variant="secondary">{coverageLabel}</Badge>
+                                <Badge variant="outline" className={coverageBadgeClass(fieldCoverageLabel)}>{fieldCoverageLabel}</Badge>
                               </TableCell>
                               <TableCell>
                                 {hasOntology ? (
                                   <div className="flex flex-wrap gap-1">
-                                    {field.loinc ? <Badge variant="outline">LOINC</Badge> : null}
-                                    {field.snomed ? <Badge variant="outline">SNOMED</Badge> : null}
+                                    {field.loinc ? <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">LOINC</Badge> : null}
+                                    {field.snomed ? <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">SNOMED</Badge> : null}
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-muted-foreground">Pending</span>
+                                  <span className="text-xs text-amber-700">Pending</span>
                                 )}
                               </TableCell>
                             </TableRow>
@@ -460,7 +515,7 @@ export function DataDictionary() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="xl:sticky xl:top-6 xl:h-fit">
               <CardHeader>
                 <CardTitle className="text-base">{selectedField ? selectedField.master_col : "Select a field"}</CardTitle>
               </CardHeader>
@@ -478,7 +533,7 @@ export function DataDictionary() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 rounded-2xl border p-4">
+                    <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
                       <div>
                         <Label className="text-xs uppercase tracking-wide text-muted-foreground">Master Column</Label>
                         <p className="mt-1 font-medium">{selectedField.master_col}</p>
@@ -492,11 +547,11 @@ export function DataDictionary() {
                     <div className="space-y-3">
                       <h3 className="text-sm font-medium">Source mapping</h3>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <div className="rounded-xl border p-4">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4">
                           <Label className="text-xs uppercase tracking-wide text-muted-foreground">BHS Source</Label>
                           <p className="mt-2 break-words text-sm">{selectedField.bhs_source || "No BHS source mapped"}</p>
                         </div>
-                        <div className="rounded-xl border p-4">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4">
                           <Label className="text-xs uppercase tracking-wide text-muted-foreground">EHVol Source</Label>
                           <p className="mt-2 break-words text-sm">{selectedField.ehvol_source || "No EHVol source mapped"}</p>
                         </div>
@@ -506,11 +561,11 @@ export function DataDictionary() {
                     <div className="space-y-3">
                       <h3 className="text-sm font-medium">Terminology alignment</h3>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <div className="rounded-xl border p-4">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4">
                           <Label className="text-xs uppercase tracking-wide text-muted-foreground">LOINC</Label>
                           <p className="mt-2 break-words text-sm">{selectedField.loinc || "No LOINC code recorded"}</p>
                         </div>
-                        <div className="rounded-xl border p-4">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4">
                           <Label className="text-xs uppercase tracking-wide text-muted-foreground">SNOMED</Label>
                           <p className="mt-2 break-words text-sm">{selectedField.snomed || "No SNOMED code recorded"}</p>
                         </div>
