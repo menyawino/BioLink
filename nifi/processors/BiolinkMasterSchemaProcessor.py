@@ -17,8 +17,8 @@ Properties:
   BHS CSV Path        - /opt/nifi/db/BHS_Full.csv
   EHVol CSV Path      - /opt/nifi/db/EHVol_Full.csv
   Schema Output Path  - /opt/nifi/outputs/master_schema.csv
-  Match Threshold     - cosine similarity floor (default 0.35)
-    Top K               - SapBERT candidates per column (default 5)
+    Match Threshold     - cosine similarity floor (default 0.25)
+        Top K               - SapBERT candidates per column (default 20)
     Lexicon Path        - optional clinical lexicon CSV
                                                 (default /opt/nifi/biolink_scripts/clinical_lexicon.csv)
 """
@@ -249,16 +249,16 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
     )
     MATCH_THRESHOLD = PropertyDescriptor(
         name="Match Threshold",
-        description="Composite similarity score floor (0–1). Recommended: 0.35.",
+        description="Composite similarity score floor (0–1). Tuned default: 0.25.",
         required=False,
-        default_value="0.35",
+        default_value="0.25",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     TOP_K = PropertyDescriptor(
         name="Top K",
         description="Number of SapBERT candidate pairs to evaluate per column.",
         required=False,
-        default_value="5",
+        default_value="20",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     MIN_FINAL_SCORE = PropertyDescriptor(
@@ -296,8 +296,8 @@ class BiolinkMasterSchemaProcessor(FlowFileTransform):
         bhs_path    = context.getProperty(self.BHS_CSV_PATH).getValue()
         ehvol_path  = context.getProperty(self.EHVOL_CSV_PATH).getValue()
         out_path    = context.getProperty(self.SCHEMA_OUTPUT_PATH).getValue()
-        threshold   = float(context.getProperty(self.MATCH_THRESHOLD).getValue() or "0.35")
-        top_k       = int(context.getProperty(self.TOP_K).getValue() or "5")
+        threshold   = float(context.getProperty(self.MATCH_THRESHOLD).getValue() or "0.25")
+        top_k       = int(context.getProperty(self.TOP_K).getValue() or "20")
         min_final   = float(context.getProperty(self.MIN_FINAL_SCORE).getValue() or "0.50")
         lexicon     = (context.getProperty(self.LEXICON_PATH).getValue() or "").strip() or None
 

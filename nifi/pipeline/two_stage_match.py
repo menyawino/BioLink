@@ -5,7 +5,7 @@ Two-stage clinical column matching pipeline.
 Stage 1 – Candidate generation
         Expands snake_case names via a clinical lexicon CSV (nifi/pipeline/clinical_lexicon.csv)
     then embeds with SapBERT sentence embeddings. Keeps pairs with cosine
-    similarity ≥ STAGE1_THRESHOLD (default 0.35).
+    similarity ≥ STAGE1_THRESHOLD (default 0.25).
 
 Stage 2 – Validation via data-level + rule-based filters
   For each candidate pair:
@@ -19,7 +19,7 @@ Stage 2 – Validation via data-level + rule-based filters
     2d. Composite final_score using configurable weights (--weights).
     2e. Reject weak pairs with final_score < --min-final-score.
 
-Score weights (defaults, override with --weights name:0.55,range:0.25,cat:0.10,type:0.10)
+Score weights (defaults, override with --weights name:0.50,range:0.30,cat:0.10,type:0.10)
   name_score × W_name
   + range_score × W_range           (numeric/date/categorical overlap)
   + type_same_bonus × W_type        (+1 if both columns have identical dtype)
@@ -29,9 +29,9 @@ Output
     outputs/master_schema.csv             – canonical schema for downstream ETL
 
 Usage
-    python nifi/pipeline/two_stage_match.py [--threshold 0.35] [--top-k 5]
-    python nifi/pipeline/two_stage_match.py --weights name:0.6,range:0.3,cat:0.05,type:0.05
-    python nifi/pipeline/two_stage_match.py --cat-threshold 0.3 --n-boot 200
+    python nifi/pipeline/two_stage_match.py [--threshold 0.25] [--top-k 20]
+    python nifi/pipeline/two_stage_match.py --weights name:0.6,range:0.2,cat:0.1,type:0.1
+    python nifi/pipeline/two_stage_match.py --cat-threshold 0.2 --n-boot 200
         python nifi/pipeline/two_stage_match.py --min-final-score 0.50
 """
 
@@ -45,11 +45,13 @@ import re
 import sys
 import warnings
 from collections import defaultdict
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import linear_sum_assignment
 
 warnings.filterwarnings("ignore")
 
@@ -184,13 +186,13 @@ def _col_category(name: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Composite score weights
-# Default: name 55%, range/cat overlap 25%, same-type bonus 10%, extra 10% free.
+# Default: tuned on the current BHS × EHVol production data for higher clean recall.
 # Tune by passing --weights name:N,range:N,cat:N,type:N (values must sum to 1.0).
 # ---------------------------------------------------------------------------
 _DEFAULT_WEIGHTS: Dict[str, float] = {
-    "name":  0.55,   # SapBERT cosine name similarity
-    "range": 0.25,   # IQR overlap (numeric) / year Jaccard (date) / val Jaccard (cat)
-    "cat":   0.10,   # categorical top-N value Jaccard (separate from range for cat cols)
+    "name":  0.50,   # SapBERT cosine name similarity
+    "range": 0.30,   # IQR overlap (numeric) / year Jaccard (date)
+    "cat":   0.10,   # categorical top-N value Jaccard
     "type":  0.10,   # bonus when both columns have identical inferred dtype
 }
 
@@ -487,6 +489,11 @@ def rule_veto(col_a: str, col_b: str) -> Optional[str]:
     """
     a, b = col_a.lower(), col_b.lower()
 
+    def _is_opaque_short_code(name: str) -> bool:
+        if name in ABBREV:
+            return False
+        return bool(re.fullmatch(r"[a-z]{1,2}\d?", name) or re.fullmatch(r"s\d", name))
+
     # ---- contact / admin vs anything clinical ----
     # NOTE: consent scan / upload_consent_scan are medical docs, not contact info.
     contact_kws = {"_tel", "email", "address", "contact", "complete_12"}
@@ -517,6 +524,12 @@ def rule_veto(col_a: str, col_b: str) -> Optional[str]:
         overlap = non_q_tokens & q_tokens
         if not overlap or len(non_q) < 8:
             return "question_field_vs_short_code"
+
+    # ---- opaque short codes without a known clinical expansion ----
+    a_opaque_short = _is_opaque_short_code(a)
+    b_opaque_short = _is_opaque_short_code(b)
+    if a != b and (a_opaque_short != b_opaque_short):
+        return "opaque_short_code_mismatch"
 
     # ---- diagnosis vs lab/measurement mismatch ----
     diag_kws = {"angina", "anaemia", "diabetes", "hypertension", "stenosis",
@@ -565,8 +578,22 @@ def _sapbert_similarity_matrix(names_a: List[str], names_b: List[str]) -> Option
     Use SapBERT for clinically-aware embeddings.
     """
     try:
-        from sentence_transformers import SentenceTransformer
         from sklearn.metrics.pairwise import cosine_similarity
+    except Exception as e:
+        raise RuntimeError(
+            "SapBERT dependencies failed to import. "
+            "Repair the environment with ./venv/bin/pip install --force-reinstall --no-cache-dir torch "
+            "and ensure sentence-transformers is installed. "
+            f"Original error: {type(e).__name__}: {e}"
+        )
+
+    return _sapbert_similarity_matrix_cached(tuple(names_a), tuple(names_b), cosine_similarity)
+
+
+@lru_cache(maxsize=1)
+def _load_sapbert_model():
+    try:
+        from sentence_transformers import SentenceTransformer
     except Exception as e:
         raise RuntimeError(
             "SapBERT dependencies failed to import. "
@@ -578,10 +605,18 @@ def _sapbert_similarity_matrix(names_a: List[str], names_b: List[str]) -> Option
     model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
     print(f"  [SapBERT] Loading model {model_name} …", file=sys.stderr)
     try:
-        model = SentenceTransformer(model_name)
+        return SentenceTransformer(model_name)
     except Exception as e:
         raise RuntimeError(f"SapBERT model load failed: {e}")
 
+
+@lru_cache(maxsize=4)
+def _sapbert_similarity_matrix_cached(
+    names_a: tuple[str, ...],
+    names_b: tuple[str, ...],
+    cosine_similarity,
+) -> np.ndarray:
+    model = _load_sapbert_model()
     expanded_a = [expand_name(n) for n in names_a]
     expanded_b = [expand_name(n) for n in names_b]
     emb_a = model.encode(expanded_a, show_progress_bar=False)
@@ -612,10 +647,12 @@ def stage1_candidates(
             if s >= threshold:
                 candidates.append((na, names_b[j], round(s, 4)))
 
-    # Deduplicate: keep highest score per pair
+    # Deduplicate exact directional pairs only. Do not sort the names here:
+    # dataset side matters and later stages assume name_a comes from A and
+    # name_b comes from B.
     best: Dict[tuple, float] = {}
     for a, b, s in candidates:
-        key = (min(a, b), max(a, b))
+        key = (a, b)
         if s > best.get(key, 0):
             best[key] = s
     result = [(k[0], k[1], best[k]) for k in best]
@@ -687,7 +724,8 @@ def stage2_validate(
         n_boot:         Bootstrap iterations for numeric CI computation.
         min_final_score: Minimum final composite score to accept pair.
 
-    Returns list of result dicts.
+    Returns list of result dicts with the final ACCEPTED set resolved via an
+    exact global 1-to-1 assignment over eligible pairs.
     """
     W = weights if weights else _DEFAULT_WEIGHTS
     # Pre-compute dtypes once
@@ -714,7 +752,7 @@ def stage2_validate(
             "range_ci_high": None,
             "cat_overlap": None,
             "final_score": name_score,
-            "verdict": "ACCEPTED",
+            "verdict": "PENDING",
             "reject_reason": "",
         }
 
@@ -735,6 +773,12 @@ def stage2_validate(
         rec["type_a"] = ta
         rec["type_b"] = tb
 
+        same_known_category = (
+            rec["category_a"] != "unknown"
+            and rec["category_b"] != "unknown"
+            and rec["category_a"] == rec["category_b"]
+        )
+
         # ---- 2b. Type compatibility ----
         compat = True   # default: compatible
         if ta != "unknown" and tb != "unknown":
@@ -745,6 +789,18 @@ def stage2_validate(
                 rec["reject_reason"] = f"type_mismatch:{ta}_vs_{tb}"
                 results.append(rec)
                 continue
+
+        if ta == "unknown" and tb == "unknown" and name_score < 0.60 and not same_known_category:
+            rec["verdict"] = "REJECTED"
+            rec["reject_reason"] = f"unknown_type_low_name_score:{name_score:.4f}"
+            results.append(rec)
+            continue
+
+        if (ta == "unknown" or tb == "unknown") and name_score < 0.50 and not same_known_category:
+            rec["verdict"] = "REJECTED"
+            rec["reject_reason"] = f"partially_unknown_type_low_name_score:{name_score:.4f}"
+            results.append(rec)
+            continue
 
         # ---- 2c. Value-range / value-distribution overlap ----
         range_score = None
@@ -787,13 +843,20 @@ def stage2_validate(
 
         # ---- Compute final composite score ----
         # W["name"]  × name_score
-        # W["range"] × range_score  (0.5 neutral when unavailable)
+        # W["range"] × numeric/date overlap (0.5 neutral when unavailable)
+        # W["cat"]   × categorical overlap (0.5 neutral when unavailable)
         # W["type"]  × type_same_bonus  (1.0 when both have identical non-unknown dtype)
         type_same = 1.0 if compat_bonus(ta, tb) else 0.0
-        r_score = range_score if range_score is not None else 0.5
+        if ta in ("binary", "categorical") and tb in ("binary", "categorical"):
+            r_score = 0.5
+            cat_score = rec["cat_overlap"] if rec["cat_overlap"] is not None else 0.5
+        else:
+            r_score = range_score if range_score is not None else 0.5
+            cat_score = 0.5
         final = (
             W["name"]  * name_score
             + W["range"] * r_score
+            + W["cat"]   * cat_score
             + W["type"]  * type_same
         )
         rec["final_score"] = round(min(final, 1.0), 4)
@@ -802,10 +865,73 @@ def stage2_validate(
         if rec["final_score"] < min_final_score:
             rec["verdict"] = "REJECTED"
             rec["reject_reason"] = f"final_score_below_min:{rec['final_score']:.4f}"
+        else:
+            rec["verdict"] = "ELIGIBLE"
 
         results.append(rec)
 
+    matched_pairs = _resolve_global_assignment(results)
+    for rec in results:
+        if rec["verdict"] != "ELIGIBLE":
+            continue
+        pair = (rec["name_a"], rec["name_b"])
+        if pair in matched_pairs:
+            rec["verdict"] = "ACCEPTED"
+            rec["reject_reason"] = ""
+        else:
+            rec["verdict"] = "REJECTED"
+            rec["reject_reason"] = "global_one_to_one_conflict"
+
     return results
+
+
+def _resolve_global_assignment(results: List[Dict]) -> set[Tuple[str, str]]:
+    """Select the exact maximum-weight 1-to-1 matching over eligible pairs.
+
+    Uses a rectangular bipartite assignment with dummy rows/columns so either
+    side may remain unmatched. Edge weights are `final_score`; dummy matches
+    have zero weight.
+    """
+    eligible = [
+        rec for rec in results
+        if rec.get("verdict") == "ELIGIBLE"
+        and str(rec.get("name_a", "")).strip()
+        and str(rec.get("name_b", "")).strip()
+    ]
+    if not eligible:
+        return set()
+
+    names_a = sorted({str(rec["name_a"]).strip() for rec in eligible})
+    names_b = sorted({str(rec["name_b"]).strip() for rec in eligible})
+    n_a = len(names_a)
+    n_b = len(names_b)
+    size = n_a + n_b
+
+    a_index = {name: idx for idx, name in enumerate(names_a)}
+    b_index = {name: idx for idx, name in enumerate(names_b)}
+    weights = np.zeros((size, size), dtype=float)
+
+    for rec in eligible:
+        a_name = str(rec["name_a"]).strip()
+        b_name = str(rec["name_b"]).strip()
+        score = float(rec.get("final_score", 0.0) or 0.0)
+        row = a_index[a_name]
+        col = b_index[b_name]
+        if score > weights[row, col]:
+            weights[row, col] = score
+
+    row_ind, col_ind = linear_sum_assignment(-weights)
+
+    matched_pairs: set[Tuple[str, str]] = set()
+    for row, col in zip(row_ind, col_ind):
+        if row >= n_a or col >= n_b:
+            continue
+        score = weights[row, col]
+        if score <= 0:
+            continue
+        matched_pairs.add((names_a[row], names_b[col]))
+
+    return matched_pairs
 
 
 def compat_bonus(ta: str, tb: str) -> bool:
@@ -817,20 +943,49 @@ def compat_bonus(ta: str, tb: str) -> bool:
 # Master schema generation
 # ---------------------------------------------------------------------------
 
+_PII_EXACT_NAMES = {
+    "dna_id",
+    "full_name",
+    "household_identifier",
+    "name",
+    "name_1",
+    "participant_id",
+    "participant_name",
+    "participants_name",
+    "patient_id",
+    "patient_name",
+    "record_id",
+}
+
+_PII_SUBSTRINGS = {
+    "_tel",
+    "address",
+    "alternate_contact",
+    "birth_date",
+    "contact_number",
+    "consent_scan",
+    "date_of_birth",
+    "dob",
+    "email",
+    "medical_record",
+    "mobile",
+    "mrn",
+    "national_id",
+    "passport",
+    "phone",
+    "signature",
+    "ssn",
+    "street",
+    "upload_consent",
+}
+
 def is_pii_column(col_name: str) -> bool:
     """
     Return True when a column name contains PII-related tokens.
     Errs on the side of over-flagging; human review before dropping.
     """
-    pii_keywords = {
-        "patient_id", "mrn", "medical_record", "dob",
-        "date_of_birth", "birth_date", "address", "street",
-        "_tel", "phone", "mobile", "email", "national_id",
-        "ssn", "passport", "consent_scan", "signature", "nationality",
-        "contact_number",
-    }
     lower = col_name.lower()
-    return any(kw in lower for kw in pii_keywords)
+    return lower in _PII_EXACT_NAMES or any(kw in lower for kw in _PII_SUBSTRINGS)
 
 
 def get_default_strategy(category: str) -> str:
@@ -957,6 +1112,23 @@ def generate_master_schema(
         print("[master_schema] No accepted pairs — nothing to write.", file=sys.stderr)
         return
 
+    dup_a = (
+        df["name_a"].fillna("").astype(str).str.strip()
+        if "name_a" in df.columns else pd.Series(dtype=str)
+    )
+    dup_b = (
+        df["name_b"].fillna("").astype(str).str.strip()
+        if "name_b" in df.columns else pd.Series(dtype=str)
+    )
+    dup_a_vals = sorted(dup_a[(dup_a != "") & dup_a.duplicated(keep=False)].unique().tolist())
+    dup_b_vals = sorted(dup_b[(dup_b != "") & dup_b.duplicated(keep=False)].unique().tolist())
+    if dup_a_vals or dup_b_vals:
+        raise ValueError(
+            "Accepted matches must already be 1-to-1 before schema generation. "
+            f"Duplicate BHS columns: {dup_a_vals[:10]}; "
+            f"duplicate EHVol columns: {dup_b_vals[:10]}"
+        )
+
     master_rows = []
     seen_master: set = set()
 
@@ -1031,42 +1203,17 @@ def generate_master_schema(
         }
         master_rows.append(row)
 
-    # Passthrough columns: first handle exact-name matches between the two
-    # unmatched pools as paired rows, then add remaining single-sided passthroughs.
+    # Passthrough columns must remain single-sided. If Stage 2 rejected a pair,
+    # schema generation must not silently reintroduce it just because the raw
+    # column names happen to match.
     leftover_a = [col for col in (all_cols_a or []) if col and col not in used_a]
     leftover_b = [col for col in (all_cols_b or []) if col and col not in used_b]
-    leftover_b_set = set(leftover_b)
 
     for col in leftover_a:
-        if col in leftover_b_set:
-            # Same column name exists unmatched in both datasets — pair them.
-            base = col.lower().strip()
-            master_col = base
-            suffix = 2
-            while master_col in seen_master:
-                master_col = f"{base}_{suffix}"
-                suffix += 1
-            seen_master.add(master_col)
-
-            category = _col_category(col)
-            pii = is_pii_column(col)
-            master_rows.append({
-                "master_col":        master_col,
-                "source_a_cols":     col,
-                "source_b_cols":     col,
-                "category":          category,
-                "omop_domain":       map_to_omop_domain(category, master_col),
-                "standard_vocab":    infer_standard_vocab(master_col, [col]),
-                "final_score":       1.0,   # exact name match — perfect confidence
-                "coalesce_strategy": get_default_strategy(category),
-                "pii_flag":          pii,
-            })
-            used_b.add(col)   # mark so the B pass below skips it
-        else:
-            _append_passthrough(col, "a")
+        _append_passthrough(col, "a")
 
     for col in leftover_b:
-        if col and col not in used_b:
+        if col:
             _append_passthrough(col, "b")
 
     schema_df = pd.DataFrame(master_rows).sort_values(
@@ -1110,7 +1257,7 @@ def auto_tune_threshold(
     if not gold_path.exists():
         print("\n[auto-threshold] 'gold_labels.csv' not found – generating seed file …")
         seed_cands = stage1_candidates(
-            names_a, names_b, threshold=0.35, top_k=5
+            names_a, names_b, threshold=0.25, top_k=20
         )
         seed_sorted = sorted(seed_cands, key=lambda x: -x[2])
         high = seed_sorted[:20]
@@ -1174,10 +1321,10 @@ def main():
         description="Two-stage clinical column matcher",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--threshold", type=float, default=0.35,
-                        help="Stage 1 cosine similarity threshold (default 0.35)")
-    parser.add_argument("--top-k", type=int, default=5,
-                        help="Max candidates per column in Stage 1 (default 5)")
+    parser.add_argument("--threshold", type=float, default=0.25,
+                        help="Stage 1 cosine similarity threshold (default 0.25)")
+    parser.add_argument("--top-k", type=int, default=20,
+                        help="Max candidates per column in Stage 1 (default 20)")
     parser.add_argument(
         "--weights",
         type=str,
@@ -1191,8 +1338,8 @@ def main():
     parser.add_argument(
         "--cat-threshold",
         type=float,
-        default=0.30,
-        help="Min categorical/binary value Jaccard to accept a pair (default 0.30)",
+        default=0.20,
+        help="Min categorical/binary value Jaccard to accept a pair (default 0.20)",
     )
     parser.add_argument(
         "--n-boot",

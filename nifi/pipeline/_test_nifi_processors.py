@@ -61,6 +61,12 @@ if "body" in expanded or "bmi" in expanded:
 else:
     fail(f"expand_name('bmi') unexpected: {expanded!r}")
 
+for pii_col in ["record_id", "dna_id", "participants_name", "alternate_contact_1_number_1"]:
+    if tsm.is_pii_column(pii_col):
+        ok(f"is_pii_column({pii_col!r}) = True")
+    else:
+        fail(f"is_pii_column({pii_col!r}) should be True")
+
 cols_a = ["heart_rate", "bmi", "systolic_blood_pressure", "ecg_date", "lvedd"]
 cols_b = ["hr",          "body_mass_index", "sbp",                    "ecg_date", "lv_edd"]
 candidates = tsm.stage1_candidates(cols_a, cols_b, top_k=3, threshold=0.10)
@@ -71,6 +77,19 @@ if len(candidates) >= 2:
     ok(f"stage1_candidates returned {len(candidates)} pairs (≥2 expected)")
 else:
     fail(f"Too few candidates: {len(candidates)}")
+
+# Regression: candidate dedup must preserve dataset orientation.
+orientation_candidates = [("zz_from_a", "aa_from_b", 0.9), ("zz_from_a", "aa_from_b", 0.8)]
+best = {}
+for a, b, s in orientation_candidates:
+    key = (a, b)
+    if s > best.get(key, 0):
+        best[key] = s
+directional = [(k[0], k[1], best[k]) for k in best]
+if directional == [("zz_from_a", "aa_from_b", 0.9)]:
+    ok("Stage 1 directional pair dedup preserves A/B orientation")
+else:
+    fail(f"Stage 1 directional dedup broken: {directional}")
 
 # Test full stage2_validate + generate_master_schema API
 section("2. two_stage_match — stage2_validate + generate_master_schema API")
@@ -116,6 +135,41 @@ try:
 except Exception as exc:
     fail(f"stage2_validate raised {exc}")
     results, accepted = [], []
+
+ambiguous_candidates = [
+    ("a1", "b1", 0.95),
+    ("a1", "b2", 0.80),
+    ("a2", "b1", 0.79),
+]
+df_assign_a = pd.DataFrame({
+    "a1": [1, 2, 3],
+    "a2": [4, 5, 6],
+})
+df_assign_b = pd.DataFrame({
+    "b1": [10, 11, 12],
+    "b2": [13, 14, 15],
+})
+try:
+    assign_results = tsm.stage2_validate(
+        ambiguous_candidates,
+        df_assign_a,
+        df_assign_b,
+        weights={"name": 1.0, "range": 0.0, "cat": 0.0, "type": 0.0},
+        n_boot=0,
+        min_final_score=0.0,
+    )
+    assign_pairs = {
+        (r["name_a"], r["name_b"])
+        for r in assign_results
+        if r["verdict"] == "ACCEPTED"
+    }
+    expected_pairs = {("a1", "b2"), ("a2", "b1")}
+    if assign_pairs == expected_pairs:
+        ok(f"Global 1-to-1 assignment selected optimal pairs: {sorted(assign_pairs)}")
+    else:
+        fail(f"Global 1-to-1 assignment expected {sorted(expected_pairs)}, got {sorted(assign_pairs)}")
+except Exception as exc:
+    fail(f"Global 1-to-1 assignment test raised {exc}")
 
 with tempfile.TemporaryDirectory() as td:
     master_out   = Path(td) / "master_schema.csv"
@@ -167,8 +221,67 @@ with tempfile.TemporaryDirectory() as td:
                       and not r.get("source_a_cols","").strip()]
         ok(f"BHS-only passthrough: {only_bhs[0]['master_col']}") if only_bhs else fail("only_in_bhs missing")
         ok(f"EHVol-only passthrough: {only_ehvol[0]['master_col']}") if only_ehvol else fail("only_in_ehvol missing")
+
+        mismatch_out = Path(td) / "master_schema_mismatch.csv"
+        mismatch_rows = [{
+            "name_a": "heart_rate",
+            "category_a": "vitals",
+            "name_b": "heart_rate",
+            "category_b": "vitals",
+            "name_score": 1.0,
+            "type_a": "numeric",
+            "type_b": "numeric",
+            "range_score": 1.0,
+            "range_ci_low": 0.9,
+            "range_ci_high": 1.0,
+            "cat_overlap": None,
+            "final_score": 1.0,
+        }]
+        tsm.generate_master_schema(
+            mismatch_rows,
+            output_path=mismatch_out,
+            all_cols_a=["heart_rate", "lvedd"],
+            all_cols_b=["heart_rate", "lvedd"],
+        )
+        mismatch_schema = list(csv.DictReader(mismatch_out.open()))
+        lvedd_rows = [
+            r for r in mismatch_schema
+            if r.get("source_a_cols", "").strip() == "lvedd"
+            or r.get("source_b_cols", "").strip() == "lvedd"
+        ]
+        if len(lvedd_rows) == 2 and all(not (r.get("source_a_cols", "").strip() and r.get("source_b_cols", "").strip()) for r in lvedd_rows):
+            ok("Unmatched same-name columns remain single-sided passthroughs")
+        else:
+            fail(f"Unmatched same-name columns should not be auto-paired: {lvedd_rows}")
     else:
         fail("master_schema.csv not created")
+
+    duplicate_rows = accepted_rows + [{
+        "name_a": "heart_rate",
+        "category_a": "vitals",
+        "name_b": "bmi",
+        "category_b": "vitals",
+        "name_score": 0.8,
+        "type_a": "numeric",
+        "type_b": "numeric",
+        "range_score": 0.8,
+        "range_ci_low": 0.7,
+        "range_ci_high": 0.9,
+        "cat_overlap": None,
+        "final_score": 0.8,
+    }]
+    try:
+        tsm.generate_master_schema(
+            duplicate_rows,
+            output_path=master_out,
+            all_cols_a=BHS_COLS,
+            all_cols_b=EHVOL_COLS,
+        )
+        fail("generate_master_schema should reject duplicate accepted source columns")
+    except ValueError:
+        ok("generate_master_schema rejects duplicate accepted source columns")
+    except Exception as exc:
+        fail(f"generate_master_schema duplicate invariant raised unexpected {exc}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. apply_schema.py — _load_csv, process_dataset, PII drop
@@ -184,12 +297,12 @@ with tempfile.TemporaryDirectory() as td:
     bhs_path = os.path.join(td, "bhs.csv")
     with open(bhs_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["heart_rate", "bmi",  "full_name", "ecg_date"])
-        w.writerow(["72",         "25.1", "Alice",     "2021-01-01"])
-        w.writerow(["80",         "28.0", "Bob",       "2021-02-01"])
+        w.writerow(["heart_rate", "bmi",  "full_name", "record_id", "ecg_date"])
+        w.writerow(["72",         "25.1", "Alice",     "BHS-001",   "2021-01-01"])
+        w.writerow(["80",         "28.0", "Bob",       "BHS-002",   "2021-02-01"])
 
     df = aps._load_csv(bhs_path)
-    if df.shape == (2, 4):
+    if df.shape == (2, 5):
         ok(f"_load_csv: {df.shape[0]} rows × {df.shape[1]} cols")
     else:
         fail(f"_load_csv unexpected shape: {df.shape}")
@@ -198,8 +311,8 @@ with tempfile.TemporaryDirectory() as td:
     ehvol_path = os.path.join(td, "ehvol.csv")
     with open(ehvol_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["heart_rate", "bmi"])
-        w.writerow(["75",         "26.3"])
+        w.writerow(["heart_rate", "bmi", "dna_id"])
+        w.writerow(["75",         "26.3", "DNA-001"])
 
     schema_path = os.path.join(td, "master.csv")
     schema_rows = [
@@ -208,7 +321,9 @@ with tempfile.TemporaryDirectory() as td:
         {"master_col": "bmi",        "source_a_cols": "bmi",        "source_b_cols": "bmi",
          "category": "vitals", "final_score": "1.0", "coalesce_strategy": "mean_value", "pii_flag": "False"},
         {"master_col": "full_name",  "source_a_cols": "full_name",  "source_b_cols": "",
-         "category": "contact", "final_score": "0.0", "coalesce_strategy": "first_non_null", "pii_flag": "True"},
+            "category": "contact", "final_score": "0.0", "coalesce_strategy": "first_non_null", "pii_flag": "False"},
+           {"master_col": "record_link", "source_a_cols": "record_id", "source_b_cols": "dna_id",
+            "category": "admin", "final_score": "0.0", "coalesce_strategy": "first_non_null", "pii_flag": "False"},
         {"master_col": "ecg_date",   "source_a_cols": "ecg_date",   "source_b_cols": "",
          "category": "ecg", "final_score": "0.0", "coalesce_strategy": "first_non_null", "pii_flag": "False"},
     ]
@@ -244,9 +359,13 @@ with tempfile.TemporaryDirectory() as td:
     cols_out = list(registry[0].keys()) if registry else []
     print(f"  Output columns: {cols_out}")
     if "full_name" not in cols_out:
-        ok("PII column 'full_name' correctly dropped")
+        ok("PII column 'full_name' correctly dropped even when schema flag is False")
     else:
         fail("PII column 'full_name' still present in output")
+    if "record_link" not in cols_out:
+        ok("Identifier row 'record_link' correctly dropped from output")
+    else:
+        fail("Identifier row 'record_link' still present in output")
     if "heart_rate" in cols_out:
         ok(f"'heart_rate' present in output ({len(registry)} rows)")
     else:

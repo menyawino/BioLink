@@ -87,6 +87,63 @@ def to_snake(name: str) -> str:
     return name.strip("_")
 
 
+_PII_EXACT_NAMES = {
+    "dna_id",
+    "full_name",
+    "household_identifier",
+    "name",
+    "name_1",
+    "participant_id",
+    "participant_name",
+    "participants_name",
+    "patient_id",
+    "patient_name",
+    "record_id",
+}
+
+_PII_SUBSTRINGS = {
+    "_tel",
+    "address",
+    "alternate_contact",
+    "birth_date",
+    "contact_number",
+    "consent_scan",
+    "date_of_birth",
+    "dob",
+    "email",
+    "medical_record",
+    "mobile",
+    "mrn",
+    "national_id",
+    "passport",
+    "phone",
+    "signature",
+    "ssn",
+    "street",
+    "upload_consent",
+}
+
+
+def _looks_like_pii_column(col_name: Any) -> bool:
+    lower = str(col_name or "").strip().lower()
+    if not lower:
+        return False
+    return lower in _PII_EXACT_NAMES or any(kw in lower for kw in _PII_SUBSTRINGS)
+
+
+def _schema_row_contains_pii(schema_row: pd.Series) -> bool:
+    fields = [
+        schema_row.get("master_col", ""),
+        schema_row.get("source_a_cols", ""),
+        schema_row.get("source_b_cols", ""),
+    ]
+    for field in fields:
+        for col_name in str(field).split(","):
+            if _looks_like_pii_column(col_name):
+                return True
+    return False
+
+
 def _load_csv(path: Path) -> pd.DataFrame:
     """
     Load a CSV and normalise column names to snake_case, matching the
@@ -536,6 +593,7 @@ Examples:
 
     # Normalise pii_flag: CSV stores 'True'/'False' strings
     schema["pii_flag"] = schema["pii_flag"].astype(str).str.lower().isin({"true", "1", "yes"})
+    schema["pii_flag"] = schema["pii_flag"] | schema.apply(_schema_row_contains_pii, axis=1)
 
     n_total = len(schema)
     n_pii   = int(schema["pii_flag"].sum())
