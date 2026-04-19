@@ -157,6 +157,15 @@ class SupersetClient:
         return None
 
     @staticmethod
+    def _extract_result_dict(payload: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        result = payload.get("result")
+        if isinstance(result, dict):
+            return result
+        return None
+
+    @staticmethod
     def _normalize_identifier(value: Any) -> str:
         return str(value or "").strip().lower()
 
@@ -355,6 +364,116 @@ class SupersetClient:
             raise RuntimeError(f"Failed to create Superset dashboard: {created}")
         return dashboard_id
 
+    async def get_dashboard(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        dashboard_id: int,
+    ) -> dict[str, Any]:
+        dashboard = await self._request(
+            session, "GET", f"/api/v1/dashboard/{dashboard_id}", access_token
+        )
+        result = self._extract_result_dict(dashboard)
+        if not isinstance(result, dict):
+            raise RuntimeError(f"Failed to load dashboard details: {dashboard}")
+        return result
+
+    async def get_dashboard_embed_uuid(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        csrf_token: str,
+        dashboard_id: int,
+    ) -> str:
+        embedded = await self.ensure_embedded_dashboard(
+            session,
+            access_token,
+            csrf_token,
+            dashboard_id,
+            settings.superset_embedded_allowed_domains_list,
+        )
+        embedded_uuid = str(embedded.get("uuid") or "").strip()
+        if not embedded_uuid:
+            raise RuntimeError(
+                f"Dashboard {dashboard_id} does not expose an embedded dashboard UUID"
+            )
+        return embedded_uuid
+
+    async def get_embedded_dashboard(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        dashboard_id: int,
+    ) -> dict[str, Any] | None:
+        try:
+            embedded = await self._request(
+                session,
+                "GET",
+                f"/api/v1/dashboard/{dashboard_id}/embedded",
+                access_token,
+            )
+        except RuntimeError as exc:
+            if "Superset API error 404" in str(exc):
+                return None
+            raise
+
+        result = self._extract_result_dict(embedded)
+        if not isinstance(result, dict):
+            raise RuntimeError(
+                f"Failed to load embedded dashboard config for {dashboard_id}: {embedded}"
+            )
+        return result
+
+    async def ensure_embedded_dashboard(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        csrf_token: str,
+        dashboard_id: int,
+        allowed_domains: list[str],
+    ) -> dict[str, Any]:
+        existing = await self.get_embedded_dashboard(
+            session,
+            access_token,
+            dashboard_id,
+        )
+        if existing is not None:
+            existing_domains = [
+                str(domain).strip() for domain in existing.get("allowed_domains", [])
+            ]
+            if existing_domains == allowed_domains:
+                return existing
+
+            updated = await self._request(
+                session,
+                "PUT",
+                f"/api/v1/dashboard/{dashboard_id}/embedded",
+                access_token,
+                csrf_token,
+                json_body={"allowed_domains": allowed_domains},
+            )
+            result = self._extract_result_dict(updated)
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    f"Failed to update embedded dashboard config for {dashboard_id}: {updated}"
+                )
+            return result
+
+        created = await self._request(
+            session,
+            "POST",
+            f"/api/v1/dashboard/{dashboard_id}/embedded",
+            access_token,
+            csrf_token,
+            json_body={"allowed_domains": allowed_domains},
+        )
+        result = self._extract_result_dict(created)
+        if not isinstance(result, dict):
+            raise RuntimeError(
+                f"Failed to create embedded dashboard config for {dashboard_id}: {created}"
+            )
+        return result
+
     async def add_chart_to_dashboard(
         self,
         session: aiohttp.ClientSession,
@@ -363,12 +482,7 @@ class SupersetClient:
         dashboard_id: int,
         chart_id: int,
     ) -> None:
-        dashboard = await self._request(
-            session, "GET", f"/api/v1/dashboard/{dashboard_id}", access_token
-        )
-        result = dashboard.get("result") if isinstance(dashboard, dict) else None
-        if not isinstance(result, dict):
-            raise RuntimeError(f"Failed to load dashboard details: {dashboard}")
+        result = await self.get_dashboard(session, access_token, dashboard_id)
 
         chart_key = f"CHART-{chart_id}"
         position = {

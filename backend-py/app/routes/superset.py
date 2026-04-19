@@ -84,6 +84,12 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
                 csrf_token,
                 req.dashboard_title,
             )
+            embedded_uuid = await client.get_dashboard_embed_uuid(
+                session,
+                access_token,
+                csrf_token,
+                dashboard_id,
+            )
             try:
                 await client.add_chart_to_dashboard(
                     session,
@@ -96,7 +102,7 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
                 # If chart attachment fails, still return an embeddable dashboard token.
                 pass
 
-            resources = [{"type": "dashboard", "id": str(dashboard_id)}]
+            resources = [{"type": "dashboard", "id": embedded_uuid}]
             guest_token = await client.create_guest_token(
                 session,
                 access_token,
@@ -109,6 +115,7 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
                 "data": {
                     "chart_id": chart_id,
                     "dashboard_id": dashboard_id,
+                    "embedded_uuid": embedded_uuid,
                     "guest_token": guest_token,
                     "superset_domain": settings.superset_public_url,
                 },
@@ -133,7 +140,14 @@ async def create_dashboard_embed(req: SupersetDashboardEmbedRequest):
             access_token = tokens["access_token"]
             csrf_token = tokens["csrf_token"]
 
-            resources = [{"type": "dashboard", "id": str(req.dashboard_id)}]
+            embedded_uuid = await client.get_dashboard_embed_uuid(
+                session,
+                access_token,
+                csrf_token,
+                req.dashboard_id,
+            )
+
+            resources = [{"type": "dashboard", "id": embedded_uuid}]
             guest_token = await client.create_guest_token(
                 session,
                 access_token,
@@ -145,6 +159,7 @@ async def create_dashboard_embed(req: SupersetDashboardEmbedRequest):
                 "success": True,
                 "data": {
                     "dashboard_id": req.dashboard_id,
+                    "embedded_uuid": embedded_uuid,
                     "guest_token": guest_token,
                     "superset_domain": settings.superset_public_url,
                 },

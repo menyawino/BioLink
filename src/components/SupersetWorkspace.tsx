@@ -122,11 +122,18 @@ export function SupersetWorkspace() {
           return;
         }
 
+        const embeddedDashboardId = initialPayload.embedded_uuid?.trim();
+        if (!embeddedDashboardId) {
+          throw new Error(
+            "Superset did not return an embedded dashboard identifier.",
+          );
+        }
+
         firstGuestToken = initialPayload.guest_token;
         setEmbedDomain(initialPayload.superset_domain.replace(/\/$/, ""));
 
         embeddedDashboard = await embedDashboard({
-          id: String(dashboardId),
+          id: embeddedDashboardId,
           supersetDomain: initialPayload.superset_domain,
           mountPoint: mountRef.current,
           fetchGuestToken: async () => {
@@ -217,7 +224,7 @@ export function SupersetWorkspace() {
         style={{ minHeight: "clamp(32rem, calc(100vh - 11rem), 54rem)" }}
       >
         <CardContent className="flex min-h-0 w-full flex-1 flex-col p-0">
-          {embedState === "ready" || embedState === "loading" ? (
+          {embedState === "idle" || embedState === "ready" || embedState === "loading" ? (
             <>
               <div className="border-b border-border/70 bg-muted/20 px-5 py-3 text-sm text-muted-foreground">
                 Embedded analytics canvas. Use the dashboard below for review and launch the full Superset workspace in a new tab for deeper editing.
@@ -228,7 +235,7 @@ export function SupersetWorkspace() {
                   style={{ minHeight: "clamp(28rem, calc(100vh - 16rem), 50rem)" }}
                 >
                   <div ref={mountRef} className="superset-embedded-mount h-full w-full" />
-                  {embedState === "loading" ? (
+                  {embedState !== "ready" ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-white/88 backdrop-blur-sm">
                       <div className="flex items-center gap-3 rounded-full border border-border/70 bg-background px-4 py-2 text-sm text-muted-foreground shadow-sm">
                         <Loader2 className="h-4 w-4 animate-spin" />

@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     )
     superset_default_schema: str = "public"
     superset_default_table: str = "unified_registry"
+    superset_embedded_allowed_domains: str = ""
 
     # NiFi ETL API
     etl_service_url: str = "https://nifi:8443/nifi-api"
@@ -96,6 +97,35 @@ class Settings(BaseSettings):
             if origin and origin not in origins:
                 origins.append(origin)
         return origins
+
+    @staticmethod
+    def _normalize_origin(value: str) -> str:
+        raw_value = value.strip().rstrip("/")
+        if not raw_value:
+            return ""
+
+        parsed = urlparse(raw_value)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+        return raw_value.lower()
+
+    @classmethod
+    def _unique_origins(cls, values: list[str]) -> list[str]:
+        origins: list[str] = []
+        for raw_value in values:
+            origin = cls._normalize_origin(raw_value)
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
+
+    @property
+    def superset_embedded_allowed_domains_list(self) -> list[str]:
+        configured = self._unique_origins(
+            str(self.superset_embedded_allowed_domains).split(",")
+        )
+        if configured:
+            return configured
+        return self._unique_origins(self.cors_allowed_origins_list)
 
     @staticmethod
     def _has_localhost_hostname(url: str) -> bool:

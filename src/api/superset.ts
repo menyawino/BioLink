@@ -14,6 +14,7 @@ export interface SupersetProgrammaticRequest {
 export interface SupersetProgrammaticResponse {
   chart_id: number;
   dashboard_id?: number | null;
+  embedded_uuid?: string | null;
   guest_token: string;
   superset_domain: string;
 }
@@ -24,6 +25,7 @@ export interface SupersetDashboardEmbedRequest {
 
 export interface SupersetDashboardEmbedResponse {
   dashboard_id: number;
+  embedded_uuid: string;
   guest_token: string;
   superset_domain: string;
 }

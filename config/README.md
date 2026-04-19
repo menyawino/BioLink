@@ -9,7 +9,7 @@ This directory contains configuration files for various tools and services.
 Inside `superset/`:
 
 - `superset_config.py` - Superset runtime configuration and branding
-- `superset_init.py` - Best-effort bootstrap script executed by the Superset container after `superset init`
+- `superset_init.py` - Best-effort bootstrap script executed by the Superset container after `superset init`; it now also seeds the verification dashboard content used by the embedded Chart Builder workspace
 
 ## Notes
 
