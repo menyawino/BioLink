@@ -25,11 +25,19 @@ export type AgentResponseChunk = {
 
 import { API_BASE_URL, post } from './client';
 
+function getDefaultOllamaBaseUrl() {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:11434';
+  }
+
+  return '/ollama';
+}
+
 export async function chatWithAgent(
   messages: ChatMessage[],
   options?: { tools?: boolean; stream?: boolean; toolModelOverride?: string }
 ) {
-  const baseUrl = import.meta.env.VITE_OLLAMA_BASE_URL || 'http://localhost:11434';
+  const baseUrl = import.meta.env.VITE_OLLAMA_BASE_URL || getDefaultOllamaBaseUrl();
   const defaultModel = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2:3b';
   const toolModel = options?.toolModelOverride || import.meta.env.VITE_OLLAMA_TOOL_MODEL || defaultModel;
   const model = options?.tools ? toolModel : defaultModel;

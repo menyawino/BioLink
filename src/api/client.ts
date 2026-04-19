@@ -6,9 +6,7 @@ function getDefaultApiBaseUrl() {
     return 'http://localhost:3001';
   }
 
-  const url = new URL(window.location.origin);
-  url.port = '3001';
-  return url.toString().replace(/\/$/, '');
+  return '';
 }
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || getDefaultApiBaseUrl();

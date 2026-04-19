@@ -10,6 +10,7 @@ from pathlib import Path
 import aiohttp
 import requests
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import text
 from app.database import engine
 from app.config import settings
 from app.services import registry_loader
@@ -48,6 +49,14 @@ NIFI_TRIGGER_DATASETS_PROPERTY = os.getenv(
 BHS_CANONICAL_FILENAME = "BHS_Full.csv"
 EHVOL_CANONICAL_FILENAME = "EHVol_Full.csv"
 LINEAGE_STAGE_ORDER = ["ingest", "match", "harmonize", "omop", "quality", "publish"]
+SUPERSET_MANAGED_PIPELINE_TABLES = (
+    "_schema_registry",
+    "unified_registry",
+    "harmonization_tiers",
+    "harmonization_provenance",
+    "comparability_report",
+)
+SUPERSET_MANAGED_PARTICIPANT_DATASETS = ("ehvol", "bhs")
 
 
 class ETLParams(BaseModel):
@@ -112,28 +121,161 @@ def _upsert_lineage_stage(
     return [by_key[key] for key in LINEAGE_STAGE_ORDER if key in by_key]
 
 
-def _superset_target_tables(requested_datasets: list[str]) -> list[str]:
-    targets = [settings.superset_default_table, "unified_registry"]
-    targets.extend(f"{dataset}_participants" for dataset in requested_datasets)
+def _normalized_identifier(value: object | None) -> str:
+    return str(value or "").strip().lower()
 
+
+def _ordered_unique(values: list[str]) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
-    for table_name in targets:
-        if not table_name:
+    for value in values:
+        if not value:
             continue
-        if table_name in seen:
+        normalized = _normalized_identifier(value)
+        if normalized in seen:
             continue
-        seen.add(table_name)
-        ordered.append(table_name)
+        seen.add(normalized)
+        ordered.append(value)
     return ordered
 
+
+def _coerce_int(value: object | None) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _superset_managed_database_names() -> set[str]:
+    names = {_normalized_identifier(settings.superset_database_name)}
+    for raw_name in str(getattr(settings, "superset_legacy_database_names", "")).split(","):
+        normalized = _normalized_identifier(raw_name)
+        if normalized:
+            names.add(normalized)
+    return names
+
+
+def _superset_target_tables(requested_datasets: list[str]) -> list[str]:
+    targets = [settings.superset_default_table, *SUPERSET_MANAGED_PIPELINE_TABLES]
+    targets.extend(
+        f"{dataset}_participants"
+        for dataset in [*requested_datasets, *SUPERSET_MANAGED_PARTICIPANT_DATASETS]
+        if dataset
+    )
+
+    return _ordered_unique(targets)
+
+
+def _existing_superset_target_tables(
+    schema_name: str,
+    table_names: list[str],
+) -> list[str]:
+    if not table_names:
+        return []
+
+    with engine.connect() as conn:
+        existing_table_names = {
+            str(name)
+            for name in conn.execute(
+                text(
+                    """
+                    SELECT LOWER(table_name)
+                    FROM information_schema.tables
+                    WHERE table_schema = :schema_name
+                    """
+                ),
+                {"schema_name": schema_name},
+            ).scalars()
+            if name
+        }
+
+    return [
+        table_name
+        for table_name in table_names
+        if _normalized_identifier(table_name) in existing_table_names
+    ]
+
+
+def _superset_dataset_matches_database(
+    item: dict[str, object],
+    *,
+    database_id: int,
+    database_names: set[str],
+) -> bool:
+    candidate_ids: set[int] = set()
+    candidate_names: set[str] = set()
+
+    raw_database = item.get("database")
+    if isinstance(raw_database, dict):
+        for key in ("id", "value", "database_id"):
+            candidate_id = _coerce_int(raw_database.get(key))
+            if candidate_id is not None:
+                candidate_ids.add(candidate_id)
+        for key in ("database_name", "name"):
+            value = raw_database.get(key)
+            if value:
+                candidate_names.add(_normalized_identifier(value))
+    else:
+        candidate_id = _coerce_int(raw_database)
+        if candidate_id is not None:
+            candidate_ids.add(candidate_id)
+        elif raw_database:
+            candidate_names.add(_normalized_identifier(raw_database))
+
+    candidate_id = _coerce_int(item.get("database_id"))
+    if candidate_id is not None:
+        candidate_ids.add(candidate_id)
+
+    for key in ("database_name", "database_name_text"):
+        value = item.get(key)
+        if value:
+            candidate_names.add(_normalized_identifier(value))
+
+    if database_id in candidate_ids:
+        return True
+    if candidate_names and candidate_names.intersection(database_names):
+        return True
+    return False
+
+
+def _superset_dataset_in_scope(
+    item: dict[str, object],
+    *,
+    database_id: int,
+    database_names: set[str],
+    schema_name: str,
+) -> bool:
+    schema_value = item.get("schema")
+    if schema_value and _normalized_identifier(schema_value) != _normalized_identifier(schema_name):
+        return False
+
+    return _superset_dataset_matches_database(
+        item,
+        database_id=database_id,
+        database_names=database_names,
+    )
 
 async def _refresh_superset_registry_datasets_async(
     requested_datasets: list[str],
 ) -> dict[str, object]:
     client = SupersetClient.from_settings()
     schema_name = settings.superset_default_schema
-    table_names = _superset_target_tables(requested_datasets)
+    candidate_table_names = _superset_target_tables(requested_datasets)
+    table_names = _existing_superset_target_tables(schema_name, candidate_table_names)
+    synced_table_names = {_normalized_identifier(table_name) for table_name in table_names}
+    skipped_tables = [
+        table_name
+        for table_name in candidate_table_names
+        if _normalized_identifier(table_name) not in synced_table_names
+    ]
+
+    if not table_names:
+        raise RuntimeError(
+            f"No BioLink tables were detected in schema {schema_name!r} for Superset publishing"
+        )
 
     async with aiohttp.ClientSession(
         cookie_jar=aiohttp.CookieJar(unsafe=True)
@@ -149,8 +291,22 @@ async def _refresh_superset_registry_datasets_async(
             settings.superset_database_name,
             settings.superset_database_uri,
         )
+        managed_database_names = _superset_managed_database_names()
+
+        existing_datasets = await client.list_datasets(session, access_token)
+        managed_datasets = [
+            item
+            for item in existing_datasets
+            if _superset_dataset_in_scope(
+                item,
+                database_id=database_id,
+                database_names=managed_database_names,
+                schema_name=schema_name,
+            )
+        ]
 
         datasets: list[dict[str, object]] = []
+        desired_dataset_ids: dict[str, int] = {}
         for table_name in table_names:
             dataset_id = await client.get_or_create_dataset(
                 session,
@@ -160,6 +316,7 @@ async def _refresh_superset_registry_datasets_async(
                 schema_name,
                 table_name,
             )
+            desired_dataset_ids[_normalized_identifier(table_name)] = dataset_id
             refresh_result = await client.refresh_dataset(
                 session,
                 access_token,
@@ -174,11 +331,38 @@ async def _refresh_superset_registry_datasets_async(
                 }
             )
 
+        deleted_datasets: list[dict[str, object]] = []
+        for item in managed_datasets:
+            dataset_id = _coerce_int(item.get("id"))
+            if dataset_id is None:
+                continue
+
+            table_key = _normalized_identifier(item.get("table_name"))
+            expected_dataset_id = desired_dataset_ids.get(table_key)
+            if expected_dataset_id is not None and dataset_id == expected_dataset_id:
+                continue
+
+            await client.delete_dataset(
+                session,
+                access_token,
+                csrf_token,
+                dataset_id,
+            )
+            deleted_datasets.append(
+                {
+                    "table_name": item.get("table_name"),
+                    "dataset_id": dataset_id,
+                }
+            )
+
     return {
         "ok": True,
         "database_name": settings.superset_database_name,
         "schema": schema_name,
         "datasets": datasets,
+        "deleted_datasets": deleted_datasets,
+        "managed_tables": table_names,
+        "skipped_tables": skipped_tables,
     }
 
 

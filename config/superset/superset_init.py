@@ -25,11 +25,11 @@ def main() -> None:
     try:
         engine = create_engine(_database_uri(), pool_pre_ping=True)
         with engine.connect() as conn:
-            view_count = conn.execute(text('SELECT COUNT(*) FROM public."EHVOL"')).scalar()
+            view_count = conn.execute(text('SELECT COUNT(*) FROM public.ehvol')).scalar()
             registry_count = conn.execute(text('SELECT COUNT(*) FROM public.unified_registry')).scalar()
         engine.dispose()
         logger.info(
-            "BioLink source database reachable from Superset init: EHVOL=%s unified_registry=%s",
+            "BioLink source database reachable from Superset init: ehvol=%s unified_registry=%s",
             view_count,
             registry_count,
         )

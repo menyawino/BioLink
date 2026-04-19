@@ -1,4 +1,5 @@
 import app.services.etl_service as etl_service
+import app.services.superset_client as superset_client
 import pytest
 
 
@@ -19,6 +20,135 @@ class DummyResponse:
     def raise_for_status(self):
         if self.status_code >= 400:
             raise RuntimeError(self.text or f"HTTP {self.status_code}")
+
+
+class DummyAiohttpSession:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+def test_superset_target_tables_include_current_pipeline_outputs():
+    assert etl_service._superset_target_tables(["bhs"]) == [
+        etl_service.settings.superset_default_table,
+        "_schema_registry",
+        "harmonization_tiers",
+        "harmonization_provenance",
+        "comparability_report",
+        "bhs_participants",
+        "ehvol_participants",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_superset_client_reuses_case_insensitive_dataset_in_same_database(monkeypatch):
+    client = superset_client.SupersetClient(
+        base_url="http://superset",
+        username="admin",
+        password="admin",
+    )
+
+    async def fake_list_resource(session, access_token, resource):
+        assert resource == "dataset"
+        return [
+            {"id": 17, "table_name": "ehvol", "schema": "public", "database": {"id": 9}},
+            {"id": 18, "table_name": "ehvol", "schema": "public", "database": {"id": 10}},
+        ]
+
+    async def fail_request(*args, **kwargs):
+        raise AssertionError("Should not create a new dataset when the managed one already exists")
+
+    monkeypatch.setattr(client, "_list_resource", fake_list_resource)
+    monkeypatch.setattr(client, "_request", fail_request)
+
+    dataset_id = await client.get_or_create_dataset(
+        session=None,
+        access_token="token",
+        csrf_token="csrf",
+        database_id=9,
+        schema="public",
+        table_name="EHVOL",
+    )
+
+    assert dataset_id == 17
+
+
+@pytest.mark.asyncio
+async def test_refresh_superset_registry_datasets_prunes_stale_biolink_datasets(monkeypatch):
+    class FakeSupersetClient:
+        def __init__(self):
+            self.deleted_ids: list[int] = []
+
+        async def bootstrap(self):
+            return {"access_token": "token", "csrf_token": "csrf"}
+
+        async def get_or_create_database(self, *args, **kwargs):
+            return 9
+
+        async def list_datasets(self, *args, **kwargs):
+            return [
+                {"id": 1, "table_name": "ehvol_full", "schema": "public", "database": {"id": 9}},
+                {"id": 2, "table_name": etl_service.settings.superset_default_table, "schema": "public", "database": {"id": 9}},
+                {"id": 3, "table_name": "obsolete_dataset", "schema": "public", "database": {"id": 9}},
+                {"id": 4, "table_name": "manual_other_schema", "schema": "analytics", "database": {"id": 9}},
+                {"id": 5, "table_name": "foreign_database_dataset", "schema": "public", "database": {"id": 11}},
+                {"id": 6, "table_name": "harmonization_tiers", "schema": "public", "database": {"id": 9}},
+                {"id": 13, "table_name": "ehvol", "schema": "public", "database": {"id": 9}},
+                {"id": 20, "table_name": etl_service.settings.superset_default_table, "schema": "public", "database": {"id": 1, "database_name": "BioLink"}},
+            ]
+
+        async def get_or_create_dataset(
+            self,
+            session,
+            access_token,
+            csrf_token,
+            database_id,
+            schema,
+            table_name,
+        ):
+            dataset_ids = {
+                "_schema_registry": 7,
+                "unified_registry": 2,
+                "harmonization_tiers": 6,
+                "harmonization_provenance": 9,
+                "comparability_report": 10,
+                "bhs_participants": 11,
+                "ehvol_participants": 12,
+            }
+            return dataset_ids[table_name]
+
+        async def refresh_dataset(self, *args, **kwargs):
+            return {"status": "ok"}
+
+        async def delete_dataset(self, session, access_token, csrf_token, dataset_id):
+            self.deleted_ids.append(dataset_id)
+
+    fake_client = FakeSupersetClient()
+
+    monkeypatch.setattr(etl_service.aiohttp, "ClientSession", DummyAiohttpSession)
+    monkeypatch.setattr(
+        etl_service.SupersetClient,
+        "from_settings",
+        staticmethod(lambda: fake_client),
+    )
+    monkeypatch.setattr(
+        etl_service,
+        "_existing_superset_target_tables",
+        lambda schema_name, table_names: table_names,
+    )
+
+    result = await etl_service._refresh_superset_registry_datasets_async(["bhs"])
+
+    assert result["ok"] is True
+    assert result["managed_tables"] == etl_service._superset_target_tables(["bhs"])
+    assert result["skipped_tables"] == []
+    assert sorted(fake_client.deleted_ids) == [1, 3, 13, 20]
+    assert sorted(item["dataset_id"] for item in result["deleted_datasets"]) == [1, 3, 13, 20]
 
 
 def test_resolve_pipeline_processor_id_discovers_scripted_processor(monkeypatch):

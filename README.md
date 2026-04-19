@@ -96,13 +96,20 @@ MYF BioLink is a sophisticated registry management system that provides:
 - `patients`: Denormalized source of truth powering clinical and feature-heavy queries such as patient detail, cohort analytics, and complex filters.
 - `EHVOL`: Curated view exposed to list/search endpoints and availability dashboards; keep queries here focused on counts, filters, and data-availability metrics (completeness, imaging/genomics flags).
 
-### Superset dataset naming (CSV stem)
+### Superset managed datasets
 
-When publishing data to Superset via the ETL orchestrator, the dataset name is derived from the ingested CSV filename (without `.csv`, lowercased and sanitized). Example: `db/EHVol_Full.csv` publishes a Superset dataset/view named `ehvol_full`.
+Superset no longer mirrors CSV-stem dataset names such as `ehvol_full`. The ETL publish step now reconciles the BioLink Superset database to the current NiFi homogenization outputs and removes stale BioLink datasets that are no longer part of the managed pipeline.
 
-The application keeps the split explicit: use `patients` for clinical/feature-rich data and most analytic calculations, while `EHVOL` supports the faster list/search availability surfaces.
+Managed Superset datasets:
+- `_schema_registry`
+- `unified_registry`
+- `harmonization_tiers`
+- `harmonization_provenance`
+- `comparability_report`
+- `bhs_participants`
+- `ehvol_participants`
 
-The backend auto-bootstraps these objects at startup.
+The legacy `EHVOL` compatibility view remains in PostgreSQL for backward compatibility, but it is no longer part of the managed Superset dataset set.
 
 ## Getting Started
 
@@ -249,13 +256,28 @@ same ETL plan defined in `docs/README_registry_pipeline.md`:
 ```bash
 curl -X POST http://localhost:3001/api/etl/run \
   -H "Content-Type: application/json" \
-  -d '{"table":"ehvol_full"}'
+  -d '{"datasets":["ehvol","bhs"]}'
 ```
 
 **Stop the stack:**
 ```bash
 docker compose down
 ```
+
+### Cloud deployment guardrails
+
+The main `backend` and `frontend` services in `docker-compose.yml` are now production-safe by default: the backend no longer runs Uvicorn with `--reload`, and the frontend container relies on same-origin proxy paths instead of baking `localhost` API/Ollama URLs into the build.
+
+Before deploying to cloud infrastructure, explicitly override these settings:
+
+- `ENVIRONMENT=production`
+- `SECRET_KEY` with a strong deployment-specific value
+- `SUPERSET_PUBLIC_URL` with the public Superset hostname
+- `CORS_ALLOWED_ORIGINS` with the real frontend origins when you are not serving the API from the same origin
+- `VITE_SUPERSET_URL` if you want the embedded Superset workspace enabled in the frontend build
+- `VITE_SUPERSET_DASHBOARD_ID` set to a valid embeddable Superset dashboard ID if you want the in-app Chart Builder dashboard embed to render
+
+When `ENVIRONMENT` is `production` or `staging`, the backend now fails fast if `SECRET_KEY` is still a dev placeholder or if `SUPERSET_PUBLIC_URL` still points at `localhost`.
 
 ### Alternative: Non-Docker Installation (macOS & Linux)
 

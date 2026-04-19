@@ -1,5 +1,7 @@
+from urllib.parse import urlparse
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -13,6 +15,12 @@ class Settings(BaseSettings):
     port: int = 3001
     host: str = "0.0.0.0"
     environment: str = "development"
+    cors_allowed_origins: str = (
+        "http://localhost:5173,"
+        "http://localhost:3000,"
+        "http://127.0.0.1:5173,"
+        "http://127.0.0.1:3000"
+    )
 
     # Database
     database_url: str = "postgresql://biolink:biolink_secret@localhost:5432/biolink"
@@ -50,12 +58,13 @@ class Settings(BaseSettings):
     superset_admin_email: str = "admin@biolink.local"
     superset_admin_firstname: str = "Bio"
     superset_admin_lastname: str = "Link"
-    superset_database_name: str = "BioLink"
+    superset_database_name: str = "BioLink PostgreSQL"
+    superset_legacy_database_names: str = "BioLink"
     superset_database_uri: str = (
         "postgresql://biolink:biolink_secret@localhost:5432/biolink"
     )
     superset_default_schema: str = "public"
-    superset_default_table: str = "EHVOL"
+    superset_default_table: str = "unified_registry"
 
     # NiFi ETL API
     etl_service_url: str = "https://nifi:8443/nifi-api"
@@ -78,5 +87,41 @@ class Settings(BaseSettings):
         if value.startswith("postgresql://") and "+" not in value.split("://", 1)[0]:
             value = value.replace("postgresql://", "postgresql+psycopg2://", 1)
         return value
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        origins: list[str] = []
+        for raw_origin in str(self.cors_allowed_origins).split(","):
+            origin = raw_origin.strip().rstrip("/")
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
+
+    @staticmethod
+    def _has_localhost_hostname(url: str) -> bool:
+        hostname = urlparse(url).hostname
+        return hostname in {"localhost", "127.0.0.1"}
+
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> "Settings":
+        if self.environment.lower() not in {"production", "staging"}:
+            return self
+
+        if (
+            not self.secret_key
+            or "change-me-in-production" in self.secret_key
+            or "change-in-production" in self.secret_key
+            or self.secret_key.startswith("${SECRET_KEY:-")
+        ):
+            raise ValueError(
+                "SECRET_KEY must be set to a strong deployment-specific value when ENVIRONMENT is production or staging"
+            )
+
+        if self._has_localhost_hostname(self.superset_public_url):
+            raise ValueError(
+                "SUPERSET_PUBLIC_URL must point to a public hostname when ENVIRONMENT is production or staging"
+            )
+
+        return self
 
 settings = Settings()

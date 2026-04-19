@@ -156,6 +156,35 @@ class SupersetClient:
                 return payload["result"]["id"]
         return None
 
+    @staticmethod
+    def _normalize_identifier(value: Any) -> str:
+        return str(value or "").strip().lower()
+
+    @staticmethod
+    def _coerce_int(value: Any) -> int | None:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.isdigit():
+                return int(stripped)
+        return None
+
+    @classmethod
+    def _dataset_database_id(cls, item: dict[str, Any]) -> int | None:
+        raw_database = item.get("database")
+        if isinstance(raw_database, dict):
+            for key in ("id", "value", "database_id"):
+                database_id = cls._coerce_int(raw_database.get(key))
+                if database_id is not None:
+                    return database_id
+
+        database_id = cls._coerce_int(raw_database)
+        if database_id is not None:
+            return database_id
+
+        return cls._coerce_int(item.get("database_id"))
+
     async def _list_resource(
         self, session: aiohttp.ClientSession, access_token: str, resource: str
     ) -> list[dict]:
@@ -164,6 +193,13 @@ class SupersetClient:
             session, "GET", f"/api/v1/{resource}/", access_token, params=params
         )
         return data.get("result") or []
+
+    async def list_datasets(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+    ) -> list[dict]:
+        return await self._list_resource(session, access_token, "dataset")
 
     async def get_or_create_database(
         self,
@@ -208,10 +244,21 @@ class SupersetClient:
         schema: str,
         table_name: str,
     ) -> int:
-        existing = await self._list_resource(session, access_token, "dataset")
+        normalized_schema = self._normalize_identifier(schema)
+        normalized_table_name = self._normalize_identifier(table_name)
+        existing = await self.list_datasets(session, access_token)
         for item in existing:
-            if item.get("table_name") == table_name and item.get("schema") == schema:
-                return int(item["id"])
+            existing_database_id = self._dataset_database_id(item)
+            if existing_database_id is not None and existing_database_id != database_id:
+                continue
+            if self._normalize_identifier(item.get("table_name")) != normalized_table_name:
+                continue
+            if self._normalize_identifier(item.get("schema")) != normalized_schema:
+                continue
+
+            dataset_id = self._coerce_int(item.get("id"))
+            if dataset_id is not None:
+                return dataset_id
 
         payload = {"database": database_id, "schema": schema, "table_name": table_name}
         created = await self._request(
@@ -238,6 +285,21 @@ class SupersetClient:
             session,
             "PUT",
             f"/api/v1/dataset/{dataset_id}/refresh",
+            access_token,
+            csrf_token,
+        )
+
+    async def delete_dataset(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        csrf_token: str,
+        dataset_id: int,
+    ) -> None:
+        await self._request(
+            session,
+            "DELETE",
+            f"/api/v1/dataset/{dataset_id}",
             access_token,
             csrf_token,
         )
