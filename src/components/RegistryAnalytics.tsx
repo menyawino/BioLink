@@ -55,6 +55,8 @@ export function RegistryAnalytics() {
   const { data: ehvolStats, isLoading: ehvolStatsLoading } = useRegistryStats("ehvol");
   const { data: bhsStats, isLoading: bhsStatsLoading } = useRegistryStats("bhs");
   const { data: demographics, isLoading: demoLoading } = useDemographics(dataset);
+  const { data: ehvolDemographics, isLoading: ehvolDemographicsLoading } = useDemographics("ehvol");
+  const { data: bhsDemographics, isLoading: bhsDemographicsLoading } = useDemographics("bhs");
   const { data: completeness, isLoading: compLoading } = useDataCompleteness(dataset);
   const { data: comorbidities, isLoading: comorbidityLoading } = useComorbidities(dataset);
 
@@ -182,6 +184,59 @@ export function RegistryAnalytics() {
         { name: 'BHS', value: bhsStats.totalPatients, color: '#efb01b' },
       ]
     : undefined;
+
+  const totalPopulation = (ehvolStats?.totalPatients || 0) + (bhsStats?.totalPatients || 0);
+  const ehvolFemaleCount = ehvolStats?.femaleCount || 0;
+  const bhsFemaleCount = bhsStats?.femaleCount || 0;
+  const ehvolMaleCount = ehvolStats?.maleCount || 0;
+  const bhsMaleCount = bhsStats?.maleCount || 0;
+  const ehvolFemaleShare = ehvolStats?.totalPatients ? Math.round((ehvolFemaleCount / ehvolStats.totalPatients) * 100) : 0;
+  const bhsFemaleShare = bhsStats?.totalPatients ? Math.round((bhsFemaleCount / bhsStats.totalPatients) * 100) : 0;
+  const womenComparisonData = totalPopulation > 0 ? [
+    {
+      registry: 'EHVol',
+      femaleCount: ehvolFemaleCount,
+      femaleShare: ehvolFemaleShare,
+      maleShare: ehvolStats?.totalPatients ? Math.round((ehvolMaleCount / ehvolStats.totalPatients) * 100) : 0,
+    },
+    {
+      registry: 'BHS',
+      femaleCount: bhsFemaleCount,
+      femaleShare: bhsFemaleShare,
+      maleShare: bhsStats?.totalPatients ? Math.round((bhsMaleCount / bhsStats.totalPatients) * 100) : 0,
+    }
+  ] : undefined;
+
+  const topDemographicComparison = [
+    {
+      registry: 'EHVol',
+      topNationality: ehvolDemographics?.nationality?.[0]?.nationality || 'N/A',
+      topNationalityCount: ehvolDemographics?.nationality?.[0]?.count || 0,
+    },
+    {
+      registry: 'BHS',
+      topNationality: bhsDemographics?.nationality?.[0]?.nationality || 'N/A',
+      topNationalityCount: bhsDemographics?.nationality?.[0]?.count || 0,
+    }
+  ];
+
+  const cdmExamples = [
+    {
+      canonical: 'gender',
+      sources: 'EHVol gender, BHS gender',
+      example: 'Female across both registries rolls into one harmonized person field.',
+    },
+    {
+      canonical: 'age_at_enrollment',
+      sources: 'EHVol age_at_enrollment, BHS age',
+      example: 'Both source columns map to a single comparable enrollment-age concept.',
+    },
+    {
+      canonical: 'nationality',
+      sources: 'BHS nationality, EHVol fallback demographic fields',
+      example: 'Demographic distribution can be compared once values are standardized into one field.',
+    },
+  ];
 
   return (
     <div className="analytics-shell space-y-6">
@@ -369,6 +424,134 @@ export function RegistryAnalytics() {
         </TabsList>
 
         <TabsContent value="demographics" className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <Card className="xl:col-span-2">
+              <CardHeader>
+                <CardTitle>Common Data Model Examples</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Practical harmonized fields already used to compare EHVol and BHS in one model.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {cdmExamples.map((item) => (
+                  <div key={item.canonical} className="rounded-xl border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium">{item.canonical}</span>
+                      <Badge variant="outline">Canonical field</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">{item.sources}</p>
+                    <p className="mt-2 text-sm">{item.example}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Women Across EHVol And BHS</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Fast comparison using the harmonized gender field.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {ehvolStatsLoading || bhsStatsLoading ? (
+                  <AnalyticsChartSkeleton />
+                ) : womenComparisonData ? (
+                  <div className="space-y-4">
+                    {womenComparisonData.map((item) => (
+                      <div key={item.registry} className="rounded-xl border p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{item.registry}</span>
+                          <span>{item.femaleCount.toLocaleString()} women</span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+                          <span>Female share</span>
+                          <span>{item.femaleShare}%</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
+                          <span>Male share</span>
+                          <span>{item.maleShare}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <DataNotAvailable title="Women Comparison" message="Cross-registry women counts are not available" />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {dataset === 'all' && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Sex Distribution By Registry</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {ehvolStatsLoading || bhsStatsLoading ? (
+                    <AnalyticsChartSkeleton />
+                  ) : womenComparisonData ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={womenComparisonData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="registry" />
+                        <YAxis domain={[0, 100]} />
+                        <Tooltip formatter={(value) => [`${value}%`, 'Share']} />
+                        <Bar dataKey="femaleShare" fill="#ec4899" name="Female %" />
+                        <Bar dataKey="maleShare" fill="#3b82f6" name="Male %" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <DataNotAvailable title="Sex Distribution" message="Registry-level sex distribution is not available" />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Demographic Distribution By Registry</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {ehvolDemographicsLoading || bhsDemographicsLoading ? (
+                    <AnalyticsChartSkeleton />
+                  ) : (
+                    <div className="space-y-4">
+                      {topDemographicComparison.map((item) => (
+                        <div key={item.registry} className="rounded-xl border p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{item.registry}</span>
+                            <span>{item.topNationality}</span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+                            <span>Top demographic category</span>
+                            <span>{item.topNationalityCount.toLocaleString()} records</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {dataset === 'all' && !statsLoading && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Age Distribution And Normals Status</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Age normalization for women across EHVol and BHS cannot be computed yet because no age-band records are currently returned by the analytics API.
+                </p>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                <div className="flex justify-between"><span>All registries with age bands</span><span>{demographics?.ageGender?.length || 0}</span></div>
+                <div className="flex justify-between"><span>EHVol with age bands</span><span>{ehvolDemographics?.ageGender?.length || 0}</span></div>
+                <div className="flex justify-between"><span>BHS with age bands</span><span>{bhsDemographics?.ageGender?.length || 0}</span></div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
               <CardHeader>

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +34,7 @@ _DATASET_TABLE_CONFIG = {
     },
 }
 _REGISTRY_TABLES = ["unified_registry", "bhs_participants", "ehvol_participants"]
+_PG_IDENTIFIER_LIMIT = 63
 
 
 def _workspace_root() -> Path:
@@ -228,40 +231,72 @@ def _clean_cell(value: str | None, data_type: str):
     return text_value
 
 
+def _safe_pg_identifier(name: str, used_names: set[str]) -> str:
+    normalized = re.sub(r"[^0-9a-zA-Z_]+", "_", str(name).strip()).strip("_").lower()
+    if not normalized:
+        normalized = "column"
+    if normalized[0].isdigit():
+        normalized = f"col_{normalized}"
+
+    candidate = normalized[:_PG_IDENTIFIER_LIMIT]
+    if candidate not in used_names and len(normalized) <= _PG_IDENTIFIER_LIMIT:
+        used_names.add(candidate)
+        return candidate
+
+    digest = hashlib.sha1(str(name).encode("utf-8")).hexdigest()[:8]
+    stem_limit = _PG_IDENTIFIER_LIMIT - len(digest) - 1
+    candidate = f"{normalized[:stem_limit].rstrip('_')}_{digest}"
+    counter = 1
+    while candidate in used_names:
+        suffix = f"_{digest}{counter}"
+        stem_limit = _PG_IDENTIFIER_LIMIT - len(suffix)
+        candidate = f"{normalized[:stem_limit].rstrip('_')}{suffix}"
+        counter += 1
+    used_names.add(candidate)
+    return candidate
+
+
 def _load_unified_registry(raw_conn, csv_path: Path, table_name: str) -> int:
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
+        columns = reader.fieldnames or []
+
+    if not columns:
+        raise ValueError(f"Registry snapshot '{csv_path}' has no header row")
+
+    used_names: set[str] = set()
+    column_map = {column: _safe_pg_identifier(column, used_names) for column in columns}
+    payload = [
+        tuple((row.get(column) or "").strip() or None for column in columns)
+        for row in rows
+    ]
 
     with raw_conn.cursor() as cursor:
         cursor.execute(
-            sql.SQL(
-                "CREATE TABLE IF NOT EXISTS {} ("
-                "id BIGSERIAL PRIMARY KEY, "
-                "cohort TEXT NOT NULL, "
-                "clinical_data JSONB NOT NULL, "
-                "loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-                ")"
-            ).format(sql.Identifier(table_name))
-        )
-        cursor.execute(
-            sql.SQL("TRUNCATE TABLE {} RESTART IDENTITY").format(
+            sql.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
                 sql.Identifier(table_name)
             )
         )
-        payload = [
-            (
-                row.get("cohort", ""),
-                Json({key: value for key, value in row.items() if key != "cohort"}),
+        cursor.execute(
+            sql.SQL("CREATE TABLE {} ({})").format(
+                sql.Identifier(table_name),
+                sql.SQL(", ").join(
+                    sql.SQL("{} TEXT").format(sql.Identifier(column_map[column]))
+                    for column in columns
+                ),
             )
-            for row in rows
-        ]
+        )
         if payload:
+            insert_sql = sql.SQL("INSERT INTO {} ({}) VALUES %s").format(
+                sql.Identifier(table_name),
+                sql.SQL(", ").join(
+                    sql.Identifier(column_map[column]) for column in columns
+                ),
+            )
             execute_values(
                 cursor,
-                sql.SQL("INSERT INTO {} (cohort, clinical_data) VALUES %s")
-                .format(sql.Identifier(table_name))
-                .as_string(cursor),
+                insert_sql.as_string(cursor),
                 payload,
                 page_size=250,
             )

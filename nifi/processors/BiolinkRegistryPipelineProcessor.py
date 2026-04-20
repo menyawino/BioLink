@@ -14,8 +14,10 @@ scripts-based registry pipeline.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +25,9 @@ from uuid import uuid4
 
 from nifiapi.flowfiletransform import FlowFileTransform, FlowFileTransformResult
 from nifiapi.properties import ExpressionLanguageScope, PropertyDescriptor
+
+
+_PG_IDENTIFIER_LIMIT = 63
 
 
 def _count_csv_rows(path: Path) -> tuple[int, int]:
@@ -111,6 +116,31 @@ def _infer_sql_type(column_name: str, sample_values: list[str]) -> str:
     return "TEXT"
 
 
+def _safe_pg_identifier(name: str, used_names: set[str]) -> str:
+    normalized = re.sub(r"[^0-9a-zA-Z_]+", "_", str(name).strip()).strip("_").lower()
+    if not normalized:
+        normalized = "column"
+    if normalized[0].isdigit():
+        normalized = f"col_{normalized}"
+
+    candidate = normalized[:_PG_IDENTIFIER_LIMIT]
+    if candidate not in used_names and len(normalized) <= _PG_IDENTIFIER_LIMIT:
+        used_names.add(candidate)
+        return candidate
+
+    digest = hashlib.sha1(str(name).encode("utf-8")).hexdigest()[:8]
+    stem_limit = _PG_IDENTIFIER_LIMIT - len(digest) - 1
+    candidate = f"{normalized[:stem_limit].rstrip('_')}_{digest}"
+    counter = 1
+    while candidate in used_names:
+        suffix = f"_{digest}{counter}"
+        stem_limit = _PG_IDENTIFIER_LIMIT - len(suffix)
+        candidate = f"{normalized[:stem_limit].rstrip('_')}{suffix}"
+        counter += 1
+    used_names.add(candidate)
+    return candidate
+
+
 def _create_or_replace_csv_table(conn, csv_path: Path, table_name: str, sql_module) -> int:
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
@@ -149,33 +179,41 @@ def _create_or_replace_csv_table(conn, csv_path: Path, table_name: str, sql_modu
 
 
 def _load_unified_registry(conn, csv_path: Path, table_name: str, sql_module, json_cls, execute_values_fn) -> int:
+    del json_cls
+
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
+        columns = reader.fieldnames or []
+
+    if not columns:
+        raise ValueError(f"CSV '{csv_path}' has no header row")
+
+    used_names: set[str] = set()
+    column_map = {column: _safe_pg_identifier(column, used_names) for column in columns}
+    payload = [tuple((row.get(column) or "").strip() or None for column in columns) for row in rows]
 
     with conn.cursor() as cursor:
         cursor.execute(sql_module.SQL("DROP TABLE IF EXISTS {} CASCADE").format(sql_module.Identifier(table_name)))
         cursor.execute(
-            sql_module.SQL(
-                "CREATE TABLE {} ("
-                "id BIGSERIAL PRIMARY KEY, "
-                "cohort TEXT NOT NULL, "
-                "clinical_data JSONB NOT NULL, "
-                "loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-                ")"
-            ).format(sql_module.Identifier(table_name))
-        )
-        payload = [
-            (
-                row.get("cohort", ""),
-                json_cls({key: value for key, value in row.items() if key != "cohort"}),
+            sql_module.SQL("CREATE TABLE {} ({})").format(
+                sql_module.Identifier(table_name),
+                sql_module.SQL(", ").join(
+                    sql_module.SQL("{} TEXT").format(sql_module.Identifier(column_map[column]))
+                    for column in columns
+                ),
             )
-            for row in rows
-        ]
+        )
         if payload:
+            insert_sql = sql_module.SQL("INSERT INTO {} ({}) VALUES %s").format(
+                sql_module.Identifier(table_name),
+                sql_module.SQL(", ").join(
+                    sql_module.Identifier(column_map[column]) for column in columns
+                ),
+            )
             execute_values_fn(
                 cursor,
-                sql_module.SQL("INSERT INTO {} (cohort, clinical_data) VALUES %s").format(sql_module.Identifier(table_name)).as_string(conn),
+                insert_sql.as_string(conn),
                 payload,
             )
     conn.commit()
@@ -455,7 +493,7 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
     )
     UNIFIED_TABLE_NAME = PropertyDescriptor(
         name="Unified Registry Table",
-        description="Table used to store the wide unified registry snapshot as JSONB per patient.",
+        description="Table used to store the wide unified registry snapshot with one column per harmonized field.",
         required=True,
         default_value="unified_registry",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
