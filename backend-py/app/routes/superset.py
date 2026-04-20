@@ -21,7 +21,7 @@ class SupersetProgrammaticRequest(BaseModel):
 
 
 class SupersetDashboardEmbedRequest(BaseModel):
-    dashboard_id: int
+    dashboard_id: str | int | None = None
 
 
 @router.post("/programmatic")
@@ -131,6 +131,14 @@ async def create_programmatic_chart(req: SupersetProgrammaticRequest):
 @router.post("/embed/dashboard")
 async def create_dashboard_embed(req: SupersetDashboardEmbedRequest):
     client = SupersetClient.from_settings()
+    dashboard_ref = str(
+        req.dashboard_id or settings.superset_default_dashboard_ref
+    ).strip()
+    if not dashboard_ref:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing dashboard_id and no default dashboard reference configured",
+        )
 
     async with aiohttp.ClientSession(
         cookie_jar=aiohttp.CookieJar(unsafe=True)
@@ -144,7 +152,7 @@ async def create_dashboard_embed(req: SupersetDashboardEmbedRequest):
                 session,
                 access_token,
                 csrf_token,
-                req.dashboard_id,
+                dashboard_ref,
             )
 
             resources = [{"type": "dashboard", "id": embedded_uuid}]
@@ -158,7 +166,7 @@ async def create_dashboard_embed(req: SupersetDashboardEmbedRequest):
             return {
                 "success": True,
                 "data": {
-                    "dashboard_id": req.dashboard_id,
+                    "dashboard_id": dashboard_ref,
                     "embedded_uuid": embedded_uuid,
                     "guest_token": guest_token,
                     "superset_domain": settings.superset_public_url,

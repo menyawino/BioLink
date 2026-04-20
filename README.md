@@ -275,10 +275,10 @@ Before deploying to cloud infrastructure, explicitly override these settings:
 - `SUPERSET_PUBLIC_URL` with the public Superset hostname
 - `CORS_ALLOWED_ORIGINS` with the real frontend origins when you are not serving the API from the same origin
 - `VITE_SUPERSET_URL` if you want the embedded Superset workspace enabled in the frontend build
-- `VITE_SUPERSET_DASHBOARD_ID` set to a valid Superset dashboard numeric ID; the backend now provisions the embedded dashboard config and resolves the embedded UUID used by the in-app Chart Builder
-- `SUPERSET_EMBEDDED_ALLOWED_DOMAINS` with the frontend origins allowed to embed Superset dashboards, for example `http://localhost:3000` or `https://app.example.com`. Leave it unset to fall back to origins derived from `CORS_ALLOWED_ORIGINS`.
+- `VITE_SUPERSET_DASHBOARD_ID` set to a valid Superset dashboard id or slug; the backend now provisions the embedded dashboard config and resolves the embedded UUID used by the in-app Chart Builder
+- `SUPERSET_EMBEDDED_ALLOWED_DOMAINS` only when Superset should allow a narrower embed-origin subset than `CORS_ALLOWED_ORIGINS`. Leave it unset to let the backend guest-token flow and Superset CORS share the same origin list by default.
 
-The Superset container bootstrap now also grants the guest embed role the read permissions needed by the embedded dashboard runtime, cleans orphaned dashboard chart placeholders left behind by chart cleanup, ensures the BioLink PostgreSQL datasets used by the verification workspace exist in Superset metadata, and seeds dashboard 10 with verification charts backed by `unified_registry`, `harmonization_tiers`, and `harmonization_provenance`.
+The Superset container bootstrap now also grants the guest embed role the read permissions needed by the embedded dashboard runtime, cleans orphaned dashboard chart placeholders left behind by chart cleanup, ensures the BioLink PostgreSQL datasets used by the verification workspace exist in Superset metadata, seeds the `biolink-verification-dashboard` dashboard with verification charts backed by `unified_registry`, `harmonization_tiers`, and `harmonization_provenance`, and keeps Superset metadata in its own PostgreSQL schema by default.
 
 When `ENVIRONMENT` is `production` or `staging`, the backend now fails fast if `SECRET_KEY` is still a dev placeholder or if `SUPERSET_PUBLIC_URL` still points at `localhost`.
 

@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     )
     superset_default_schema: str = "public"
     superset_default_table: str = "unified_registry"
+    superset_default_dashboard_ref: str = "biolink-verification-dashboard"
     superset_embedded_allowed_domains: str = ""
 
     # NiFi ETL API

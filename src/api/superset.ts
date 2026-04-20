@@ -20,11 +20,11 @@ export interface SupersetProgrammaticResponse {
 }
 
 export interface SupersetDashboardEmbedRequest {
-  dashboard_id: number;
+  dashboard_id?: string;
 }
 
 export interface SupersetDashboardEmbedResponse {
-  dashboard_id: number;
+  dashboard_id: string;
   embedded_uuid: string;
   guest_token: string;
   superset_domain: string;

@@ -6,14 +6,13 @@ import { Button } from "./ui/button";
 import { getSupersetDashboardEmbed } from "../api/superset";
 
 const SUPERSET_URL_KEY = "biolink.superset.url";
-const CONFIGURED_DASHBOARD_ID = Number(
-  String(import.meta.env.VITE_SUPERSET_DASHBOARD_ID ?? "").trim(),
+const CONFIGURED_DASHBOARD_REF = String(
+  import.meta.env.VITE_SUPERSET_DASHBOARD_ID ?? "",
 );
 
-function getConfiguredDashboardId() {
-  return Number.isInteger(CONFIGURED_DASHBOARD_ID) && CONFIGURED_DASHBOARD_ID > 0
-    ? CONFIGURED_DASHBOARD_ID
-    : null;
+function getConfiguredDashboardRef() {
+  const configuredDashboardRef = CONFIGURED_DASHBOARD_REF.trim();
+  return configuredDashboardRef || null;
 }
 
 function getDefaultSupersetUrl() {
@@ -44,18 +43,18 @@ export function SupersetWorkspace() {
   const [embedError, setEmbedError] = useState<string | null>(null);
   const [embedDomain, setEmbedDomain] = useState("");
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const dashboardId = getConfiguredDashboardId();
+  const dashboardRef = getConfiguredDashboardRef();
 
   const launchUrl = useMemo(() => {
     const baseUrl = (embedDomain || url).replace(/\/$/, "");
     if (!baseUrl) {
       return "";
     }
-    if (dashboardId) {
-      return `${baseUrl}/superset/dashboard/${dashboardId}/`;
+    if (dashboardRef) {
+      return `${baseUrl}/superset/dashboard/${encodeURIComponent(dashboardRef)}/`;
     }
     return `${baseUrl}/superset/welcome/`;
-  }, [dashboardId, embedDomain, url]);
+  }, [dashboardRef, embedDomain, url]);
 
   const statusLabel =
     embedState === "ready"
@@ -85,12 +84,12 @@ export function SupersetWorkspace() {
     if (!mountRef.current) {
       return;
     }
-    if (!dashboardId) {
+    if (!dashboardRef) {
       setEmbedState(launchUrl ? "fallback" : "error");
       setEmbedError(
         launchUrl
           ? null
-          : "Set VITE_SUPERSET_DASHBOARD_ID to a valid embeddable dashboard ID to render analytics inline.",
+          : "Set VITE_SUPERSET_DASHBOARD_ID to a valid Superset dashboard id or slug to render analytics inline.",
       );
       mountRef.current.replaceChildren();
       return;
@@ -102,7 +101,7 @@ export function SupersetWorkspace() {
 
     const fetchEmbedPayload = async () => {
       const response = await getSupersetDashboardEmbed({
-        dashboard_id: dashboardId,
+        dashboard_id: dashboardRef,
       });
       if (!response.success || !response.data) {
         throw new Error(
@@ -190,7 +189,7 @@ export function SupersetWorkspace() {
         mountRef.current.replaceChildren();
       }
     };
-  }, [dashboardId, launchUrl]);
+  }, [dashboardRef, launchUrl]);
 
   return (
     <div className="space-y-5">

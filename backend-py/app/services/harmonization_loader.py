@@ -23,23 +23,50 @@ _ARTIFACT_TABLES = {
 
 
 def _workspace_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    explicit_root = os.getenv("BIOLINK_WORKSPACE_ROOT")
+    if explicit_root:
+        return Path(explicit_root)
+
+    candidates = [
+        Path("/app"),
+        Path(__file__).resolve().parents[3],
+        Path.cwd(),
+    ]
+    for candidate in candidates:
+        if (candidate / "outputs").exists():
+            return candidate
+    return candidates[0]
+
+
+def _resolve_artifact_path(env_var_name: str, filename: str) -> Path:
+    explicit_path = os.getenv(env_var_name)
+    if explicit_path:
+        return Path(explicit_path)
+
+    candidates = [
+        Path("/app/outputs") / filename,
+        _workspace_root() / "outputs" / filename,
+        Path.cwd() / "outputs" / filename,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def resolve_harmonization_artifact_paths() -> dict[str, Path]:
-    root = _workspace_root()
     return {
-        "tiers": Path(
-            os.getenv("HARMONIZATION_TIERS_PATH", root / "outputs" / "harmonization_tiers.csv")
+        "tiers": _resolve_artifact_path(
+            "HARMONIZATION_TIERS_PATH",
+            "harmonization_tiers.csv",
         ),
-        "provenance": Path(
-            os.getenv("HARMONIZATION_PROVENANCE_PATH", root / "outputs" / "provenance.csv")
+        "provenance": _resolve_artifact_path(
+            "HARMONIZATION_PROVENANCE_PATH",
+            "provenance.csv",
         ),
-        "comparability": Path(
-            os.getenv(
-                "COMPARABILITY_REPORT_PATH",
-                root / "outputs" / "comparability_report.json",
-            )
+        "comparability": _resolve_artifact_path(
+            "COMPARABILITY_REPORT_PATH",
+            "comparability_report.json",
         ),
     }
 

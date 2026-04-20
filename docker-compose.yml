@@ -180,7 +180,7 @@ services:
         VITE_OLLAMA_TOOL_MODEL_FALLBACK: llama3.2:3b
         VITE_SQL_AGENT_ENABLED: "true"
         VITE_SUPERSET_URL: ${VITE_SUPERSET_URL:-}
-        VITE_SUPERSET_DASHBOARD_ID: "10"
+        VITE_SUPERSET_DASHBOARD_ID: "biolink-verification-dashboard"
         VITE_NIFI_URL: ${VITE_NIFI_URL:-}
     container_name: biolink-frontend
     depends_on:
@@ -220,7 +220,7 @@ services:
       VITE_OLLAMA_TOOL_MODEL_FALLBACK: llama3.2:3b
       VITE_SQL_AGENT_ENABLED: "true"
       VITE_SUPERSET_URL: http://localhost:8088
-      VITE_SUPERSET_DASHBOARD_ID: "10"
+      VITE_SUPERSET_DASHBOARD_ID: "biolink-verification-dashboard"
       VITE_NIFI_URL: /nifi/
       CHOKIDAR_USEPOLLING: "true"
     volumes:
@@ -268,6 +268,13 @@ services:
       BIOLINK_PG_DB: biolink
       BIOLINK_PG_USER: biolink
       BIOLINK_PG_PASSWORD: biolink_secret
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000}
+      SUPERSET_EMBEDDED_ALLOWED_DOMAINS: ${SUPERSET_EMBEDDED_ALLOWED_DOMAINS:-}
+      SUPERSET_METADATA_DATABASE_URI: ${SUPERSET_METADATA_DATABASE_URI:-postgresql+psycopg2://biolink:biolink_secret@postgres:5432/biolink}
+      SUPERSET_METADATA_SCHEMA: ${SUPERSET_METADATA_SCHEMA:-superset_meta}
+      SUPERSET_RATELIMIT_STORAGE_URI: ${SUPERSET_RATELIMIT_STORAGE_URI:-redis://redis:6379/1}
+      SUPERSET_VERIFICATION_DASHBOARD_TITLE: "${SUPERSET_VERIFICATION_DASHBOARD_TITLE:-BioLink Verification Dashboard}"
+      SUPERSET_VERIFICATION_DASHBOARD_SLUG: ${SUPERSET_VERIFICATION_DASHBOARD_SLUG:-biolink-verification-dashboard}
     ports:
       - "8088:8088"
     volumes:
@@ -283,22 +290,46 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       backend:
         condition: service_healthy
     command:
       - /bin/sh
       - -c
       - |
-        superset db upgrade && \
+        set -e
+        /app/.venv/bin/python - <<'PY'
+        import os
+
+        from sqlalchemy import create_engine, text
+
+        metadata_uri = os.getenv("SUPERSET_METADATA_DATABASE_URI", "").strip()
+        metadata_schema = os.getenv("SUPERSET_METADATA_SCHEMA", "").strip()
+
+        if metadata_uri and metadata_schema:
+            engine = create_engine(metadata_uri, pool_pre_ping=True)
+            quoted_schema = metadata_schema.replace('"', '""')
+            with engine.begin() as connection:
+                connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{quoted_schema}"'))
+            engine.dispose()
+        PY
+        superset db upgrade
         superset fab create-admin \
           --username "$${SUPERSET_ADMIN_USER}" \
           --firstname "$${SUPERSET_ADMIN_FIRSTNAME}" \
           --lastname "$${SUPERSET_ADMIN_LASTNAME}" \
           --email "$${SUPERSET_ADMIN_EMAIL}" \
-          --password "$${SUPERSET_ADMIN_PASSWORD}" || true && \
-        superset init && \
-        /app/.venv/bin/python /app/superset_init.py || true && \
-        superset run -h 0.0.0.0 -p 8088
+          --password "$${SUPERSET_ADMIN_PASSWORD}" || true
+        superset init
+        /app/.venv/bin/python /app/superset_init.py
+        exec /app/.venv/bin/gunicorn \
+          --bind 0.0.0.0:8088 \
+          --workers "$${SUPERSET_GUNICORN_WORKERS:-2}" \
+          --worker-class gthread \
+          --threads "$${SUPERSET_GUNICORN_THREADS:-8}" \
+          --timeout "$${SUPERSET_GUNICORN_TIMEOUT:-120}" \
+          "superset.app:create_app()"
     profiles:
       - optional
 

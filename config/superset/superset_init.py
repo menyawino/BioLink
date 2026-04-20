@@ -16,7 +16,15 @@ EMBEDDED_GUEST_PERMISSIONS = (
     ("can_read", "Dashboard"),
 )
 LAYOUT_CONTAINER_TYPES = {"GRID", "ROW", "COLUMN", "TAB", "TABS"}
-VERIFICATION_DASHBOARD_ID = int(os.getenv("SUPERSET_VERIFICATION_DASHBOARD_ID", "10"))
+VERIFICATION_DASHBOARD_ID_HINT = os.getenv("SUPERSET_VERIFICATION_DASHBOARD_ID", "").strip()
+VERIFICATION_DASHBOARD_TITLE = (
+    os.getenv("SUPERSET_VERIFICATION_DASHBOARD_TITLE", "BioLink Verification Dashboard").strip()
+    or "BioLink Verification Dashboard"
+)
+VERIFICATION_DASHBOARD_SLUG = (
+    os.getenv("SUPERSET_VERIFICATION_DASHBOARD_SLUG", "biolink-verification-dashboard").strip()
+    or "biolink-verification-dashboard"
+)
 SUPERSET_DATABASE_NAME = os.getenv("SUPERSET_DATABASE_NAME", "BioLink PostgreSQL")
 SUPERSET_DATABASE_SCHEMA = os.getenv("SUPERSET_DATABASE_SCHEMA", "public")
 VERIFICATION_CHART_SPECS = (
@@ -268,10 +276,85 @@ def _verification_dashboard_position(charts: list[Any]) -> dict[str, Any]:
     return position
 
 
+def _verification_dashboard_id_hint() -> int | None:
+    if VERIFICATION_DASHBOARD_ID_HINT.isdigit():
+        return int(VERIFICATION_DASHBOARD_ID_HINT)
+    return None
+
+
+def _ensure_verification_dashboard(db: Any, admin_user: Any) -> tuple[Any, bool]:
+    from superset.models.dashboard import Dashboard
+
+    dashboard = None
+
+    if VERIFICATION_DASHBOARD_SLUG:
+        dashboard = (
+            db.session.query(Dashboard)
+            .filter(Dashboard.slug == VERIFICATION_DASHBOARD_SLUG)
+            .order_by(Dashboard.id.asc())
+            .first()
+        )
+
+    id_hint = _verification_dashboard_id_hint()
+    if dashboard is None and id_hint is not None:
+        dashboard = db.session.query(Dashboard).get(id_hint)
+
+    if dashboard is None and VERIFICATION_DASHBOARD_TITLE:
+        dashboard = (
+            db.session.query(Dashboard)
+            .filter(Dashboard.dashboard_title == VERIFICATION_DASHBOARD_TITLE)
+            .order_by(Dashboard.id.asc())
+            .first()
+        )
+
+    if dashboard is None:
+        dashboard = Dashboard(
+            dashboard_title=VERIFICATION_DASHBOARD_TITLE,
+            slug=VERIFICATION_DASHBOARD_SLUG,
+            position_json=json.dumps(_empty_dashboard_position()),
+            json_metadata="{}",
+            published=True,
+        )
+        dashboard.owners = [admin_user]
+        db.session.add(dashboard)
+        db.session.flush()
+        logger.info(
+            "Created verification dashboard %s (slug=%s id=%s)",
+            dashboard.dashboard_title,
+            dashboard.slug,
+            dashboard.id,
+        )
+        return dashboard, True
+
+    updated = False
+    desired_owners = {admin_user.id}
+    current_owners = {owner.id for owner in dashboard.owners}
+
+    if dashboard.dashboard_title != VERIFICATION_DASHBOARD_TITLE:
+        dashboard.dashboard_title = VERIFICATION_DASHBOARD_TITLE
+        updated = True
+    if dashboard.slug != VERIFICATION_DASHBOARD_SLUG:
+        dashboard.slug = VERIFICATION_DASHBOARD_SLUG
+        updated = True
+    if current_owners != desired_owners:
+        dashboard.owners = [admin_user]
+        updated = True
+    if not dashboard.position_json:
+        dashboard.position_json = json.dumps(_empty_dashboard_position())
+        updated = True
+    if not dashboard.json_metadata:
+        dashboard.json_metadata = "{}"
+        updated = True
+    if not dashboard.published:
+        dashboard.published = True
+        updated = True
+
+    return dashboard, updated
+
+
 def _seed_verification_dashboard(app: Any, db: Any) -> None:
     try:
         from flask import g
-        from superset.models.dashboard import Dashboard
 
         admin_username = os.getenv("SUPERSET_ADMIN_USER", "admin")
         admin_user = app.appbuilder.sm.find_user(username=admin_username)
@@ -282,13 +365,7 @@ def _seed_verification_dashboard(app: Any, db: Any) -> None:
             )
             return
 
-        dashboard = db.session.query(Dashboard).get(VERIFICATION_DASHBOARD_ID)
-        if dashboard is None:
-            logger.warning(
-                "Superset verification dashboard %s not found; skipping chart seed",
-                VERIFICATION_DASHBOARD_ID,
-            )
-            return
+        dashboard, dashboard_updated = _ensure_verification_dashboard(db, admin_user)
 
         g.user = admin_user
         database = _ensure_biolink_database(db)
@@ -305,7 +382,7 @@ def _seed_verification_dashboard(app: Any, db: Any) -> None:
         }
 
         charts: list[Any] = []
-        chart_ids_changed = False
+        dashboard_changed = dashboard_updated
         for spec in VERIFICATION_CHART_SPECS:
             chart, updated = _sync_chart(
                 db,
@@ -316,7 +393,7 @@ def _seed_verification_dashboard(app: Any, db: Any) -> None:
                 spec["params"],
             )
             charts.append(chart)
-            chart_ids_changed = chart_ids_changed or updated
+            dashboard_changed = dashboard_changed or updated
 
         target_chart_ids = [chart.id for chart in charts]
         current_chart_ids = [chart.id for chart in dashboard.slices or []]
@@ -325,25 +402,29 @@ def _seed_verification_dashboard(app: Any, db: Any) -> None:
 
         if current_chart_ids != target_chart_ids:
             dashboard.slices = charts
-            chart_ids_changed = True
+            dashboard_changed = True
         if current_position != target_position:
             dashboard.position_json = json.dumps(target_position)
-            chart_ids_changed = True
+            dashboard_changed = True
         if not dashboard.published:
             dashboard.published = True
-            chart_ids_changed = True
+            dashboard_changed = True
 
         db.session.commit()
-        if chart_ids_changed:
+        if dashboard_changed:
             logger.info(
-                "Seeded verification dashboard %s with charts %s",
-                VERIFICATION_DASHBOARD_ID,
+                "Seeded verification dashboard %s (slug=%s id=%s) with charts %s",
+                dashboard.dashboard_title,
+                dashboard.slug,
+                dashboard.id,
                 ", ".join(str(chart_id) for chart_id in target_chart_ids),
             )
         else:
             logger.info(
-                "Verification dashboard %s already matched the seeded chart set",
-                VERIFICATION_DASHBOARD_ID,
+                "Verification dashboard %s (slug=%s id=%s) already matched the seeded chart set",
+                dashboard.dashboard_title,
+                dashboard.slug,
+                dashboard.id,
             )
     except Exception as exc:
         db.session.rollback()
