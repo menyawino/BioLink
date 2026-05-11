@@ -9,6 +9,7 @@ import { Badge } from "./ui/badge";
 import { Send, Loader2, Bot, User, Sparkles, ArrowRight, Activity, Users, BarChart3, Copy, Check } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { chatWithAgent, callTool, chatWithSqlAgent, chatWithOrchestrator, AgentResponseChunk, ChatMessage, ToolCall } from "../api/agent";
+import SafeMarkdown from "./SafeMarkdown";
 
 interface Message {
   id: string;
@@ -130,10 +131,12 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
   switch (chunk.type) {
     case 'text':
       const textContent = isStreaming ? displayedText : chunk.content;
-      const htmlContent = parseMarkdown(textContent) + (isStreaming && isTyping ? '<span class="animate-pulse text-primary">|</span>' : '');
       
       return (
-        <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+        <span className="whitespace-pre-wrap">
+          <SafeMarkdown content={textContent} />
+          {isStreaming && isTyping && <span className="animate-pulse text-primary">|</span>}
+        </span>
       );
 
     case 'code':
@@ -180,9 +183,10 @@ function ChunkRenderer({ chunk, isStreaming = false }: { chunk: AgentResponseChu
             <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium text-sm text-blue-900 dark:text-blue-100 mb-1">Reasoning</p>
-              <span className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap" dangerouslySetInnerHTML={{ 
-                __html: (isStreaming ? parseMarkdown(displayedText) : parseMarkdown(chunk.content)) + (isStreaming && isTyping ? '<span class="animate-pulse text-blue-600">|</span>' : '')
-              }} />
+              <span className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">
+                <SafeMarkdown content={isStreaming ? displayedText : chunk.content} />
+                {isStreaming && isTyping && <span className="animate-pulse text-blue-600">|</span>}
+              </span>
             </div>
           </div>
         </div>
@@ -211,10 +215,11 @@ function StreamingTextRenderer({ chunks, isStreaming }: { chunks: AgentResponseC
     .replace(/\n\s*\n/g, '\n') // Remove extra blank lines
     .trim();
   
-  const htmlContent = parseMarkdown(formattedContent) + (isStreaming ? '<span class="animate-pulse text-primary">|</span>' : '');
-  
   return (
-    <span className="whitespace-pre-line" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+    <span className="whitespace-pre-line">
+      <SafeMarkdown content={formattedContent} />
+      {isStreaming && <span className="animate-pulse text-primary">|</span>}
+    </span>
   );
 }
 
@@ -715,7 +720,9 @@ Rules:
                         ))}
                       </div>
                     ) : (
-                      <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseMarkdown(message.content) }} />
+                      <span className="whitespace-pre-wrap">
+                        <SafeMarkdown content={message.content} />
+                      </span>
                     )}
                   </div>
 

@@ -134,37 +134,30 @@ const capabilities: Capability[] = [
   {
     label: "Family 3",
     title: "Semantic ML mapping",
-    description: "This codebase uses SapBERT-based embedding similarity to capture biomedical semantics beyond literal token overlap.",
+    description: "This codebase now standardizes cohorts through the db/test preparation flow, combining profiling, range rules, unit extraction, and fuzzy canonicalization.",
     icon: Brain,
-    bullets: ["Clinical lexicon expansion before embeddings", "SapBERT sentence embedding similarity", "Top-k candidate generation for validation stage"],
+    bullets: ["Normalization profiling by observed values", "Range cleaning and outlier quarantine", "Geographic and nationality canonicalization"],
   },
   {
     label: "Family 4",
     title: "Hybrid semantic validation",
-    description: "The implemented pipeline blends semantic similarity with type checks, overlap statistics, and rule-based vetoes.",
+    description: "The implemented pipeline blends deterministic cleaning, typed normalization cues, and unification rules across cohorts.",
     icon: Sparkles,
-    bullets: ["Type compatibility filters", "Numeric/date/categorical overlap checks", "Weighted composite scoring + minimum thresholds"],
-  },
-  {
-    label: "Standard",
-    title: "Common data models",
-    description: "The current ETL bootstraps OMOP tables (person, measurement, condition_occurrence, observation) for interoperability.",
-    icon: Database,
-    bullets: ["OMOP-oriented mapping hints in schema", "OMOP bootstrap outputs in outputs/omop_cdm", "Ready for deeper OHDSI tooling integration"],
+    bullets: ["PII removal and sparse-column reduction", "Range and unit standardization passes", "Cross-dataset unification with modality awareness"],
   },
   {
     label: "Quality",
     title: "Data quality + characterization",
-    description: "Quality artifacts are produced after OMOP export to quantify completeness, comparability, and cohort profile signals.",
+    description: "Quality artifacts are produced directly from the unified db/test outputs to quantify completeness, comparability, and cohort profile signals.",
     icon: FileBarChart,
     bullets: ["data_quality_report.html", "cohort_characterization.csv", "comparability_report.json and characterization_metrics.csv"],
   },
   {
     label: "Governance",
-    title: "Provenance and harmonization tiers",
-    description: "Per-field provenance and tier tagging make transformation confidence explicit rather than implicit.",
+    title: "Transparent unification outputs",
+    description: "The new pipeline publishes explicit mapping, value-set, unit, and modality outputs instead of hidden transformation state.",
     icon: LockKeyhole,
-    bullets: ["outputs/provenance.csv cell-level lineage", "outputs/harmonization_tiers.csv tier labels", "Supports reviewer workflow for low-confidence mappings"],
+    bullets: ["step_7/column_mapping.csv", "step_7/value_set_mapping.csv", "step_7/unit_mapping.csv and modality_manifest.csv"],
   },
   {
     label: "Operations",
@@ -184,48 +177,48 @@ const architecture: ArchitectureLane[] = [
   },
   {
     title: "Preprocessing and profiling",
-    description: "Schema discovery, lexical expansion, candidate generation, and quality-oriented normalization prepare the data for mapping.",
+    description: "Cohort profiling, sparse-column reduction, range rules, and unit extraction prepare the data for cross-dataset unification.",
     icon: RefreshCw,
-    chips: ["two_stage_match.py", "clinical_lexicon.csv", "Type inference", "PII scrubbing"],
+    chips: ["step_1_remove_pii.py", "step_2_reduce_sparse_columns.py", "step_4_apply_range_rules.py", "step_5_extract_units.py"],
   },
   {
     title: "Harmonization methods",
-    description: "Matching combines semantic embeddings with distribution overlap, compatibility checks, and veto rules for safer mapping.",
+    description: "Unification combines canonical concept naming, modality tagging, value harmonization, and accepted fuzzy mappings for safer pooling.",
     icon: Brain,
-    chips: ["SapBERT embeddings", "Rule-based vetoes", "Range overlap", "Composite score"],
+    chips: ["normalize_concept_name", "modality detection", "value set rules", "step_6 fuzzy suggestions"],
   },
   {
     title: "Standards and research outputs",
-    description: "The harmonized registry can be exported to OMOP bootstrap tables and quality artifacts for downstream analysis and governance.",
+    description: "The harmonized registry now publishes a unified wide table and explicit audit outputs for downstream analysis and governance.",
     icon: Network,
-    chips: ["OMOP bootstrap", "Quality report", "Comparability report", "Characterization metrics"],
+    chips: ["unified_wide_table.csv", "column_mapping.csv", "comparability_report.json", "cohort_characterization.csv"],
   },
 ];
 
 const timeline: TimelineStep[] = [
   {
     step: "01",
-    title: "Profile and schema match",
-    description: "The pipeline profiles incoming registry files and produces a harmonized master schema with OMOP-oriented hints.",
-    outputs: ["two_stage_match.py", "master_schema.csv", "OMOP domain hints"],
+    title: "De-identify and reduce",
+    description: "Incoming registry files are de-identified, reduced for sparsity, and validated for structural quality before pooling.",
+    outputs: ["step_1_remove_pii.py", "step_2_reduce_sparse_columns.py", "Validation audits"],
   },
   {
     step: "02",
-    title: "Scrub PII and apply schema",
-    description: "Incoming BHS and EHVol files are standardized into one unified registry asset ready for downstream use.",
-    outputs: ["apply_schema.py", "unified_registry.csv", "Identifier deduplication"],
+    title: "Profile values and clean ranges",
+    description: "Normalization profiling and range-rule passes identify safe conversions and quarantine implausible clinical values.",
+    outputs: ["step_3_profile_normalization.py", "step_4_apply_range_rules.py", "Range audits"],
   },
   {
     step: "03",
-    title: "Bootstrap OMOP mappings",
-    description: "A baseline OMOP export is produced for person, measurement, condition occurrence, and observation tables.",
-    outputs: ["omop_etl.py", "person", "measurement", "condition_occurrence", "observation"],
+    title: "Extract units and standardize geography",
+    description: "Unit extraction and fuzzy canonicalization reduce representation drift across text, geography, and nationality fields.",
+    outputs: ["step_5_extract_units.py", "step_6_fuzzy_match_v2.py", "Canonical suggestions"],
   },
   {
     step: "04",
-    title: "Quality and characterization",
-    description: "Quality checks and characterization reports are generated to expose completeness, comparability, and cohort summary outputs.",
-    outputs: ["data_quality_report.html", "cohort_characterization.csv", "Characterization metrics"],
+    title: "Unify and publish audit outputs",
+    description: "The final step produces the unified registry snapshot and publishes mapping, modality, comparability, and characterization outputs.",
+    outputs: ["step_7_unify_datasets.py", "unified_registry.csv", "comparability_report.json"],
   },
 ];
 
@@ -279,17 +272,17 @@ const snapshotStats: SnapshotStat[] = [
   {
     label: "Unified registry",
     value: "4,943 harmonized participant rows",
-    detail: "outputs/unified_registry.csv consolidates both cohorts after schema application and normalization.",
+    detail: "outputs/unified_registry.csv consolidates both cohorts after the db/test unification flow.",
   },
   {
     label: "Harmonization scope",
-    value: "994 mapped variables",
-    detail: "outputs/master_schema.csv currently defines nearly one thousand harmonized variable mappings.",
+    value: "658 canonical concepts",
+    detail: "step_7/unification_audit.json records the current shared and cohort-specific concept coverage across both registries.",
   },
   {
     label: "Quality artifacts",
-    value: "OMOP + quality + comparability outputs",
-    detail: "The pipeline emits OMOP bootstrap tables, quality reports, and comparability metrics for governance review.",
+    value: "Quality + comparability outputs",
+    detail: "The pipeline emits unified-registry audit outputs, quality reports, and comparability metrics for governance review.",
   },
 ];
 
@@ -301,7 +294,7 @@ const narrativeCards: NarrativeCard[] = [
   },
   {
     title: "What is implemented now",
-    description: "A four-stage pipeline from matching to OMOP bootstrap and quality reporting is already running in this repository.",
+    description: "A four-stage db/test pipeline from de-identification through unification and audit reporting is already running in this repository.",
     icon: Activity,
   },
   {

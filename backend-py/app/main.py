@@ -22,16 +22,17 @@ from app.routes import (
     auth,
     harmonization,
 )
+from app.api import health as health_router
 from app.core import limiter, setup_rate_limiting, RateLimits
 from app.core.middleware import RequestIdMiddleware, request_id_var
 import logging
 from datetime import datetime
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from app.core.logging_config import setup_logging, get_logger
+
+# Configure structured logging
+setup_logging()
+logger = get_logger(__name__)
 
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/token", auto_error=False)
@@ -104,7 +105,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="BioLink API",
     description="AI-powered cardiovascular patient registry API with authentication and rate limiting",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
     docs_url="/api/docs" if settings.environment == "development" else None,
     redoc_url="/api/redoc" if settings.environment == "development" else None,
@@ -314,7 +315,9 @@ app.include_router(
     prefix="/api/harmonization",
     tags=["harmonization"],
     dependencies=[Depends(auth.require_scopes("read"))],
-)
+)health_router.router)
+
+app.include_router(
 app.include_router(
     cohort.router,
     prefix="/api/cohort",

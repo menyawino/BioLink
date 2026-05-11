@@ -57,7 +57,6 @@
         rollupOptions: {
             input: {
               main: path.resolve(__dirname, 'index.html'),
-              stakeholders: path.resolve(__dirname, 'stakeholders.html'),
             },
           output: {
             manualChunks(id) {

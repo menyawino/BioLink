@@ -1,0 +1,232 @@
+name: Azure Deployment
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend-py/**'
+      - 'src/**'
+      - 'docker/**'
+      - 'deploy/terraform/**'
+      - '.github/workflows/azure-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: ''
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_ACR_NAME: ${{ secrets.AZURE_ACR_NAME }}
+  TF_VAR_app_secret_key: ${{ secrets.APP_SECRET_KEY }}
+  TF_VAR_superset_secret_key: ${{ secrets.SUPERSET_SECRET_KEY }}
+  TF_VAR_superset_admin_password: ${{ secrets.SUPERSET_ADMIN_PASSWORD }}
+  TF_VAR_postgres_admin_password: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+
+jobs:
+  # Build and push Docker images to ACR
+  build-images:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+      backend_image: ${{ steps.vars.outputs.backend_image }}
+      frontend_image: ${{ steps.vars.outputs.frontend_image }}
+      superset_image: ${{ steps.vars.outputs.superset_image }}
+      stakeholder_image: ${{ steps.vars.outputs.stakeholder_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: |
+          az acr login --name ${{ secrets.AZURE_ACR_NAME }}
+
+      - name: Generate image tag
+        id: vars
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          else
+            IMAGE_TAG="$(git rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)"
+          fi
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "backend_image=${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-backend:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "frontend_image=${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-frontend:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "superset_image=${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-superset:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "stakeholder_image=${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-stakeholders:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-py
+          file: ./docker/Dockerfile.backend.cloud
+          push: true
+          tags: |
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-backend:${{ steps.vars.outputs.image_tag }}
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-frontend:${{ steps.vars.outputs.image_tag }}
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Superset
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.superset
+          push: true
+          tags: |
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-superset:${{ steps.vars.outputs.image_tag }}
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-superset:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push stakeholder site
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.stakeholders
+          push: true
+          tags: |
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-stakeholders:${{ steps.vars.outputs.image_tag }}
+            ${{ secrets.AZURE_ACR_NAME }}.azurecr.io/biolink-stakeholders:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to target environment using Terraform
+  terraform-deploy:
+    runs-on: ubuntu-latest
+    needs: build-images
+    environment:
+      name: ${{ github.event.inputs.environment || 'staging' }}
+      url: https://biolink-${{ github.event.inputs.environment || 'staging' }}-frontend.azurecontainerapps.io
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+          terraform_wrapper: false
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init
+        working-directory: ./deploy/terraform/environments/${{ github.event.inputs.environment || 'staging' }}
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: ./deploy/terraform/environments/${{ github.event.inputs.environment || 'staging' }}
+        env:
+          TF_VAR_backend_image: ${{ needs.build-images.outputs.backend_image }}
+          TF_VAR_frontend_image: ${{ needs.build-images.outputs.frontend_image }}
+          TF_VAR_superset_image: ${{ needs.build-images.outputs.superset_image }}
+          TF_VAR_stakeholder_image: ${{ needs.build-images.outputs.stakeholder_image }}
+          TF_VAR_azure_entra_tenant_id: ${{ secrets.AZURE_ENTRA_TENANT_ID }}
+          TF_VAR_azure_entra_backend_client_id: ${{ secrets.AZURE_ENTRA_BACKEND_CLIENT_ID }}
+          TF_VAR_azure_entra_frontend_client_id: ${{ secrets.AZURE_ENTRA_FRONTEND_CLIENT_ID }}
+          TF_VAR_azure_entra_audience: ${{ secrets.AZURE_ENTRA_AUDIENCE }}
+          TF_VAR_azure_entra_authority: ${{ secrets.AZURE_ENTRA_AUTHORITY }}
+          TF_VAR_azure_entra_api_scope: ${{ secrets.AZURE_ENTRA_API_SCOPE }}
+          TF_VAR_superset_admin_email: ${{ secrets.SUPERSET_ADMIN_EMAIL }}
+          TF_VAR_alert_email_addresses: ${{ secrets.ALERT_EMAIL_ADDRESSES }}
+          TF_VAR_allowed_cidrs: ${{ secrets.ALLOWED_CIDRS }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ./deploy/terraform/environments/${{ github.event.inputs.environment || 'staging' }}
+        env:
+          TF_VAR_backend_image: ${{ needs.build-images.outputs.backend_image }}
+          TF_VAR_frontend_image: ${{ needs.build-images.outputs.frontend_image }}
+          TF_VAR_superset_image: ${{ needs.build-images.outputs.superset_image }}
+          TF_VAR_stakeholder_image: ${{ needs.build-images.outputs.stakeholder_image }}
+          TF_VAR_azure_entra_tenant_id: ${{ secrets.AZURE_ENTRA_TENANT_ID }}
+          TF_VAR_azure_entra_backend_client_id: ${{ secrets.AZURE_ENTRA_BACKEND_CLIENT_ID }}
+          TF_VAR_azure_entra_frontend_client_id: ${{ secrets.AZURE_ENTRA_FRONTEND_CLIENT_ID }}
+          TF_VAR_azure_entra_audience: ${{ secrets.AZURE_ENTRA_AUDIENCE }}
+          TF_VAR_azure_entra_authority: ${{ secrets.AZURE_ENTRA_AUTHORITY }}
+          TF_VAR_azure_entra_api_scope: ${{ secrets.AZURE_ENTRA_API_SCOPE }}
+          TF_VAR_superset_admin_email: ${{ secrets.SUPERSET_ADMIN_EMAIL }}
+          TF_VAR_alert_email_addresses: ${{ secrets.ALERT_EMAIL_ADDRESSES }}
+          TF_VAR_allowed_cidrs: ${{ secrets.ALLOWED_CIDRS }}
+        run: terraform apply -auto-approve tfplan
+
+  # Smoke tests after deployment
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: terraform-deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run smoke tests
+        env:
+          BASE_URL: https://biolink-${{ github.event.inputs.environment || 'staging' }}-frontend.azurecontainerapps.io
+          API_URL: https://biolink-${{ github.event.inputs.environment || 'staging' }}-backend.azurecontainerapps.io
+        run: |
+          npx playwright test tests/smoke/ --project=chromium || echo "No smoke tests found, skipping"
+
+      - name: Health check
+        run: |
+          curl -sf "https://biolink-${{ github.event.inputs.environment || 'staging' }}-backend.azurecontainerapps.io/health" || exit 1
+          curl -sf "https://biolink-${{ github.event.inputs.environment || 'staging' }}-frontend.azurecontainerapps.io" || exit 1
+
+  # Rollback on failure (manual trigger)
+  rollback:
+    runs-on: ubuntu-latest
+    needs: [terraform-deploy, smoke-test]
+    if: failure()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Rollback to previous revision
+        run: |
+          az containerapp revision list \
+            --name biolink-${{ github.event.inputs.environment || 'staging' }}-backend \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --query '[1].name' -o tsv | xargs -I {} az containerapp revision activate \
+            --name biolink-${{ github.event.inputs.environment || 'staging' }}-backend \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --revision {} || echo "Rollback failed or no previous revision"

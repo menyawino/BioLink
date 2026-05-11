@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { motion, useInView } from "framer-motion";
 import {
   Card,
   CardContent,
@@ -105,218 +107,318 @@ export function WelcomeScreen({
     "Narrative storytelling components for richer clinical insights",
   ];
 
+  // Animation variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.08, delayChildren: 0.1 },
+    },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
+  };
+
+  const cardHover = {
+    scale: 1.02,
+    y: -4,
+    transition: { duration: 0.2 },
+  };
+
+  // Animated counter hook
+  function useAnimatedCounter(target: number, duration = 1500) {
+    const [count, setCount] = useState(0);
+    useEffect(() => {
+      if (!target) return;
+      let start = 0;
+      const step = (timestamp: number) => {
+        if (!start) start = timestamp;
+        const progress = Math.min((timestamp - start) / duration, 1);
+        setCount(Math.floor(progress * target));
+        if (progress < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }, [target, duration]);
+    return count;
+  }
+
+  const animatedPatientCount = useAnimatedCounter(overview?.totalPatients || 0);
+  const animatedCompleteness = useAnimatedCounter(overview?.dataCompleteness || 0);
+
   return (
-    <div className="space-y-8">
+    <motion.div
+      className="space-y-8"
+      initial="hidden"
+      animate="visible"
+      variants={containerVariants}
+    >
       {/* Header */}
-      <div className="text-center space-y-4">
+      <motion.div className="text-center space-y-4" variants={itemVariants}>
         <div className="flex items-center justify-center space-x-3">
-          <img
+          <motion.img
             src={logo}
             alt="Magdi Yacoub Heart Foundation"
             className="h-12 w-auto"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5 }}
           />
-          <h1 className="text-3xl font-bold">
+          <motion.h1
+            className="text-3xl font-bold"
+            initial={{ x: -20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+          >
             MYF Biolink Platform
-          </h1>
-          <Badge variant="default" className="text-sm">
-            <Sparkles className="h-3 w-3 mr-1" />
-            v2.1.0
-          </Badge>
+          </motion.h1>
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.2 }}
+          >
+            <Badge variant="default" className="text-sm">
+              <Sparkles className="h-3 w-3 mr-1" />
+              v2.1.0
+            </Badge>
+          </motion.div>
         </div>
-        <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
+        <motion.p
+          className="text-lg text-muted-foreground max-w-3xl mx-auto"
+          initial={{ y: 10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
           Comprehensive biomedical data registry with advanced
           precision medicine capabilities, multi-modal data
           integration, and sophisticated research analytics.
-        </p>
-      </div>
+        </motion.p>
+      </motion.div>
 
       {/* Key Capabilities */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Activity className="h-5 w-5" />
-            <span>Platform Capabilities</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {capabilities.map((capability, index) => (
-              <div
-                key={index}
-                className="flex items-start space-x-3"
-              >
-                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
-                <p className="text-sm">{capability}</p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <motion.div variants={itemVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Activity className="h-5 w-5" />
+              <span>Platform Capabilities</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {capabilities.map((capability, index) => (
+                <motion.div
+                  key={index}
+                  className="flex items-start space-x-3"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 + index * 0.06 }}
+                >
+                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
+                  <p className="text-sm">{capability}</p>
+                </motion.div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Feature Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {features.map((feature) => {
+      <motion.div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        variants={containerVariants}
+      >
+        {features.map((feature, idx) => {
           const Icon = feature.icon;
           return (
-            <Card
+            <motion.div
               key={feature.id}
-              className="cursor-pointer hover:shadow-lg transition-all duration-200 hover:scale-105"
+              variants={itemVariants}
+              whileHover={cardHover}
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <Icon className="h-8 w-8 text-primary" />
-                  {feature.badge && (
-                    <Badge variant={feature.badgeVariant!}>
-                      {feature.badge}
-                    </Badge>
-                  )}
-                </div>
-                <CardTitle className="text-lg">
-                  {feature.title}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {feature.description}
-                </p>
+              <Card
+                className="cursor-pointer hover:shadow-lg transition-shadow duration-200 h-full"
+                onClick={() => onNavigate(feature.id)}
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <motion.div
+                      whileHover={{ rotate: 5, scale: 1.1 }}
+                      transition={{ type: "spring", stiffness: 300 }}
+                    >
+                      <Icon className="h-8 w-8 text-primary" />
+                    </motion.div>
+                    {feature.badge && (
+                      <Badge variant={feature.badgeVariant!}>
+                        {feature.badge}
+                      </Badge>
+                    )}
+                  </div>
+                  <CardTitle className="text-lg">
+                    {feature.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {feature.description}
+                  </p>
 
-                <div className="space-y-2">
-                  {feature.highlights.map(
-                    (highlight, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center space-x-2 text-xs"
-                      >
-                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                        <span className="text-muted-foreground">
-                          {highlight}
-                        </span>
-                      </div>
-                    ),
-                  )}
-                </div>
+                  <div className="space-y-2">
+                    {feature.highlights.map(
+                      (highlight, index) => (
+                        <motion.div
+                          key={index}
+                          className="flex items-center space-x-2 text-xs"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.5 + idx * 0.1 + index * 0.05 }}
+                        >
+                          <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                          <span className="text-muted-foreground">
+                            {highlight}
+                          </span>
+                        </motion.div>
+                      ),
+                    )}
+                  </div>
 
-                <Button
-                  className="w-full mt-4"
-                  variant="outline"
-                  onClick={() => onNavigate(feature.id)}
-                >
-                  Explore Feature
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
-              </CardContent>
-            </Card>
+                  <Button
+                    className="w-full mt-4"
+                    variant="outline"
+                    onClick={() => onNavigate(feature.id)}
+                  >
+                    Explore Feature
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
 
       {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Get started with common workflows and data
-            exploration tasks
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Button
-              variant="default"
-              onClick={() => onNavigate("patient")}
-            >
-              View Patient Profile
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => onNavigate("registry")}
-            >
-              Browse Registry ({patientCount} patients)
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => onNavigate("cohort")}
-            >
-              Build New Cohort
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => onNavigate("analytics")}
-            >
-              View Analytics Dashboard
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <motion.div variants={itemVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Get started with common workflows and data
+              exploration tasks
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[
+                { label: "View Patient Profile", view: "patient", variant: "default" as const },
+                { label: `Browse Registry (${patientCount} patients)`, view: "registry", variant: "outline" as const },
+                { label: "Build New Cohort", view: "cohort", variant: "outline" as const },
+                { label: "View Analytics Dashboard", view: "analytics", variant: "outline" as const },
+              ].map((action, idx) => (
+                <motion.div
+                  key={action.view}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.6 + idx * 0.08 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <Button
+                    variant={action.variant}
+                    onClick={() => onNavigate(action.view)}
+                    className="w-full"
+                  >
+                    {action.label}
+                  </Button>
+                </motion.div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div
-              className="text-2xl font-bold"
-              style={{ color: "#00a2dd" }}
-            >
-              {isLoading ? <Loader2 className="h-6 w-6 animate-spin mx-auto" /> : patientCount}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Total Patients
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div
-              className="text-2xl font-bold"
-              style={{ color: "#efb01b" }}
-            >
-              {isLoading ? <Loader2 className="h-6 w-6 animate-spin mx-auto" /> : `${dataCompleteness}%`}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Data Completeness
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div
-              className="text-2xl font-bold"
-              style={{ color: "#e9322b" }}
-            >
-              {overview?.withEcho?.toLocaleString() ?? '...'}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Echo Studies
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div
-              className="text-2xl font-bold"
-              style={{ color: "#00a2dd" }}
-            >
-              {overview?.withMri?.toLocaleString() ?? '...'}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              MRI Studies
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div
-              className="text-2xl font-bold"
-              style={{ color: "#efb01b" }}
-            >
-              Live
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Data Refresh
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+      <motion.div
+        className="grid grid-cols-2 md:grid-cols-5 gap-4"
+        variants={containerVariants}
+      >
+        <motion.div variants={itemVariants}>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div
+                className="text-2xl font-bold"
+                style={{ color: "#00a2dd" }}
+              >
+                {isLoading ? <Loader2 className="h-6 w-6 animate-spin mx-auto" /> : animatedPatientCount.toLocaleString()}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Total Patients
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div
+                className="text-2xl font-bold"
+                style={{ color: "#efb01b" }}
+              >
+                {isLoading ? <Loader2 className="h-6 w-6 animate-spin mx-auto" /> : `${animatedCompleteness}%`}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Data Completeness
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div
+                className="text-2xl font-bold"
+                style={{ color: "#e9322b" }}
+              >
+                {overview?.withEcho?.toLocaleString() ?? '...'}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Echo Studies
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div
+                className="text-2xl font-bold"
+                style={{ color: "#00a2dd" }}
+              >
+                {overview?.withMri?.toLocaleString() ?? '...'}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                MRI Studies
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div
+                className="text-2xl font-bold"
+                style={{ color: "#efb01b" }}
+              >
+                Live
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Data Refresh
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
+    </motion.div>
   );
 }

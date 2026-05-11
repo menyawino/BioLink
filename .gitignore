@@ -36,6 +36,8 @@ scripts/
 # Environment files 
 .env
 **/.env
+env_vars_clean.json
+deploy/azure/preview.env
 
 
 # PyInstaller

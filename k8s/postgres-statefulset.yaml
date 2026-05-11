@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: biolink-postgres
+  namespace: biolink
+  labels:
+    app: biolink-postgres
+spec:
+  serviceName: biolink-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: biolink-postgres
+  template:
+    metadata:
+      labels:
+        app: biolink-postgres
+    spec:
+      securityContext:
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: biolink-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: biolink-secrets
+                  key: postgres-password
+            - name: POSTGRES_DB
+              value: biolink
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - biolink
+                - -d
+                - biolink
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - biolink
+                - -d
+                - biolink
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 50Gi
+        storageClassName: managed-premium
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: biolink-postgres
+  namespace: biolink
+  labels:
+    app: biolink-postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: postgres
+  selector:
+    app: biolink-postgres
+---
+# CronJob for automated backups
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: biolink-postgres-backup
+  namespace: biolink
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  BACKUP_DIR=/backups/$(date +%Y%m%d_%H%M%S)
+                  mkdir -p $BACKUP_DIR
+                  echo "Starting backup at $(date)"
+                  PGPASSWORD=$POSTGRES_PASSWORD pg_dump \
+                    -h biolink-postgres \
+                    -U $POSTGRES_USER \
+                    -d $POSTGRES_DB \
+                    -F custom \
+                    -f $BACKUP_DIR/biolink.dump
+                  echo "Backup completed: $BACKUP_DIR/biolink.dump"
+                  # Upload to Azure Blob Storage
+                  az storage blob upload \
+                    --account-name $AZURE_STORAGE_ACCOUNT \
+                    --container-name biolink-backups \
+                    --name $(date +%Y/%m/%d)/biolink-$(date +%H%M%S).dump \
+                    --file $BACKUP_DIR/biolink.dump \
+                    --auth-mode login
+                  echo "Backup uploaded to Azure Blob Storage"
+                  # Cleanup old local backups (keep 7 days)
+                  find /backups -type d -mtime +7 -exec rm -rf {} +
+              env:
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: biolink-secrets
+                      key: postgres-user
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: biolink-secrets
+                      key: postgres-password
+                - name: POSTGRES_DB
+                  value: biolink
+                - name: AZURE_STORAGE_ACCOUNT
+                  valueFrom:
+                    secretKeyRef:
+                      name: biolink-secrets
+                      key: azure-storage-account
+              volumeMounts:
+                - name: backup-tmp
+                  mountPath: /backups
+          volumes:
+            - name: backup-tmp
+              emptyDir:
+                sizeLimit: 10Gi

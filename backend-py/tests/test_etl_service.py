@@ -36,9 +36,6 @@ class DummyAiohttpSession:
 def test_superset_target_tables_include_current_pipeline_outputs():
     assert etl_service._superset_target_tables(["bhs"]) == [
         etl_service.settings.superset_default_table,
-        "_schema_registry",
-        "harmonization_tiers",
-        "harmonization_provenance",
         "comparability_report",
         "bhs_participants",
         "ehvol_participants",
@@ -112,10 +109,7 @@ async def test_refresh_superset_registry_datasets_prunes_stale_biolink_datasets(
             table_name,
         ):
             dataset_ids = {
-                "_schema_registry": 7,
                 "unified_registry": 2,
-                "harmonization_tiers": 6,
-                "harmonization_provenance": 9,
                 "comparability_report": 10,
                 "bhs_participants": 11,
                 "ehvol_participants": 12,

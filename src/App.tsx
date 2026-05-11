@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState, useCallback } from "react";
 import { AppProvider, useApp } from "./context/AppContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Sidebar } from "./components/Sidebar";
@@ -10,11 +10,14 @@ import { MedicalHistory } from "./components/MedicalHistory";
 import { TraditionalImaging } from "./components/TraditionalImaging";
 import { GenomicData } from "./components/GenomicData";
 import { DataNotAvailable } from "./components/DataNotAvailable";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { KeyboardShortcutsHelp } from "./components/KeyboardShortcutsHelp";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Button } from "./components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "./components/ui/drawer";
 import { useIsMobile } from "./components/ui/use-mobile";
 import { usePatient, usePatientGenomics } from "./hooks/usePatients";
+import { useKeyboardShortcuts, getAppShortcuts } from "./hooks/useKeyboardShortcuts";
 import { canAccessView } from "./lib/access";
 import type { ViewType } from "./context/AppContext";
 import type { GenomicData as GenomicDataResponse, PatientDetail } from "./api/types";
@@ -257,8 +260,34 @@ function AppContent() {
   const [displayedPatient, setDisplayedPatient] = useState<string | null>(selectedPatient);
   const [transitionPhase, setTransitionPhase] = useState<"enter" | "exit" | "idle">("enter");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const { data: patient, error: patientError, isLoading: patientLoading } = usePatient(selectedPatient || '');
   const { data: genomicsData, error: genomicsError, isLoading: genomicsLoading } = usePatientGenomics(selectedPatient || '');
+
+  // Keyboard shortcuts
+  const navigateToView = useCallback((view: string) => {
+    setCurrentView(view as ViewType);
+  }, [setCurrentView]);
+
+  useKeyboardShortcuts(
+    getAppShortcuts(navigateToView, {
+      toggleSidebar: () => setMobileNavOpen(prev => !prev),
+      openSearch: () => {
+        setCurrentView('registry');
+      },
+      openChat: () => setCurrentView('welcome'),
+      openSettings: () => setCurrentView('settings'),
+      openHelp: () => setShortcutsHelpOpen(true),
+      goBack: () => {
+        if (currentView === 'patient') {
+          setSelectedPatient(null);
+          setCurrentView('registry');
+        } else if (currentView !== 'welcome') {
+          setCurrentView('welcome');
+        }
+      },
+    })
+  );
 
   useEffect(() => {
     if (!canAccessView(user, currentView as never)) {
@@ -307,70 +336,75 @@ function AppContent() {
   };
   
   return (
-    <div className={cn("app-shell bg-background", isMobile ? "min-h-screen" : "flex h-screen overflow-hidden")}>
-      {!isMobile ? (
-        <Sidebar currentView={currentView} onViewChange={handleViewChange} className="app-sidebar-panel flex-shrink-0" />
-      ) : null}
-
-      {isMobile ? (
-        <Drawer direction="left" open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-          <DrawerContent className="app-mobile-drawer w-[88vw] max-w-[22rem] border-r-0 bg-transparent p-0">
-            <DrawerHeader className="sr-only">
-              <DrawerTitle>BioLink navigation</DrawerTitle>
-            </DrawerHeader>
-            <Sidebar
-              currentView={currentView}
-              onViewChange={handleViewChange}
-              className="app-sidebar-panel app-mobile-sidebar h-full w-full border-r-0"
-            />
-          </DrawerContent>
-        </Drawer>
-      ) : null}
-
-      <div className="app-main flex-1 overflow-auto">
-        {isMobile ? (
-          <div className="app-mobile-topbar sticky top-0 z-20 mb-3 flex items-center justify-between gap-3 border-b border-border/70 bg-background/88 px-4 py-3 backdrop-blur-xl md:hidden">
-            <div className="min-w-0">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary/80">BioLink</p>
-              <p className="truncate text-base font-semibold text-foreground">{VIEW_LABELS[currentView] ?? "BioLink"}</p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="shrink-0"
-              aria-label="Open navigation menu"
-              onClick={() => setMobileNavOpen(true)}
-            >
-              <Menu className="h-4 w-4" />
-            </Button>
-          </div>
+    <>
+      <div className={cn("app-shell bg-background", isMobile ? "min-h-screen" : "flex h-screen overflow-hidden")}>
+        {!isMobile ? (
+          <Sidebar currentView={currentView} onViewChange={handleViewChange} className="app-sidebar-panel flex-shrink-0" />
         ) : null}
-        <div
-          key={`${displayedView}:${displayedPatient ?? 'none'}`}
-          className={`app-stage app-stage-${transitionPhase}`}
-          data-view={displayedView}
-        >
-          <Suspense fallback={<ViewLoadingState view={displayedView} />}>
-            {renderContent(
-              user,
-              displayedView,
-              displayedPatient,
-              setSelectedPatient,
-              currentTab,
-              setCurrentTab,
-              patient,
-              patientError,
-              patientLoading,
-              genomicsData,
-              genomicsError,
-              genomicsLoading,
-              handlePatientSelect
-            )}
-          </Suspense>
+
+        {isMobile ? (
+          <Drawer direction="left" open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <DrawerContent className="app-mobile-drawer w-[88vw] max-w-[22rem] border-r-0 bg-transparent p-0">
+              <DrawerHeader className="sr-only">
+                <DrawerTitle>BioLink navigation</DrawerTitle>
+              </DrawerHeader>
+              <Sidebar
+                currentView={currentView}
+                onViewChange={handleViewChange}
+                className="app-sidebar-panel app-mobile-sidebar h-full w-full border-r-0"
+              />
+            </DrawerContent>
+          </Drawer>
+        ) : null}
+
+        <div className="app-main flex-1 overflow-auto">
+          {isMobile ? (
+            <div className="app-mobile-topbar sticky top-0 z-20 mb-3 flex items-center justify-between gap-3 border-b border-border/70 bg-background/88 px-4 py-3 backdrop-blur-xl md:hidden">
+              <div className="min-w-0">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-primary/80">BioLink</p>
+                <p className="truncate text-base font-semibold text-foreground">{VIEW_LABELS[currentView] ?? "BioLink"}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                aria-label="Open navigation menu"
+                onClick={() => setMobileNavOpen(true)}
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : null}
+          <div
+            key={`${displayedView}:${displayedPatient ?? 'none'}`}
+            className={`app-stage app-stage-${transitionPhase}`}
+            data-view={displayedView}
+          >
+            <ErrorBoundary componentName={VIEW_LABELS[displayedView]}>
+              <Suspense fallback={<ViewLoadingState view={displayedView} />}>
+                {renderContent(
+                  user,
+                  displayedView,
+                  displayedPatient,
+                  setSelectedPatient,
+                  currentTab,
+                  setCurrentTab,
+                  patient,
+                  patientError,
+                  patientLoading,
+                  genomicsData,
+                  genomicsError,
+                  genomicsLoading,
+                  handlePatientSelect
+                )}
+              </Suspense>
+            </ErrorBoundary>
+          </div>
         </div>
       </div>
-    </div>
+      <KeyboardShortcutsHelp open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
+    </>
   );
 }
 

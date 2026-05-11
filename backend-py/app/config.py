@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     port: int = 3001
     host: str = "0.0.0.0"
     environment: str = "development"
+    log_level: str = "INFO"
+    log_json_format: bool = False
     cors_allowed_origins: str = (
         "http://localhost:5173,"
         "http://localhost:3000,"

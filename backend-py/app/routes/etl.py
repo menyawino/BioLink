@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
 from typing import Any, Optional
@@ -44,7 +44,7 @@ class WebhookPayload(BaseModel):
 
 
 def _utcnow() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _update_job(job_id: str, **updates):

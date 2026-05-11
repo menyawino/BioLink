@@ -98,13 +98,10 @@ MYF BioLink is a sophisticated registry management system that provides:
 
 ### Superset managed datasets
 
-Superset no longer mirrors CSV-stem dataset names such as `ehvol_full`. The ETL publish step now reconciles the BioLink Superset database to the current NiFi homogenization outputs and removes stale BioLink datasets that are no longer part of the managed pipeline.
+Superset no longer mirrors CSV-stem dataset names such as `ehvol_full`. The ETL publish step now reconciles the BioLink Superset database to the current db/test registry outputs and removes stale BioLink datasets that are no longer part of the managed pipeline.
 
 Managed Superset datasets:
-- `_schema_registry`
 - `unified_registry`
-- `harmonization_tiers`
-- `harmonization_provenance`
 - `comparability_report`
 - `bhs_participants`
 - `ehvol_participants`
@@ -191,7 +188,6 @@ docker compose --profile optional up -d
 ```
 
 Frontend: http://localhost:3000
-Stakeholder site: http://localhost:3002
 Backend: http://localhost:3001
 Ollama: http://localhost:11434
 NiFi: https://localhost:8443/nifi
@@ -208,30 +204,6 @@ Frontend dev server: http://localhost:5173
 
 This service mounts the workspace into the container and runs Vite directly, so changes under `src/` appear immediately. It is intended for development alongside the regular backend container.
 
-### Separate Stakeholder Website
-
-The stakeholder presentation site can be built and hosted independently from the main application.
-
-Local development:
-
-```bash
-npm run dev:stakeholders
-```
-
-Independent production build:
-
-```bash
-npm run build:stakeholders
-```
-
-Independent Docker deployment:
-
-```bash
-docker compose up -d --build stakeholders
-```
-
-This serves the stakeholder site on `http://localhost:3002` and is intended for use behind its own domain or reverse proxy target.
-
 ### NiFi Ingestion (Local)
 
 NiFi reads CSVs from the repo `db/` folder (mounted at `/opt/nifi/db` inside the container) and loads them into Postgres.
@@ -243,15 +215,18 @@ Recommended processors:
 - `BiolinkDataQualityProcessor`
 - `BiolinkJsonToSqlProcessor` + `PutSQL`
 
-### ETL Trigger API (NiFi-backed, script-aligned)
+### ETL Trigger API (NiFi-backed, db/test-aligned)
 
 Backend endpoint `/api/etl/run` now triggers a NiFi processor that executes the
 same ETL plan defined in `docs/README_registry_pipeline.md`:
 
-- `nifi/pipeline/two_stage_match.py`
-- `nifi/pipeline/apply_schema.py`
-- `nifi/pipeline/omop_etl.py`
-- `nifi/pipeline/omop_quality.py`
+- `db/test/step_1_remove_pii.py`
+- `db/test/step_2_reduce_sparse_columns.py`
+- `db/test/step_3_profile_normalization.py`
+- `db/test/step_4_apply_range_rules.py`
+- `db/test/step_5_extract_units.py`
+- `db/test/step_6_fuzzy_match_v2.py`
+- `db/test/step_7_unify_datasets.py`
 
 ```bash
 curl -X POST http://localhost:3001/api/etl/run \
@@ -278,7 +253,7 @@ Before deploying to cloud infrastructure, explicitly override these settings:
 - `VITE_SUPERSET_DASHBOARD_ID` set to a valid Superset dashboard id or slug; the backend now provisions the embedded dashboard config and resolves the embedded UUID used by the in-app Chart Builder
 - `SUPERSET_EMBEDDED_ALLOWED_DOMAINS` only when Superset should allow a narrower embed-origin subset than `CORS_ALLOWED_ORIGINS`. Leave it unset to let the backend guest-token flow and Superset CORS share the same origin list by default.
 
-The Superset container bootstrap now also grants the guest embed role the read permissions needed by the embedded dashboard runtime, cleans orphaned dashboard chart placeholders left behind by chart cleanup, ensures the BioLink PostgreSQL datasets used by the verification workspace exist in Superset metadata, seeds the `biolink-verification-dashboard` dashboard with verification charts backed by `unified_registry`, `harmonization_tiers`, and `harmonization_provenance`, and keeps Superset metadata in its own PostgreSQL schema by default.
+The Superset container bootstrap now also grants the guest embed role the read permissions needed by the embedded dashboard runtime, cleans orphaned dashboard chart placeholders left behind by chart cleanup, ensures the BioLink PostgreSQL datasets used by the verification workspace exist in Superset metadata, seeds the `biolink-verification-dashboard` dashboard with verification charts backed by `unified_registry`, `comparability_report`, and the participant tables, and keeps Superset metadata in its own PostgreSQL schema by default.
 
 When `ENVIRONMENT` is `production` or `staging`, the backend now fails fast if `SECRET_KEY` is still a dev placeholder or if `SUPERSET_PUBLIC_URL` still points at `localhost`.
 

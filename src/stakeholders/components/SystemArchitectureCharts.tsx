@@ -32,40 +32,40 @@ flowchart LR
         A2[EHVol_Full.csv]
     end
 
-    A1 --> P
-    A2 --> P
+    A1 --> S1
+    A2 --> S1
 
-    subgraph Stage1[Stage 1: Profile + Match]
-        P[two_stage_match.py]
-        M[(master_schema.csv)]
-        P --> M
+    subgraph Stage1[Stage 1: De-identify + Reduce]
+      S1[step_1_remove_pii.py\nstep_2_reduce_sparse_columns.py]
     end
 
-    M --> S
-    subgraph Stage2[Stage 2: Apply Schema + PII Scrub]
-        S[apply_schema.py]
-        U[(unified_registry.csv)]
-        S --> U
+    S1 --> S2
+    subgraph Stage2[Stage 2: Profile + Clean]
+      S2[step_3_profile_normalization.py\nstep_4_apply_range_rules.py]
     end
 
-    U --> O
-    subgraph Stage3[Stage 3: OMOP Bootstrap]
-        O[omop_etl.py]
-        C[(outputs/omop_cdm)]
-        O --> C
+    S2 --> S3
+    subgraph Stage3[Stage 3: Units + Standardization]
+      S3[step_5_extract_units.py\nstep_6_fuzzy_match_v2.py]
     end
 
-    C --> Q
-    subgraph Stage4[Stage 4: Quality + Characterization]
-        Q[omop_quality.py]
-        R[data_quality_report.html + cohort_characterization.csv]
-        Q --> R
+    S3 --> S4
+    subgraph Stage4[Stage 4: Unify + Publish]
+      S4[step_7_unify_datasets.py]
+      R[(outputs/unified_registry.csv)]
+      A[(outputs/comparability_report.json)]
+      Q[(outputs/data_quality_report.html)]
+      C[(outputs/cohort_characterization.csv)]
+      S4 --> R
+      S4 --> A
+      S4 --> Q
+      S4 --> C
     end
 
-    style P fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
-    style S fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
-    style O fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
-    style Q fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
+    style S1 fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
+    style S2 fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
+    style S3 fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
+    style S4 fill:#e6f6fc,stroke:#00a2dd,stroke-width:2px
 `
   },
   {

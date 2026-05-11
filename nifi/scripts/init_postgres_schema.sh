@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS ehvol_participants (
 
 -- =====================================================
 -- HARMONISED TABLES  (Step 2 output — schema-matched)
--- Columns are derived from master_schema.csv at runtime;
+-- Columns are derived from the standardized registry schema at runtime;
 -- clinical data is stored as JSONB for schema flexibility.
 -- Query example:
 --   SELECT clinical_data->>'heart_rate' AS heart_rate

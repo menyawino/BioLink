@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Search, Download, Eye, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { usePatients } from "../hooks/usePatients";
 import type { DatasetFilter } from "../api/patients";
 import type { Patient } from "../api/types";
@@ -77,6 +78,15 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
       setSortDirection('asc');
     }
   };
+
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: patients.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: useCallback(() => 52, []),
+    overscan: 5,
+  });
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -262,73 +272,106 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                     </TableCell>
                   </TableRow>
                 ) : (
-                  patients.map((patient) => (
-                    <TableRow key={patient.dna_id} className="registry-row">
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedPatients.includes(patient.dna_id)}
-                          onCheckedChange={(checked) => handleSelectPatient(patient.dna_id, checked as boolean)}
-                        />
-                      </TableCell>
-                      <TableCell className="font-mono text-[0.82rem] tracking-[0.08em] uppercase">
-                        <button
-                          onClick={() => onPatientSelect(patient.dna_id)}
-                          className="registry-link cursor-pointer text-[#00a2ddff]"
+                  <>
+                    <tr>
+                      <td colSpan={13}>
+                        <div
+                          ref={tableContainerRef}
+                          style={{ height: '500px', overflow: 'auto' }}
                         >
-                          {patient.dna_id}
-                        </button>
-                      </TableCell>
-                      <TableCell>{patient.age ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
-                      <TableCell>{patient.gender ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
-                      <TableCell>{patient.nationality ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
-                      <TableCell>{patient.enrollment_date ? new Date(patient.enrollment_date).toLocaleDateString() : <span className="text-muted-foreground/50">—</span>}</TableCell>
-                      <TableCell>
-                        {patient.systolic_bp && patient.diastolic_bp 
-                          ? `${Math.round(Number(patient.systolic_bp))}/${Math.round(Number(patient.diastolic_bp))}`
-                          : <span className="text-muted-foreground/50">—</span>
-                        }
-                      </TableCell>
-                      <TableCell>
-                        {patient.bmi ? Number(patient.bmi).toFixed(1) : <span className="text-muted-foreground/50">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        {patient.echo_ef ? `${patient.echo_ef}%` : <span className="text-muted-foreground/50">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        {patient.mri_ef ? `${patient.mri_ef}%` : <span className="text-muted-foreground/50">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <div className="h-2 w-14 rounded-full bg-gray-200/80">
-                            <div 
-                              className={`h-2 rounded-full registry-progress-bar ${
-                                patient.data_completeness >= 80 ? 'bg-green-500' :
-                                patient.data_completeness >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                              }`}
-                              style={{ width: `${patient.data_completeness}%` }}
-                            />
+                          <div
+                            style={{
+                              height: `${rowVirtualizer.getTotalSize()}px`,
+                              width: '100%',
+                              position: 'relative',
+                            }}
+                          >
+                            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                              const patient = patients[virtualRow.index];
+                              return (
+                                <TableRow
+                                  key={patient.dna_id}
+                                  className="registry-row"
+                                  style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: `${virtualRow.size}px`,
+                                    transform: `translateY(${virtualRow.start}px)`,
+                                  }}
+                                >
+                                  <TableCell>
+                                    <Checkbox
+                                      checked={selectedPatients.includes(patient.dna_id)}
+                                      onCheckedChange={(checked) => handleSelectPatient(patient.dna_id, checked as boolean)}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="font-mono text-[0.82rem] tracking-[0.08em] uppercase">
+                                    <button
+                                      onClick={() => onPatientSelect(patient.dna_id)}
+                                      className="registry-link cursor-pointer text-[#00a2ddff]"
+                                    >
+                                      {patient.dna_id}
+                                    </button>
+                                  </TableCell>
+                                  <TableCell>{patient.age ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                                  <TableCell>{patient.gender ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                                  <TableCell>{patient.nationality ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                                  <TableCell>{patient.enrollment_date ? new Date(patient.enrollment_date).toLocaleDateString() : <span className="text-muted-foreground/50">—</span>}</TableCell>
+                                  <TableCell>
+                                    {patient.systolic_bp && patient.diastolic_bp
+                                      ? `${Math.round(Number(patient.systolic_bp))}/${Math.round(Number(patient.diastolic_bp))}`
+                                      : <span className="text-muted-foreground/50">—</span>
+                                    }
+                                  </TableCell>
+                                  <TableCell>
+                                    {patient.bmi ? Number(patient.bmi).toFixed(1) : <span className="text-muted-foreground/50">—</span>}
+                                  </TableCell>
+                                  <TableCell>
+                                    {patient.echo_ef ? `${patient.echo_ef}%` : <span className="text-muted-foreground/50">—</span>}
+                                  </TableCell>
+                                  <TableCell>
+                                    {patient.mri_ef ? `${patient.mri_ef}%` : <span className="text-muted-foreground/50">—</span>}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center space-x-2">
+                                      <div className="h-2 w-14 rounded-full bg-gray-200/80">
+                                        <div
+                                          className={`h-2 rounded-full registry-progress-bar ${
+                                            patient.data_completeness >= 80 ? 'bg-green-500' :
+                                            patient.data_completeness >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                                          }`}
+                                          style={{ width: `${patient.data_completeness}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-xs">{patient.data_completeness}%</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex space-x-1">
+                                      {patient.has_echo && <Badge variant="secondary" className="text-xs">Echo</Badge>}
+                                      {patient.has_mri && <Badge variant="secondary" className="text-xs">MRI</Badge>}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="registry-row-action"
+                                      onClick={() => onPatientSelect(patient.dna_id)}
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </div>
-                          <span className="text-xs">{patient.data_completeness}%</span>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex space-x-1">
-                          {patient.has_echo && <Badge variant="secondary" className="text-xs">Echo</Badge>}
-                          {patient.has_mri && <Badge variant="secondary" className="text-xs">MRI</Badge>}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          className="registry-row-action"
-                          onClick={() => onPatientSelect(patient.dna_id)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                      </td>
+                    </tr>
+                  </>
                 )}
               </TableBody>
             </Table>

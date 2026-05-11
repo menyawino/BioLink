@@ -41,11 +41,11 @@ VERIFICATION_CHART_SPECS = (
         },
     },
     {
-        "slice_name": "BioLink Verification Variables by Tier",
-        "table_name": "harmonization_tiers",
+        "slice_name": "BioLink Verification Records by Source Dataset",
+        "table_name": "unified_registry",
         "viz_type": "bar",
         "params": {
-            "groupby": ["tier"],
+            "groupby": ["source_dataset"],
             "metrics": ["count"],
             "row_limit": 1000,
             "show_legend": True,
@@ -53,11 +53,11 @@ VERIFICATION_CHART_SPECS = (
         },
     },
     {
-        "slice_name": "BioLink Verification Validation Status",
-        "table_name": "harmonization_provenance",
+        "slice_name": "BioLink Verification EHVol Participants",
+        "table_name": "ehvol_participants",
         "viz_type": "bar",
         "params": {
-            "groupby": ["validation_status"],
+            "groupby": ["_source_dataset"],
             "metrics": ["count"],
             "row_limit": 1000,
             "show_legend": True,
@@ -65,11 +65,11 @@ VERIFICATION_CHART_SPECS = (
         },
     },
     {
-        "slice_name": "BioLink Verification Confidence Distribution",
-        "table_name": "harmonization_provenance",
+        "slice_name": "BioLink Verification Participant Tables",
+        "table_name": "bhs_participants",
         "viz_type": "bar",
         "params": {
-            "groupby": ["confidence"],
+            "groupby": ["_source_dataset"],
             "metrics": ["count"],
             "row_limit": 1000,
             "show_legend": True,

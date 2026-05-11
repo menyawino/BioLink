@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -9,7 +9,7 @@ import { Label } from "./ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Slider } from "./ui/slider";
 import { Textarea } from "./ui/textarea";
-import { Save, Download, Play, Users, Filter, Database, Map, Clock, BookOpen, Beaker, CheckCircle2, AlertCircle, UserCheck, ClipboardList, TrendingUp, FileText, Loader2 } from "lucide-react";
+import { Save, Download, Play, Users, Filter, Database, Map, Clock, BookOpen, Beaker, CheckCircle2, AlertCircle, UserCheck, ClipboardList, TrendingUp, FileText, Loader2, Undo2, Redo2 } from "lucide-react";
 import { useCohortQuery, useCohortEstimate, useDownloadCohort } from "../hooks/useCohort";
 import { useCohortFilterOptions, useRegistryOverview } from "../hooks/useAnalytics";
 import type { CohortFilterOption, Patient } from "../api/types";
@@ -64,6 +64,38 @@ export function CohortBuilder() {
   const [queryExecuted, setQueryExecuted] = useState(false);
   const [selectedDataset, setSelectedDataset] = useState<DatasetFilter>("all");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  // Undo/redo history
+  const [history, setHistory] = useState<CohortCriteria[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  const pushHistory = (newCriteria: CohortCriteria) => {
+    setHistory(prev => {
+      const trimmed = prev.slice(0, historyIndex + 1);
+      return [...trimmed, newCriteria];
+    });
+    setHistoryIndex(prev => prev + 1);
+  };
+
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  const handleUndo = () => {
+    if (canUndo) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setCriteria(history[newIndex]);
+    }
+  };
+
+  const handleRedo = () => {
+    if (canRedo) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setCriteria(history[newIndex]);
+    }
+  };
+
   const [criteria, setCriteria] = useState<CohortCriteria>({
     demographics: {
       ageRange: DEFAULT_AGE_RANGE,
@@ -85,6 +117,14 @@ export function CohortBuilder() {
       regions: []
     }
   });
+
+  // Initialize history with the default criteria
+  useEffect(() => {
+    if (history.length === 0) {
+      setHistory([criteria]);
+      setHistoryIndex(0);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build query params from all criteria (memoized for performance)
   const estimateParams = useMemo((): PatientsQueryParams => {
@@ -280,13 +320,17 @@ export function CohortBuilder() {
   }, [criteria.demographics.ageRange, isAgeFilteringAvailable]);
 
   const updateCriteria = (section: keyof CohortCriteria, field: string, value: any) => {
-    setCriteria(prev => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [field]: value
-      }
-    }));
+    setCriteria(prev => {
+      const next = {
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [field]: value
+        }
+      };
+      pushHistory(next);
+      return next;
+    });
   };
 
   const addToArray = (section: keyof CohortCriteria, field: string, value: string) => {
@@ -460,10 +504,34 @@ export function CohortBuilder() {
 
       <Card className="cohort-builder-card">
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Users className="h-5 w-5" />
-            <span>Advanced Cohort Builder</span>
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center space-x-2">
+              <Users className="h-5 w-5" />
+              <span>Advanced Cohort Builder</span>
+            </CardTitle>
+            <div className="flex items-center space-x-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleUndo}
+                disabled={!canUndo}
+                title="Undo (Ctrl+Z)"
+                className="h-8 w-8 p-0"
+              >
+                <Undo2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRedo}
+                disabled={!canRedo}
+                title="Redo (Ctrl+Y)"
+                className="h-8 w-8 p-0"
+              >
+                <Redo2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
           <p className="text-sm text-muted-foreground">
             Build sophisticated patient cohorts with multi-dimensional filtering and temporal constraints
           </p>

@@ -1,20 +1,8 @@
 #!/usr/bin/env python3
-"""
-Bootstrap BioLink NiFi graph via NiFi REST API (idempotent).
+"""Bootstrap the active BioLink NiFi graph via NiFi REST API (idempotent).
 
-Creates and starts:
-  Step 1: Master schema generation
-    GenerateFlowFile -> BiolinkMasterSchemaProcessor -> LogMessage
-
-  Step 2a: BHS harmonisation
-    GetFile -> BiolinkCsvToJsonProcessor -> BiolinkHarmoniseProcessor
-    -> BiolinkJsonToSqlProcessor -> PutSQL (bhs_harmonised)
-
-  Step 2b: EHVol harmonisation
-    GetFile -> BiolinkCsvToJsonProcessor -> BiolinkHarmoniseProcessor
-    -> BiolinkJsonToSqlProcessor -> PutSQL (ehvol_harmonised)
-
-Also ensures a shared root DBCP controller service exists + is enabled.
+Creates and starts the replacement db/test registry pipeline and ensures a
+shared root DBCP controller service exists and is enabled.
 
 Safe to run repeatedly; existing components are re-used by name.
 """
@@ -309,68 +297,8 @@ class NiFiClient:
             raise
 
 
-def build_step1_group(client: NiFiClient, root_id: str) -> None:
-    pg_id = client.ensure_process_group(root_id, "Schema Generation Pipeline (Step 1)", 100, 1200)
-
-    trigger_id = client.ensure_processor(
-        pg_id,
-        "GenerateFlowFile - Trigger Schema Gen",
-        "org.apache.nifi.processors.standard.GenerateFlowFile",
-        STANDARD_BUNDLE,
-        {
-            "File Size": "0B",
-            "Batch Size": "1",
-            "Data Format": "Text",
-            "Unique FlowFiles": "false",
-        },
-        0,
-        0,
-        scheduling_period="24 hours",
-    )
-
-    master_id = client.ensure_processor(
-        pg_id,
-        "MasterSchema - Generate Schema",
-        "BiolinkMasterSchemaProcessor",
-        PYTHON_BUNDLE,
-        {
-            "Repository Root": "/opt/nifi/biolink_repo",
-            "BHS CSV Path": "/opt/nifi/db/BHS_Full.csv",
-            "EHVol CSV Path": "/opt/nifi/db/EHVol_Full.csv",
-            "Schema Output Path": "/opt/nifi/outputs/master_schema.csv",
-            "Match Threshold": "0.35",
-            "Top K": "5",
-            "Min Final Score": "0.50",
-            "Lexicon Path": "/opt/nifi/biolink_scripts/clinical_lexicon.csv",
-        },
-        320,
-        0,
-    )
-
-    log_id = client.ensure_processor(
-        pg_id,
-        "LogMessage - Schema Generated",
-        "org.apache.nifi.processors.standard.LogMessage",
-        STANDARD_BUNDLE,
-        {
-            "Log Level": "info",
-            "Log Message": "master_schema.csv generated: ${biolink.schema.total_matched} matched columns (${biolink.schema.pii_columns} PII, ${biolink.schema.clinical_columns} clinical)",
-        },
-        640,
-        0,
-        auto_terminate=["success"],
-    )
-
-    client.ensure_connection(pg_id, trigger_id, master_id, ["success"], "Trigger -> MasterSchema")
-    client.ensure_connection(pg_id, master_id, log_id, ["success"], "MasterSchema -> Log")
-    client.ensure_connection(pg_id, master_id, master_id, ["failure"], "MasterSchema failure loop")
-
-    for proc_id in [log_id, master_id, trigger_id]:
-        client.start_processor(proc_id)
-
-
 def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
-    pg_id = client.ensure_process_group(root_id, "Registry Pipeline (Steps 2-4)", 100, 1800)
+    pg_id = client.ensure_process_group(root_id, "Registry Pipeline (db/test)", 100, 1800)
 
     trigger_id = client.ensure_processor(
         pg_id,
@@ -395,11 +323,10 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         PYTHON_BUNDLE,
         {
             "Repository Root": "/opt/nifi/biolink_repo",
-            "Schema Relative Path": "outputs/master_schema.csv",
             "Unified Output Relative Path": "outputs/unified_registry.csv",
-            "OMOP Output Relative Directory": "outputs/omop_cdm",
             "Quality Report Relative Path": "outputs/data_quality_report.html",
             "Characterization Relative Path": "outputs/cohort_characterization.csv",
+            "Comparability Report Relative Path": "outputs/comparability_report.json",
             "Load To PostgreSQL": "true",
             "Database Host": "postgres",
             "Database Port": "5432",
@@ -434,101 +361,8 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         client.start_processor(proc_id)
 
 
-def build_step2_group(client: NiFiClient, root_id: str, dataset: str, x: float, y: float, dbcp_id: str) -> None:
-    ds_label = "BHS" if dataset == "bhs" else "EHVol"
-    table_name = f"{dataset}_harmonised"
-    pg_name = f"{ds_label} Harmonise Pipeline (Step 2)"
-
-    pg_id = client.ensure_process_group(root_id, pg_name, x, y)
-
-    file_filter = "BHS_Full_chunk_.*\\.csv" if dataset == "bhs" else "EHVol_Full_chunk_.*\\.csv"
-    batch_size = "50" if dataset == "bhs" else "100"
-
-    getfile_id = client.ensure_processor(
-        pg_id,
-        f"GetFile - {ds_label} Harmonise Input",
-        "org.apache.nifi.processors.standard.GetFile",
-        STANDARD_BUNDLE,
-        {
-            "Input Directory": "/opt/nifi/data-input",
-            "File Filter": file_filter,
-            "Recurse Subdirectories": "false",
-            "Keep Source File": "false",
-        },
-        0,
-        0,
-        scheduling_period="60 sec",
-    )
-
-    csv2json_id = client.ensure_processor(
-        pg_id,
-        f"CsvToJson - {ds_label} Harmonise",
-        "BiolinkCsvToJsonProcessor",
-        PYTHON_BUNDLE,
-        {
-            "Dataset Type": dataset,
-            "Batch Size": batch_size,
-        },
-        280,
-        0,
-    )
-
-    harmonise_id = client.ensure_processor(
-        pg_id,
-        f"Harmonise - {ds_label}",
-        "BiolinkHarmoniseProcessor",
-        PYTHON_BUNDLE,
-        {
-            "Dataset Type": dataset,
-            "Schema Path": "/opt/nifi/outputs/master_schema.csv",
-        },
-        560,
-        0,
-    )
-
-    json2sql_id = client.ensure_processor(
-        pg_id,
-        f"JsonToSql - {table_name}",
-        "BiolinkJsonToSqlProcessor",
-        PYTHON_BUNDLE,
-        {
-            "Table Name": table_name,
-            "Upsert Mode": "false",
-            "Conflict Column": "",
-        },
-        840,
-        0,
-    )
-
-    putsql_id = client.ensure_processor(
-        pg_id,
-        f"PutSQL - {table_name}",
-        "org.apache.nifi.processors.standard.PutSQL",
-        STANDARD_BUNDLE,
-        {
-            "JDBC Connection Pool": dbcp_id,
-            "Auto-Commit": "true",
-        },
-        1120,
-        0,
-        auto_terminate=["success", "failure", "retry"],
-    )
-
-    client.ensure_connection(pg_id, getfile_id, csv2json_id, ["success"], "GetFile -> CsvToJson")
-    client.ensure_connection(pg_id, csv2json_id, harmonise_id, ["success"], "CsvToJson -> Harmonise")
-    client.ensure_connection(pg_id, harmonise_id, json2sql_id, ["success"], "Harmonise -> JsonToSql")
-    client.ensure_connection(pg_id, json2sql_id, putsql_id, ["success"], "JsonToSql -> PutSQL")
-
-    client.ensure_connection(pg_id, csv2json_id, csv2json_id, ["failure"], "CsvToJson failure loop")
-    client.ensure_connection(pg_id, harmonise_id, harmonise_id, ["failure"], "Harmonise failure loop")
-    client.ensure_connection(pg_id, json2sql_id, json2sql_id, ["failure"], "JsonToSql failure loop")
-
-    for proc_id in [putsql_id, json2sql_id, harmonise_id, csv2json_id, getfile_id]:
-        client.start_processor(proc_id)
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Bootstrap BioLink Step1+Step2 NiFi graph via REST")
+    parser = argparse.ArgumentParser(description="Bootstrap the BioLink registry NiFi graph via REST")
     parser.add_argument("--nifi-url", default="https://nifi:8443", help="NiFi base URL")
     parser.add_argument("--username", default="admin", help="NiFi single-user username")
     parser.add_argument("--password", default="biolink_nifi_secret_123", help="NiFi single-user password")
@@ -548,7 +382,6 @@ def main() -> int:
         client.enable_controller_service(dbcp_id)
         print(f"[bootstrap] DBCP ready: {dbcp_id}")
 
-        build_step1_group(client, root_id)
         build_registry_pipeline_group(client, root_id)
 
         print("[bootstrap] NiFi graph bootstrap complete")

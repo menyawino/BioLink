@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: biolink
+  labels:
+    app.kubernetes.io/name: biolink
+    app.kubernetes.io/part-of: biolink-platform
+    environment: production

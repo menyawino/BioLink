@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { getEtlJobStatus, listEtlJobs, runEtl, webhookTrigger, type EtlJobStatus, type EtlRunRequest, type EtlStageManifest } from '../api/etl';
 
-type LineageStageKey = 'ingest' | 'match' | 'harmonize' | 'omop' | 'quality' | 'publish';
+type LineageStageKey = 'ingest' | 'profile' | 'unify' | 'quality' | 'publish';
 type LineageStageStatus = 'idle' | 'running' | 'complete' | 'failed' | 'optional';
 
 type LineageBlueprint = {
@@ -62,43 +62,33 @@ const LINEAGE_BLUEPRINTS: LineageBlueprint[] = [
     icon: Database,
   },
   {
-    key: 'match',
-    title: 'Match Schema',
-    subtitle: 'Column alignment',
-    description: 'Generate or verify harmonization mappings, compare registry structures, and prepare the master schema for downstream transforms.',
-    inputs: ['Source column metadata', 'Clinical lexicon', 'Master schema cache'],
-    outputs: ['master_schema.csv', 'Match validation signals'],
-    owner: 'BiolinkMasterSchemaProcessor',
+    key: 'profile',
+    title: 'Profile & Clean',
+    subtitle: 'Prepare cohort data',
+    description: 'Run the db/test profiling, range-cleaning, unit extraction, and fuzzy standardization steps before unification.',
+    inputs: ['BHS_step_2_reduced.csv', 'EHVol_step_2_reduced.csv', 'Step dictionaries'],
+    outputs: ['step_3 to step_6 artifacts', 'Validated cohort slices'],
+    owner: 'db/test step pipeline',
     icon: GitBranch,
   },
   {
-    key: 'harmonize',
-    title: 'Harmonize Registry',
+    key: 'unify',
+    title: 'Unify Registry',
     subtitle: 'Merge cohort records',
-    description: 'Apply the schema, normalize values, reload the registry tables, and write provenance for each transformed field.',
-    inputs: ['Matched schema', 'Registry source rows'],
-    outputs: ['unified_registry.csv', 'provenance.csv', 'registry_etl_runs'],
+    description: 'Build the wide unified snapshot from the cleaned db/test outputs and reload the registry tables.',
+    inputs: ['step_4 cleaned cohorts', 'step_6 fuzzy suggestions'],
+    outputs: ['unified_registry.csv', 'step_7 outputs', 'registry_etl_runs'],
     owner: 'BiolinkRegistryPipelineProcessor',
     icon: Layers3,
-  },
-  {
-    key: 'omop',
-    title: 'Build OMOP',
-    subtitle: 'Materialize analytical tables',
-    description: 'Convert the unified registry into OMOP-style extracts so downstream analytics and QA can reason about stable domains.',
-    inputs: ['unified_registry.csv', 'master_schema.csv'],
-    outputs: ['person', 'measurement', 'condition_occurrence', 'observation'],
-    owner: 'omop_etl.py',
-    icon: TableProperties,
   },
   {
     key: 'quality',
     title: 'Quality & Comparability',
     subtitle: 'Assess readiness',
-    description: 'Measure cohort quality, characterize distributions, and emit comparability artifacts before publication.',
-    inputs: ['OMOP extracts', 'Tier metadata', 'Comparability rules'],
+    description: 'Publish the current audit report, cohort characterization, and comparability summary before publication.',
+    inputs: ['step_7 unified outputs', 'Comparability rules'],
     outputs: ['data_quality_report.html', 'cohort_characterization.csv', 'comparability_report.json'],
-    owner: 'omop_quality.py + cohort_comparability.py',
+    owner: 'db/test/run_pipeline.py',
     icon: FlaskConical,
   },
   {
@@ -261,14 +251,12 @@ function inferLineageStages(job: EtlJobStatus | null): LineageStage[] {
     let metric = '';
     if (stage.key === 'ingest') {
       metric = `${requestedDatasets.length} dataset${requestedDatasets.length === 1 ? '' : 's'} staged`;
-    } else if (stage.key === 'match') {
-      metric = runMode === 'script-aligned' ? 'Schema guardrails active' : 'Schema verification pending';
-    } else if (stage.key === 'harmonize') {
+    } else if (stage.key === 'profile') {
+      metric = runMode === 'script-aligned' ? 'db/test preparation active' : 'Preparation pending';
+    } else if (stage.key === 'unify') {
       metric = job ? `Run window ${formatDuration(job.startedAt, job.finishedAt)}` : 'Awaiting run';
-    } else if (stage.key === 'omop') {
-      metric = '4 domain extracts targeted';
     } else if (stage.key === 'quality') {
-      metric = 'Comparability artifacts refreshed';
+      metric = 'Audit artifacts refreshed';
     } else {
       metric = publishSkipped ? 'Superset refresh skipped' : 'Superset refresh enabled';
     }
@@ -310,7 +298,7 @@ export function EtlMonitor() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [jobs, setJobs] = useState<EtlJobStatus[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [selectedStage, setSelectedStage] = useState<LineageStageKey>('harmonize');
+  const [selectedStage, setSelectedStage] = useState<LineageStageKey>('unify');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [csvText, setCsvText] = useState<string | null>(null);
@@ -358,22 +346,16 @@ export function EtlMonitor() {
         freshness: selectedJob ? formatTimestamp(selectedJob.requestedAt) : 'Standing source',
       },
       {
-        name: 'Master schema',
-        location: 'outputs/master_schema.csv',
-        stage: 'Match Schema',
-        freshness: selectedJob?.status === 'queued' ? 'Queued for refresh' : 'Reused until next run',
+        name: 'Prepared cohort artifacts',
+        location: 'db/test/step_3 ... db/test/step_7',
+        stage: 'Profile & Clean',
+        freshness: selectedJob?.status === 'queued' ? 'Queued for refresh' : 'Regenerated during run',
       },
       {
         name: 'Unified registry',
         location: 'outputs/unified_registry.csv',
-        stage: 'Harmonize Registry',
+        stage: 'Unify Registry',
         freshness: selectedJob ? formatDuration(selectedJob.startedAt, selectedJob.finishedAt) : 'Last successful run',
-      },
-      {
-        name: 'OMOP outputs',
-        location: 'outputs/omop_cdm/',
-        stage: 'Build OMOP',
-        freshness: selectedJob?.status === 'succeeded' ? 'Ready for downstream analysis' : 'Generated during run',
       },
       {
         name: 'QA artifacts',
@@ -437,7 +419,7 @@ export function EtlMonitor() {
     if (selectedJob.status === 'queued') {
       setSelectedStage('ingest');
     } else if (selectedJob.status === 'running' || selectedJob.status === 'failed') {
-      setSelectedStage('harmonize');
+      setSelectedStage('unify');
     } else {
       setSelectedStage(selectedJob.request?.skip_superset ? 'quality' : 'publish');
     }

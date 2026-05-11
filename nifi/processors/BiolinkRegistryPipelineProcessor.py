@@ -1,14 +1,7 @@
-"""
-BioLink Registry Pipeline Processor for Apache NiFi 2.8.0.
+"""BioLink Registry Pipeline Processor for Apache NiFi 2.8.0.
 
-Runs the documented script ETL plan inside NiFi:
-    1. nifi/pipeline/apply_schema.py
-    2. nifi/pipeline/omop_etl.py
-    3. nifi/pipeline/omop_quality.py
-  4. loads unified registry + OMOP CSV outputs into PostgreSQL
-
-This keeps NiFi as the execution engine while using the same ETL method as the
-scripts-based registry pipeline.
+Runs the replacement db/test pipeline inside NiFi and loads the current unified
+registry snapshot plus cohort comparability artifacts into PostgreSQL.
 """
 
 from __future__ import annotations
@@ -16,7 +9,6 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-import os
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -393,6 +385,17 @@ def _store_run_manifest(conn, manifest: dict, json_cls) -> None:
     conn.commit()
 
 
+def _drop_tables(conn, table_names: list[str], sql_module) -> None:
+    with conn.cursor() as cursor:
+        for table_name in table_names:
+            cursor.execute(
+                sql_module.SQL("DROP TABLE IF EXISTS {} CASCADE").format(
+                    sql_module.Identifier(table_name)
+                )
+            )
+    conn.commit()
+
+
 class BiolinkRegistryPipelineProcessor(FlowFileTransform):
     class Java:
         implements = ["org.apache.nifi.python.processor.FlowFileTransform"]
@@ -400,24 +403,17 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
     class ProcessorDetails:
         version = "1.0.0"
         description = (
-            "Runs the script-aligned BioLink registry pipeline inside NiFi, writes the "
-            "unified registry, OMOP CSVs, quality artifacts, and loads the resulting "
-            "datasets into PostgreSQL."
+            "Runs the replacement db/test BioLink registry pipeline inside NiFi, writes the "
+            "current unified registry and audit artifacts, and loads the resulting datasets "
+            "into PostgreSQL."
         )
-        tags = ["biolink", "etl", "registry", "omop", "postgres", "scripted"]
+        tags = ["biolink", "etl", "registry", "postgres", "scripted"]
 
     REPOSITORY_ROOT = PropertyDescriptor(
         name="Repository Root",
-        description="Mounted repository root containing nifi/pipeline/, db/, and outputs/.",
+        description="Mounted repository root containing db/test/, db/, and outputs/.",
         required=True,
         default_value="/opt/nifi/biolink_repo",
-        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
-    )
-    SCHEMA_RELATIVE_PATH = PropertyDescriptor(
-        name="Schema Relative Path",
-        description="Path to master_schema.csv relative to the repository root.",
-        required=True,
-        default_value="outputs/master_schema.csv",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     UNIFIED_RELATIVE_PATH = PropertyDescriptor(
@@ -425,13 +421,6 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         description="Path to unified_registry.csv relative to the repository root.",
         required=True,
         default_value="outputs/unified_registry.csv",
-        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
-    )
-    OMOP_OUTPUT_DIR = PropertyDescriptor(
-        name="OMOP Output Relative Directory",
-        description="OMOP output directory relative to the repository root.",
-        required=True,
-        default_value="outputs/omop_cdm",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
     REPORT_HTML_PATH = PropertyDescriptor(
@@ -450,7 +439,7 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
     )
     LOAD_TO_POSTGRES = PropertyDescriptor(
         name="Load To PostgreSQL",
-        description="When true, load the unified registry snapshot and OMOP CSVs into PostgreSQL.",
+        description="When true, load the unified registry snapshot and comparability artifacts into PostgreSQL.",
         required=False,
         default_value="true",
         allowable_values=["true", "false"],
@@ -512,20 +501,6 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
         default_value="",
         expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
     )
-    PROVENANCE_RELATIVE_PATH = PropertyDescriptor(
-        name="Provenance Output Relative Path",
-        description="Path to provenance.csv relative to the repository root.",
-        required=True,
-        default_value="outputs/provenance.csv",
-        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
-    )
-    TIERS_RELATIVE_PATH = PropertyDescriptor(
-        name="Tiers Output Relative Path",
-        description="Path to harmonization_tiers.csv relative to the repository root.",
-        required=True,
-        default_value="outputs/harmonization_tiers.csv",
-        expression_language_scope=ExpressionLanguageScope.FLOWFILE_ATTRIBUTES,
-    )
     COMPARABILITY_RELATIVE_PATH = PropertyDescriptor(
         name="Comparability Report Relative Path",
         description="Path to comparability_report.json relative to the repository root.",
@@ -535,12 +510,8 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
     )
     property_descriptors = [
         REPOSITORY_ROOT,
-        SCHEMA_RELATIVE_PATH,
         UNIFIED_RELATIVE_PATH,
-        PROVENANCE_RELATIVE_PATH,
-        TIERS_RELATIVE_PATH,
         COMPARABILITY_RELATIVE_PATH,
-        OMOP_OUTPUT_DIR,
         REPORT_HTML_PATH,
         CHARACTERIZATION_PATH,
         LOAD_TO_POSTGRES,
@@ -573,12 +544,8 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
 
     def transform(self, context, flowfile):
         repo_root = Path(context.getProperty(self.REPOSITORY_ROOT).getValue())
-        schema_path = repo_root / context.getProperty(self.SCHEMA_RELATIVE_PATH).getValue()
         unified_path = repo_root / context.getProperty(self.UNIFIED_RELATIVE_PATH).getValue()
-        provenance_path = repo_root / context.getProperty(self.PROVENANCE_RELATIVE_PATH).getValue()
-        tiers_path = repo_root / context.getProperty(self.TIERS_RELATIVE_PATH).getValue()
         comparability_path = repo_root / context.getProperty(self.COMPARABILITY_RELATIVE_PATH).getValue()
-        omop_dir = repo_root / context.getProperty(self.OMOP_OUTPUT_DIR).getValue()
         report_html = repo_root / context.getProperty(self.REPORT_HTML_PATH).getValue()
         characterization_csv = repo_root / context.getProperty(self.CHARACTERIZATION_PATH).getValue()
         load_to_postgres = (context.getProperty(self.LOAD_TO_POSTGRES).getValue() or "true").strip().lower() == "true"
@@ -595,75 +562,30 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                 contents=json.dumps({"error": message}),
                 attributes={"biolink.error": message},
             )
-        if not schema_path.is_file():
-            message = f"BiolinkRegistryPipelineProcessor: master schema not found at '{schema_path}'"
+        pipeline_runner = repo_root / "db" / "test" / "run_pipeline.py"
+        if not pipeline_runner.is_file():
+            message = f"BiolinkRegistryPipelineProcessor: replacement pipeline runner not found at '{pipeline_runner}'"
             return FlowFileTransformResult(
                 relationship="failure",
                 contents=json.dumps({"error": message}),
                 attributes={"biolink.error": message},
             )
 
-        apply_script = repo_root / "nifi" / "pipeline" / "apply_schema.py"
-        omop_script = repo_root / "nifi" / "pipeline" / "omop_etl.py"
-        quality_script = repo_root / "nifi" / "pipeline" / "omop_quality.py"
-        comparability_script = repo_root / "nifi" / "pipeline" / "cohort_comparability.py"
-
         try:
             self._run_script(
                 repo_root,
                 [
                     "python3",
-                    str(apply_script),
-                    str(schema_path),
-                    str(repo_root / "db" / "BHS_Full.csv"),
-                    str(repo_root / "db" / "EHVol_Full.csv"),
-                    "--output",
+                    str(pipeline_runner),
+                    "--repo-root",
+                    str(repo_root),
+                    "--unified-output",
                     str(unified_path),
-                    "--provenance-output",
-                    str(provenance_path),
-                    "--tiers-output",
-                    str(tiers_path),
-                    "--drop-empty-cols",
-                ],
-            )
-            self._run_script(
-                repo_root,
-                [
-                    "python3",
-                    str(comparability_script),
-                    "--registry",
-                    str(unified_path),
-                    "--tiers",
-                    str(tiers_path),
-                    "--output",
+                    "--comparability-output",
                     str(comparability_path),
-                ],
-            )
-            self._run_script(
-                repo_root,
-                [
-                    "python3",
-                    str(omop_script),
-                    "--unified",
-                    str(unified_path),
-                    "--schema",
-                    str(schema_path),
-                    "--output-dir",
-                    str(omop_dir),
-                    "--format",
-                    "csv",
-                ],
-            )
-            self._run_script(
-                repo_root,
-                [
-                    "python3",
-                    str(quality_script),
-                    "--input-dir",
-                    str(omop_dir),
                     "--report-html",
                     str(report_html),
-                    "--characterization-csv",
+                    "--characterization-output",
                     str(characterization_csv),
                 ],
             )
@@ -675,24 +597,27 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                 attributes={"biolink.error": message[:2000]},
             )
 
+        if not unified_path.is_file():
+            message = f"BiolinkRegistryPipelineProcessor: replacement pipeline did not create '{unified_path}'"
+            return FlowFileTransformResult(
+                relationship="failure",
+                contents=json.dumps({"error": message}),
+                attributes={"biolink.error": message},
+            )
+
         unified_rows, unified_cols = _count_csv_rows(unified_path)
-        manifest_path = omop_dir / "manifest.json"
-        manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
         summary = {
             "source": "nifi-processor",
+            "pipeline": "db/test",
+            "pipeline_runner": str(pipeline_runner),
             "trigger_token": trigger_run_token,
             "requested_datasets": requested_datasets,
-            "master_schema_path": str(schema_path),
             "unified_registry_path": str(unified_path),
             "unified_registry_rows": unified_rows,
             "unified_registry_columns": unified_cols,
-            "provenance_path": str(provenance_path),
-            "tiers_path": str(tiers_path),
             "comparability_path": str(comparability_path),
-            "omop_output_dir": str(omop_dir),
             "quality_report_path": str(report_html),
             "characterization_path": str(characterization_csv),
-            "omop_manifest": manifest,
         }
 
         if load_to_postgres:
@@ -727,6 +652,15 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                     psy_json,
                 )
                 try:
+                    _drop_tables(
+                        conn,
+                        [
+                            "harmonization_provenance",
+                            "harmonization_tiers",
+                            "comparability_report",
+                        ],
+                        psy_sql,
+                    )
                     summary["postgres_unified_rows"] = _load_unified_registry(
                         conn,
                         unified_path,
@@ -757,34 +691,7 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                             psy_execute_values,
                         ),
                     }
-                    omop_tables = {
-                        "person": omop_dir / "person.csv",
-                        "measurement": omop_dir / "measurement.csv",
-                        "condition_occurrence": omop_dir / "condition_occurrence.csv",
-                        "observation": omop_dir / "observation.csv",
-                    }
-                    loaded_tables = {}
-                    for table_name, csv_path in omop_tables.items():
-                        if csv_path.is_file():
-                            loaded_tables[table_name] = _create_or_replace_csv_table(
-                                conn,
-                                csv_path,
-                                f"omop_{table_name}",
-                                psy_sql,
-                            )
-                    summary["postgres_omop_tables"] = loaded_tables
-
-                    # Load harmonization artifacts (provenance, tiers)
-                    harmonization_tables = {}
-                    if provenance_path.is_file():
-                        harmonization_tables["harmonization_provenance"] = _create_or_replace_csv_table(
-                            conn, provenance_path, "harmonization_provenance", psy_sql,
-                        )
-                    if tiers_path.is_file():
-                        harmonization_tables["harmonization_tiers"] = _create_or_replace_csv_table(
-                            conn, tiers_path, "harmonization_tiers", psy_sql,
-                        )
-                    # Store comparability report as JSONB if it exists
+                    comparability_loaded = False
                     if comparability_path.is_file():
                         report_json = json.loads(comparability_path.read_text())
                         with conn.cursor() as cursor:
@@ -805,8 +712,8 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                                 (psy_json(report_json),),
                             )
                         conn.commit()
-                        harmonization_tables["comparability_report"] = 1
-                    summary["postgres_harmonization_tables"] = harmonization_tables
+                        comparability_loaded = True
+                    summary["postgres_comparability_loaded"] = comparability_loaded
                     _store_run_manifest(
                         conn,
                         {

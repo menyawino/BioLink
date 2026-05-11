@@ -68,98 +68,15 @@
     "identifier": "biolink-root",
     "instanceIdentifier": "biolink-root-instance",
     "name": "BioLink ETL Pipeline",
-    "comments": "Script-aligned NiFi execution of the BioLink registry ETL pipeline.",
+    "comments": "NiFi execution of the active db/test BioLink registry pipeline.",
     "position": { "x": 0, "y": 0 },
     "parameterContextName": "BioLink Parameters",
     "processGroups": [
       {
-        "identifier": "pg-schema-gen",
-        "instanceIdentifier": "pg-schema-gen-instance",
-        "name": "Schema Generation Pipeline (Step 1)",
-        "comments": "Runs nifi/pipeline/two_stage_match.py via BiolinkMasterSchemaProcessor.",
-        "position": { "x": 100, "y": 1200 },
-        "parameterContextName": "BioLink Parameters",
-        "processGroups": [],
-        "remoteProcessGroups": [],
-        "processors": [
-          {
-            "identifier": "schema-gen-trigger",
-            "name": "GenerateFlowFile - Trigger Schema Gen",
-            "type": "org.apache.nifi.processors.standard.GenerateFlowFile",
-            "position": { "x": 0, "y": 0 },
-            "config": {
-              "properties": {
-                "File Size": "0B",
-                "Batch Size": "1",
-                "Data Format": "Text",
-                "Unique FlowFiles": "false"
-              },
-              "schedulingPeriod": "24 hours",
-              "schedulingStrategy": "TIMER_DRIVEN"
-            }
-          },
-          {
-            "identifier": "schema-gen-processor",
-            "name": "MasterSchema - Generate Schema",
-            "type": "org.apache.nifi.processors.python.BiolinkMasterSchemaProcessor",
-            "position": { "x": 320, "y": 0 },
-            "config": {
-              "properties": {
-                "Repository Root": "/opt/nifi/biolink_repo",
-                "BHS CSV Path": "/opt/nifi/db/BHS_Full.csv",
-                "EHVol CSV Path": "/opt/nifi/db/EHVol_Full.csv",
-                "Schema Output Path": "/opt/nifi/outputs/master_schema.csv",
-                "Match Threshold": "0.35",
-                "Top K": "5",
-                "Min Final Score": "0.50",
-                "Lexicon Path": "/opt/nifi/biolink_scripts/clinical_lexicon.csv"
-              }
-            }
-          },
-          {
-            "identifier": "schema-gen-log",
-            "name": "LogMessage - Schema Generated",
-            "type": "org.apache.nifi.processors.standard.LogMessage",
-            "position": { "x": 640, "y": 0 },
-            "config": {
-              "properties": {
-                "Log Level": "info",
-                "Log Message": "master_schema.csv generated: ${biolink.schema.total_matched} matched columns (${biolink.schema.pii_columns} PII, ${biolink.schema.clinical_columns} clinical)"
-              }
-            }
-          }
-        ],
-        "connections": [
-          {
-            "identifier": "c-sg-1",
-            "source": { "id": "schema-gen-trigger", "type": "PROCESSOR" },
-            "destination": { "id": "schema-gen-processor", "type": "PROCESSOR" },
-            "selectedRelationships": ["success"]
-          },
-          {
-            "identifier": "c-sg-2",
-            "source": { "id": "schema-gen-processor", "type": "PROCESSOR" },
-            "destination": { "id": "schema-gen-log", "type": "PROCESSOR" },
-            "selectedRelationships": ["success"]
-          },
-          {
-            "identifier": "c-sg-f",
-            "source": { "id": "schema-gen-processor", "type": "PROCESSOR" },
-            "destination": { "id": "schema-gen-processor", "type": "PROCESSOR" },
-            "selectedRelationships": ["failure"]
-          }
-        ],
-        "controllerServices": [],
-        "inputPorts": [],
-        "outputPorts": [],
-        "funnels": [],
-        "labels": []
-      },
-      {
         "identifier": "pg-registry-pipeline",
         "instanceIdentifier": "pg-registry-pipeline-instance",
-        "name": "Registry Pipeline (Steps 2-4)",
-        "comments": "Runs apply_schema, OMOP export, quality checks, and PostgreSQL load.",
+        "name": "Registry Pipeline (db/test)",
+        "comments": "Runs the replacement db/test pipeline, publishes compatibility outputs, and loads PostgreSQL tables.",
         "position": { "x": 100, "y": 1800 },
         "parameterContextName": "BioLink Parameters",
         "processGroups": [],
@@ -189,11 +106,10 @@
             "config": {
               "properties": {
                 "Repository Root": "/opt/nifi/biolink_repo",
-                "Schema Relative Path": "outputs/master_schema.csv",
                 "Unified Output Relative Path": "outputs/unified_registry.csv",
-                "OMOP Output Relative Directory": "outputs/omop_cdm",
                 "Quality Report Relative Path": "outputs/data_quality_report.html",
                 "Characterization Relative Path": "outputs/cohort_characterization.csv",
+                "Comparability Report Relative Path": "outputs/comparability_report.json",
                 "Load To PostgreSQL": "true",
                 "Database Host": "postgres",
                 "Database Port": "5432",

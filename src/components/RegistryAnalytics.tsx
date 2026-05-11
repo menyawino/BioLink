@@ -977,12 +977,12 @@ export function RegistryAnalytics() {
 
         <TabsContent value="harmonization" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Tier Breakdown */}
+            {/* Coverage Breakdown */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Shield className="h-5 w-5" />
-                  Harmonization Tiers
+                    Registry Mapping Coverage
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -990,8 +990,8 @@ export function RegistryAnalytics() {
                   <div className="space-y-3">
                     {Object.entries(tiersData.summary).map(([tier, count]) => (
                       <div key={tier} className="flex items-center justify-between">
-                        <Badge variant={tier === 'analysis_ready' ? 'default' : tier === 'semantically_harmonized' ? 'secondary' : 'outline'}>
-                          {tier.replace(/_/g, ' ')}
+                        <Badge variant={tier === '1' ? 'default' : 'outline'}>
+                          {tier === '1' ? 'shared' : 'single cohort'}
                         </Badge>
                         <span className="text-sm font-mono">{count} columns</span>
                       </div>
@@ -1001,15 +1001,15 @@ export function RegistryAnalytics() {
                     </div>
                   </div>
                 ) : (
-                  <DataNotAvailable title="Harmonization Tiers" message="Run the harmonization pipeline to generate tier data" />
+                  <DataNotAvailable title="Registry Mapping Coverage" message="Run the replacement db/test pipeline to generate mapping data" />
                 )}
               </CardContent>
             </Card>
 
-            {/* Provenance Summary */}
+            {/* Coverage Summary */}
             <Card>
               <CardHeader>
-                <CardTitle>Provenance Tracking</CardTitle>
+                <CardTitle>Cross-Cohort Coverage</CardTitle>
               </CardHeader>
               <CardContent>
                 {provenanceSummary?.total_records ? (
@@ -1019,11 +1019,11 @@ export function RegistryAnalytics() {
                       <span className="font-mono text-sm">{provenanceSummary.total_records.toLocaleString()}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <Badge variant="default">PASS</Badge>
+                      <Badge variant="default">SHARED</Badge>
                       <span className="font-mono text-sm text-green-600">{provenanceSummary.pass_count.toLocaleString()}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <Badge variant="destructive">FAIL</Badge>
+                      <Badge variant="destructive">SINGLE COHORT</Badge>
                       <span className="font-mono text-sm text-red-600">{provenanceSummary.fail_count.toLocaleString()}</span>
                     </div>
                     <div className="pt-2 border-t text-sm text-muted-foreground">
@@ -1031,15 +1031,15 @@ export function RegistryAnalytics() {
                     </div>
                   </div>
                 ) : (
-                  <DataNotAvailable title="Provenance" message="No provenance data available" />
+                  <DataNotAvailable title="Coverage Audit" message="No mapping coverage data available" />
                 )}
               </CardContent>
             </Card>
 
-            {/* Validation Failures */}
+            {/* Coverage Gaps */}
             <Card>
               <CardHeader>
-                <CardTitle>Top Validation Failures</CardTitle>
+                <CardTitle>Top Coverage Gaps</CardTitle>
               </CardHeader>
               <CardContent>
                 {provenanceSummary?.top_failures?.length ? (
@@ -1052,7 +1052,7 @@ export function RegistryAnalytics() {
                     ))}
                   </div>
                 ) : (
-                  <DataNotAvailable title="Validation Failures" message="No validation failures recorded" />
+                  <DataNotAvailable title="Coverage Gaps" message="No single-cohort mapping gaps recorded" />
                 )}
               </CardContent>
             </Card>
@@ -1082,8 +1082,8 @@ export function RegistryAnalytics() {
                         <tr key={t.master_col} className="border-b hover:bg-muted/50">
                           <td className="py-1.5 px-2 font-mono text-xs">{t.master_col}</td>
                           <td className="py-1.5 px-2">
-                            <Badge variant={t.tier === 'analysis_ready' ? 'default' : t.tier === 'semantically_harmonized' ? 'secondary' : 'outline'} className="text-xs">
-                              {t.tier.replace(/_/g, ' ')}
+                            <Badge variant={t.tier === '1' ? 'default' : 'outline'} className="text-xs">
+                              {t.tier === '1' ? 'shared' : 'single cohort'}
                             </Badge>
                           </td>
                           <td className="py-1.5 px-2">{t.data_type}</td>

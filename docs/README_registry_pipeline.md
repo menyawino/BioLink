@@ -1,44 +1,26 @@
-# Registry Pipeline (Fresh Baseline)
+# Registry Pipeline
 
-This pipeline aligns with your 4-step flow:
+The legacy generated-schema workflow has been removed.
 
-1. **Data profiling + schema matching**
-   - Script: `nifi/pipeline/two_stage_match.py`
-   - Output: `outputs/master_schema.csv`
-   - Includes `omop_domain` + `standard_vocab` hints for OMOP readiness.
-
-2. **PII scrubbing + schema application**
-   - Script: `nifi/pipeline/apply_schema.py`
-   - Output: `outputs/unified_registry.csv`
-
-3. **OMOP CDM bootstrap mapping**
-   - Script: `nifi/pipeline/omop_etl.py`
-   - Output dir: `outputs/omop_cdm/`
-   - Tables: `person`, `measurement`, `condition_occurrence`, `observation`
-
-4. **Data quality + characterization**
-   - Script: `nifi/pipeline/omop_quality.py`
-   - Outputs:
-     - `outputs/data_quality_report.html`
-     - `outputs/cohort_characterization.csv`
-
----
-
-## Quick Start
+The active pipeline lives under `db/test/` and is executed through:
 
 ```bash
-python3 nifi/pipeline/two_stage_match.py
-python3 nifi/pipeline/apply_schema.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv --output outputs/unified_registry.csv
-python3 nifi/pipeline/omop_etl.py --unified outputs/unified_registry.csv --schema outputs/master_schema.csv --output-dir outputs/omop_cdm
-python3 nifi/pipeline/omop_quality.py --input-dir outputs/omop_cdm
+python3 db/test/run_pipeline.py
 ```
 
-## Optional: External OHDSI tools
+Primary outputs:
 
-If available in your environment, you can add:
+- `outputs/unified_registry.csv`
+- `outputs/comparability_report.json`
+- `outputs/data_quality_report.html`
+- `outputs/cohort_characterization.csv`
+- `db/test/step_7/unified_wide_table.csv`
+- `db/test/step_7/column_mapping.csv`
+- `db/test/step_7/value_set_mapping.csv`
+- `db/test/step_7/unit_mapping.csv`
+- `db/test/step_7/modality_manifest.csv`
 
-- WhiteRabbit / Usagi for richer source-to-standard concept mapping
-- OHDSI Data Quality Dashboard (DQD)
-- Achilles for characterization on a full OMOP instance
+Detailed step documentation:
 
-These are environment-specific and can be layered on top of this baseline.
+- `db/test/PIPELINE_STEPS_AND_SIGNIFICANCE.md`
+- `db/test/UNIFICATION_STRATEGY.md`

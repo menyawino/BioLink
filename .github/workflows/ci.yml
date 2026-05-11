@@ -39,7 +39,7 @@ jobs:
     
     - name: Run MyPy (type checking)
       working-directory: ./backend-py
-      run: mypy app/ --ignore-missing-imports || true
+      run: mypy app/ --ignore-missing-imports
 
   # Backend tests
   backend-test:
@@ -81,11 +81,12 @@ jobs:
         pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
     
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
-        file: ./backend-py/coverage.xml
+        files: ./backend-py/coverage.xml
         flags: backend
         name: backend-coverage
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   # Frontend linting and type checking
   frontend-lint:
@@ -103,10 +104,10 @@ jobs:
       run: npm ci
     
     - name: Run ESLint
-      run: npm run lint || npx eslint src/ --ext .ts,.tsx || true
+      run: npm run lint
     
     - name: Run TypeScript type checking
-      run: npx tsc --noEmit || true
+      run: npx tsc --noEmit
 
   # Frontend tests
   frontend-test:
@@ -124,13 +125,14 @@ jobs:
       run: npm ci
     
     - name: Run Vitest
-      run: npm run test:unit -- --coverage || npx vitest run --coverage || true
+      run: npm run test:unit -- --coverage
     
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         flags: frontend
         name: frontend-coverage
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   # E2E tests with Playwright
   e2e-test:
@@ -151,10 +153,10 @@ jobs:
       run: npx playwright install --with-deps chromium
     
     - name: Run Playwright tests
-      run: npx playwright test || true
+      run: npx playwright test
     
     - name: Upload Playwright report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: playwright-report

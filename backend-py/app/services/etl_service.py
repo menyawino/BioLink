@@ -48,14 +48,8 @@ NIFI_TRIGGER_DATASETS_PROPERTY = os.getenv(
 
 BHS_CANONICAL_FILENAME = "BHS_Full.csv"
 EHVOL_CANONICAL_FILENAME = "EHVol_Full.csv"
-LINEAGE_STAGE_ORDER = ["ingest", "match", "harmonize", "omop", "quality", "publish"]
-SUPERSET_MANAGED_PIPELINE_TABLES = (
-    "_schema_registry",
-    "unified_registry",
-    "harmonization_tiers",
-    "harmonization_provenance",
-    "comparability_report",
-)
+LINEAGE_STAGE_ORDER = ["ingest", "profile", "unify", "quality", "publish"]
+SUPERSET_MANAGED_PIPELINE_TABLES = ("unified_registry", "comparability_report")
 SUPERSET_MANAGED_PARTICIPANT_DATASETS = ("ehvol", "bhs")
 
 
@@ -684,10 +678,10 @@ def trigger_etl_pipeline(
     try:
         emit_stage(
             _build_stage_manifest(
-                "match",
+                "profile",
                 "running",
                 "backend-nifi-trigger",
-                "Configuring scripted NiFi processor context.",
+                "Configuring the replacement db/test NiFi processor context.",
                 details={
                     "processor_id": processor_id,
                     "trigger_token": trigger_token,
@@ -704,10 +698,10 @@ def trigger_etl_pipeline(
         if not configure_result.get("ok"):
             emit_stage(
                 _build_stage_manifest(
-                    "match",
+                    "profile",
                     "failed",
                     "backend-nifi-trigger",
-                    "Failed to configure scripted NiFi processor context.",
+                    "Failed to configure the replacement db/test NiFi processor context.",
                     details={"error": configure_result.get("error")},
                 )
             )
@@ -715,10 +709,10 @@ def trigger_etl_pipeline(
 
         emit_stage(
             _build_stage_manifest(
-                "match",
+                "profile",
                 "complete",
                 "backend-nifi-trigger",
-                "Scripted NiFi processor context configured and ready to run.",
+                "Replacement db/test NiFi processor context configured and ready to run.",
                 details={
                     "processor_id": processor_id,
                     "trigger_token": trigger_token,
@@ -728,10 +722,10 @@ def trigger_etl_pipeline(
         )
         emit_stage(
             _build_stage_manifest(
-                "harmonize",
+                "unify",
                 "running",
                 "nifi-processor",
-                "NiFi accepted the registry run and verification is in progress.",
+                "NiFi accepted the replacement registry run and verification is in progress.",
                 details={"processor_id": processor_id, "trigger_token": trigger_token},
             )
         )
@@ -740,10 +734,10 @@ def trigger_etl_pipeline(
         if not run_result.get("ok"):
             emit_stage(
                 _build_stage_manifest(
-                    "harmonize",
+                    "unify",
                     "failed",
                     "nifi-processor",
-                    "NiFi rejected the scripted registry run.",
+                    "NiFi rejected the replacement registry run.",
                     details={"error": run_result.get("error")},
                 )
             )
@@ -751,10 +745,10 @@ def trigger_etl_pipeline(
 
         emit_stage(
             _build_stage_manifest(
-                "harmonize",
+                "unify",
                 "running",
                 "nifi-processor",
-                "Waiting for registry tables and manifest events to confirm the load stage.",
+                "Waiting for the unified registry tables and manifest events to confirm the load stage.",
                 details={
                     "status_code": run_result.get("status_code"),
                     "trigger_token": trigger_token,
@@ -778,7 +772,7 @@ def trigger_etl_pipeline(
             )
             emit_stage(
                 _build_stage_manifest(
-                    "harmonize",
+                    "unify",
                     "complete",
                     verification_source,
                     "Registry tables were repopulated and verified.",
@@ -790,17 +784,6 @@ def trigger_etl_pipeline(
                 )
             )
 
-            omop_available = _artifact_exists("outputs/omop_cdm")
-            emit_stage(
-                _build_stage_manifest(
-                    "omop",
-                    "complete" if omop_available else "idle",
-                    "artifact-observer",
-                    "OMOP output directory detected." if omop_available else "OMOP output directory was not observed during this run.",
-                    details={"path": "outputs/omop_cdm"},
-                )
-            )
-
             quality_report_available = _artifact_exists("outputs/data_quality_report.html")
             comparability_available = _artifact_exists("outputs/comparability_report.json")
             emit_stage(
@@ -808,7 +791,7 @@ def trigger_etl_pipeline(
                     "quality",
                     "complete" if (quality_report_available or comparability_available) else "idle",
                     "artifact-observer",
-                    "Quality artifacts detected." if (quality_report_available or comparability_available) else "Quality artifacts were not observed during this run.",
+                    "Replacement pipeline artifacts detected." if (quality_report_available or comparability_available) else "Replacement pipeline artifacts were not observed during this run.",
                     details={
                         "comparability_report": comparability_available,
                         "quality_report": quality_report_available,
@@ -852,6 +835,7 @@ def trigger_etl_pipeline(
                 "ok": True,
                 "engine": "nifi",
                 "mode": "script-aligned",
+                "pipeline": "db/test",
                 "dataset": dataset,
                 "datasets_requested": requested_datasets,
                 "processor_id": processor_id,
@@ -878,20 +862,11 @@ def trigger_etl_pipeline(
         ):
             emit_stage(
                 _build_stage_manifest(
-                    "harmonize",
+                    "unify",
                     "complete",
                     "snapshot-fallback",
                     "NiFi trigger accepted, then backend snapshot fallback restored registry tables.",
                     details={"counts": fallback_counts, "run_id": fallback.get("run_id")},
-                )
-            )
-            emit_stage(
-                _build_stage_manifest(
-                    "omop",
-                    "complete" if _artifact_exists("outputs/omop_cdm") else "idle",
-                    "artifact-observer",
-                    "OMOP output directory detected." if _artifact_exists("outputs/omop_cdm") else "OMOP output directory was not observed during this run.",
-                    details={"path": "outputs/omop_cdm"},
                 )
             )
             quality_report_available = _artifact_exists("outputs/data_quality_report.html")
@@ -901,7 +876,7 @@ def trigger_etl_pipeline(
                     "quality",
                     "complete" if (quality_report_available or comparability_available) else "idle",
                     "artifact-observer",
-                    "Quality artifacts detected." if (quality_report_available or comparability_available) else "Quality artifacts were not observed during this run.",
+                    "Replacement pipeline artifacts detected." if (quality_report_available or comparability_available) else "Replacement pipeline artifacts were not observed during this run.",
                     details={
                         "comparability_report": comparability_available,
                         "quality_report": quality_report_available,
@@ -944,6 +919,7 @@ def trigger_etl_pipeline(
                 "ok": True,
                 "engine": "nifi",
                 "mode": "script-aligned",
+                "pipeline": "db/test",
                 "dataset": dataset,
                 "datasets_requested": requested_datasets,
                 "processor_id": processor_id,
@@ -961,7 +937,7 @@ def trigger_etl_pipeline(
         verification_manifest = verification.get("manifest") or {}
         emit_stage(
             _build_stage_manifest(
-                "harmonize",
+                "unify",
                 "failed",
                 str(verification_manifest.get("source") or "nifi-processor") if isinstance(verification_manifest, dict) else "nifi-processor",
                 "Registry tables were not repopulated successfully.",

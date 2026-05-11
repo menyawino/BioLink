@@ -2,7 +2,7 @@
 SQLAlchemy User model for authentication and authorization.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     String,
@@ -26,12 +26,12 @@ class UserModel(Base):
     role = Column(String(50), nullable=False, default="viewer")  # admin, researcher, viewer
     scopes = Column(ARRAY(String), nullable=False, default=list)
     disabled = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
     last_login = Column(DateTime(timezone=True), nullable=True)
 

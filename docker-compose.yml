@@ -14,10 +14,12 @@ services:
       - shared_buffers=256MB
       - -c
       - work_mem=16MB
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: biolink
-      POSTGRES_PASSWORD: biolink_secret
-      POSTGRES_DB: biolink
+      POSTGRES_USER: ${POSTGRES_USER:-biolink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-biolink_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-biolink}
     ports:
       - "5432:5432"
     volumes:
@@ -36,10 +38,12 @@ services:
   pgvector:
     image: pgvector/pgvector:pg16
     container_name: biolink-pgvector
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: biolink
-      POSTGRES_PASSWORD: biolink_secret
-      POSTGRES_DB: biolink_vector
+      POSTGRES_USER: ${PGVECTOR_USER:-biolink}
+      POSTGRES_PASSWORD: ${PGVECTOR_PASSWORD:-biolink_secret}
+      POSTGRES_DB: ${PGVECTOR_DB:-biolink_vector}
     ports:
       - "5433:5432"
     volumes:
@@ -267,7 +271,7 @@ services:
       BIOLINK_PG_PORT: "5432"
       BIOLINK_PG_DB: biolink
       BIOLINK_PG_USER: biolink
-      BIOLINK_PG_PASSWORD: biolink_secret
+      BIOLINK_PG_PASSWORD: ${POSTGRES_PASSWORD:-biolink_secret}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000}
       SUPERSET_EMBEDDED_ALLOWED_DOMAINS: ${SUPERSET_EMBEDDED_ALLOWED_DOMAINS:-}
       SUPERSET_METADATA_DATABASE_URI: ${SUPERSET_METADATA_DATABASE_URI:-postgresql+psycopg2://biolink:biolink_secret@postgres:5432/biolink}
@@ -341,8 +345,8 @@ services:
     hostname: nifi
     environment:
       # --- NiFi 2.x single-user auth (HTTPS) ---
-      SINGLE_USER_CREDENTIALS_USERNAME: admin
-      SINGLE_USER_CREDENTIALS_PASSWORD: biolink_nifi_secret_123
+      SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME:-admin}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
       NIFI_WEB_HTTPS_HOST: nifi
       NIFI_WEB_PROXY_HOST: localhost:8443,127.0.0.1:8443,localhost:3000,frontend,frontend:80
       NIFI_JVM_HEAP_INIT: 2g
@@ -356,7 +360,7 @@ services:
       DB_PORT: "5432"
       DB_NAME: biolink
       DB_USER: biolink
-      DB_PASSWORD: biolink_secret
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-biolink_secret}
       DB_URL: jdbc:postgresql://postgres:5432/biolink
       # --- JDBC driver ---
       NIFI_DBCP_DRIVER_PATH: /opt/nifi/jdbc/postgresql-42.7.3.jar
@@ -393,7 +397,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "TOKEN=$$(curl -sk -X POST https://nifi:8443/nifi-api/access/token -d 'username=admin&password=biolink_nifi_secret_123' -H 'Content-Type: application/x-www-form-urlencoded') && curl -kf -H \"Authorization: Bearer $$TOKEN\" https://nifi:8443/nifi-api/system-diagnostics"]
+      test: ["CMD-SHELL", "TOKEN=$$(curl -sk -X POST https://nifi:8443/nifi-api/access/token -d \"username=$${NIFI_USERNAME:-admin}&password=$${NIFI_PASSWORD}\" -H 'Content-Type: application/x-www-form-urlencoded') && curl -kf -H \"Authorization: Bearer $$TOKEN\" https://nifi:8443/nifi-api/system-diagnostics"]
       interval: 30s
       timeout: 15s
       retries: 15
@@ -414,8 +418,8 @@ services:
       - |
         python3 /app/nifi/scripts/bootstrap_nifi_graph.py \
           --nifi-url https://nifi:8443 \
-          --username admin \
-          --password biolink_nifi_secret_123
+          --username "$${NIFI_USERNAME:-admin}" \
+          --password "$${NIFI_PASSWORD}"
     restart: "no"
 
   redis-commander:
@@ -434,8 +438,8 @@ services:
     image: dpage/pgadmin4:latest
     container_name: biolink-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@biolink.local
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@biolink.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
       - "5050:80"

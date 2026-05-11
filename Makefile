@@ -187,18 +187,9 @@ stage-data:
 	@echo "Chunks written to nifi/data-input/ — NiFi will consume them automatically."
 
 harmonize:
-	@echo "Running harmonization pipeline..."
-	python3 nifi/pipeline/two_stage_match.py db/BHS_Full.csv db/EHVol_Full.csv --output outputs/master_schema.csv
-	python3 nifi/pipeline/apply_schema.py outputs/master_schema.csv db/BHS_Full.csv db/EHVol_Full.csv \
-		--output outputs/unified_registry.csv \
-		--provenance-output outputs/provenance.csv \
-		--tiers-output outputs/harmonization_tiers.csv \
-		--drop-empty-cols
-	python3 nifi/pipeline/cohort_comparability.py \
-		--registry outputs/unified_registry.csv \
-		--tiers outputs/harmonization_tiers.csv \
-		--output outputs/comparability_report.json
-	@echo "Harmonization complete. Outputs in outputs/"
+	@echo "Running replacement db/test pipeline..."
+	python3 db/test/run_pipeline.py
+	@echo "Replacement pipeline complete. Outputs in outputs/"
 
 # ============================================
 # Utilities

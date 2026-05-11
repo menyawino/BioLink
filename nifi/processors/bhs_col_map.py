@@ -1,7 +1,7 @@
 # Auto-generated — BHS column map for NiFi BiolinkSchemaStandardizerProcessor
-# Source: nifi/pipeline/generate_schema_sql.py  →  standardized_columns.csv
+# Source: standardized schema build output  →  standardized_columns.csv
 # Format: {original_col_name: (pg_col_name, coerce_func_name)}
-# DO NOT EDIT by hand; re-run nifi/pipeline/generate_schema_sql.py instead.
+# DO NOT EDIT by hand; re-run the schema build step instead.
 COLUMN_MAP = {
     'ALT': ('alt', 'to_float'),  # SDTM LB.ALT | LOINC:1742-6 | [U/L]
     'AR': ('ar', 'to_str'),  # SDTM FA.AR

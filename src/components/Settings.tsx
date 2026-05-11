@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useTheme } from "next-themes";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -11,6 +12,8 @@ import { Badge } from "./ui/badge";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Separator } from "./ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { useAuth } from "../context/AuthContext";
+import { put } from "../api/client";
 import { 
   User, 
   Bell, 
@@ -32,7 +35,8 @@ import {
   EyeOff,
   AlertTriangle,
   CheckCircle2,
-  Edit
+  Edit,
+  Loader2
 } from "lucide-react";
 
 interface UserProfile {
@@ -78,26 +82,56 @@ interface AppSettings {
 }
 
 export function Settings() {
+  const { theme, setTheme } = useTheme();
+  const { user: authUser, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState("profile");
   const [showPassword, setShowPassword] = useState(false);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Mock user data
+  // Derive user profile from auth context
+  const fullName = authUser?.full_name || authUser?.username || "";
+  const nameParts = fullName.split(" ");
+  const firstName = nameParts[0] || "";
+  const lastName = nameParts.slice(1).join(" ") || "";
+
   const [userProfile, setUserProfile] = useState<UserProfile>({
-    id: "USR001",
-    firstName: "Dr. Sarah",
-    lastName: "Mitchell",
-    email: "s.mitchell@myfoundation.org",
-    phone: "+1 (555) 123-4567",
-    role: "Senior Cardiologist",
-    department: "Cardiology Research",
-    institution: "Magdi Yacoub Heart Foundation",
-    licenseNumber: "MD-IL-12345",
-    specialization: "Interventional Cardiology",
-    lastLogin: "December 15, 2024 - 09:30 AM",
-    accountCreated: "January 15, 2023",
-    permissions: ["read", "write", "admin", "export", "analytics"]
+    id: authUser?.username || "",
+    firstName,
+    lastName,
+    email: authUser?.email || "",
+    phone: "",
+    role: authUser?.role || "viewer",
+    department: "",
+    institution: "",
+    licenseNumber: "",
+    specialization: "",
+    avatar: undefined,
+    lastLogin: authUser?.last_login ? new Date(authUser.last_login).toLocaleString() : "—",
+    accountCreated: authUser?.created_at ? new Date(authUser.created_at).toLocaleString() : "—",
+    permissions: authUser?.scopes || ["read"]
   });
+
+  // Sync when auth user changes
+  useEffect(() => {
+    if (authUser) {
+      const fn = authUser.full_name || authUser.username || "";
+      const parts = fn.split(" ");
+      setUserProfile(prev => ({
+        ...prev,
+        id: authUser.username,
+        firstName: parts[0] || "",
+        lastName: parts.slice(1).join(" ") || "",
+        email: authUser.email || "",
+        role: authUser.role,
+        permissions: authUser.scopes || ["read"],
+        lastLogin: authUser.last_login ? new Date(authUser.last_login).toLocaleString() : "—",
+        accountCreated: authUser.created_at ? new Date(authUser.created_at).toLocaleString() : "—",
+      }));
+    }
+  }, [authUser]);
 
   const [appSettings, setAppSettings] = useState<AppSettings>({
     theme: 'light',
@@ -124,17 +158,57 @@ export function Settings() {
     }
   });
 
-  const handleSaveProfile = () => {
-    // Simulate API call
-    setUnsavedChanges(false);
-    // Show success message
+  const handleSaveProfile = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    try {
+      const full_name = [userProfile.firstName, userProfile.lastName].filter(Boolean).join(" ");
+      await put('/api/auth/me', {
+        full_name: full_name || undefined,
+        email: userProfile.email || undefined,
+      });
+      await refreshUser();
+      setUnsavedChanges(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err: any) {
+      setSaveError(err?.response?.data?.detail || err?.message || 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSaveSettings = () => {
-    // Simulate API call
-    setUnsavedChanges(false);
-    // Show success message
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    try {
+      // Persist app settings to localStorage
+      localStorage.setItem('biolink_app_settings', JSON.stringify(appSettings));
+      setUnsavedChanges(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err: any) {
+      setSaveError(err?.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  // Load persisted app settings on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('biolink_app_settings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setAppSettings(prev => ({ ...prev, ...parsed }));
+        if (parsed.theme) setTheme(parsed.theme);
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getRoleColor = (role: string) => {
     if (role.includes('Senior') || role.includes('Director')) return 'bg-primary text-primary-foreground';
@@ -152,7 +226,19 @@ export function Settings() {
             <p className="text-muted-foreground">Manage your account and application preferences</p>
           </div>
         </div>
-        {unsavedChanges && (
+        {saveSuccess && (
+          <Alert className="w-auto border-green-200 bg-green-50 text-green-800">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <AlertDescription>Saved successfully</AlertDescription>
+          </Alert>
+        )}
+        {saveError && (
+          <Alert className="w-auto border-red-200 bg-red-50 text-red-800">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription>{saveError}</AlertDescription>
+          </Alert>
+        )}
+        {unsavedChanges && !saveSuccess && !saveError && (
           <Alert className="w-auto">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>You have unsaved changes</AlertDescription>
@@ -318,8 +404,8 @@ export function Settings() {
                   </div>
 
                   <div className="flex justify-end pt-4">
-                    <Button onClick={handleSaveProfile} disabled={!unsavedChanges}>
-                      <Save className="h-4 w-4 mr-2" />
+                    <Button onClick={handleSaveProfile} disabled={!unsavedChanges || saving}>
+                      {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                       Save Profile
                     </Button>
                   </div>
@@ -412,7 +498,8 @@ export function Settings() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="theme">Theme</Label>
-                  <Select value={appSettings.theme} onValueChange={(value: 'light' | 'dark' | 'system') => {
+                  <Select value={theme || 'light'} onValueChange={(value: 'light' | 'dark' | 'system') => {
+                    setTheme(value);
                     setAppSettings(prev => ({...prev, theme: value}));
                     setUnsavedChanges(true);
                   }}>
@@ -512,8 +599,8 @@ export function Settings() {
                 )}
 
                 <div className="flex justify-end pt-4">
-                  <Button onClick={handleSaveSettings} disabled={!unsavedChanges}>
-                    <Save className="h-4 w-4 mr-2" />
+                  <Button onClick={handleSaveSettings} disabled={!unsavedChanges || saving}>
+                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                     Save Preferences
                   </Button>
                 </div>
@@ -715,8 +802,8 @@ export function Settings() {
               </div>
 
               <div className="flex justify-end pt-4">
-                <Button onClick={handleSaveSettings} disabled={!unsavedChanges}>
-                  <Save className="h-4 w-4 mr-2" />
+                <Button onClick={handleSaveSettings} disabled={!unsavedChanges || saving}>
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                   Save Notification Settings
                 </Button>
               </div>
@@ -922,8 +1009,8 @@ export function Settings() {
                 </Alert>
 
                 <div className="flex justify-end pt-4">
-                  <Button onClick={handleSaveSettings} disabled={!unsavedChanges}>
-                    <Save className="h-4 w-4 mr-2" />
+                  <Button onClick={handleSaveSettings} disabled={!unsavedChanges || saving}>
+                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                     Save Privacy Settings
                   </Button>
                 </div>

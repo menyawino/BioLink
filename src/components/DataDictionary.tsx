@@ -261,7 +261,7 @@ export function DataDictionary() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-3">
               <Badge variant="outline" className="w-fit border-slate-300 bg-white/80 text-slate-700">
-                Harmonization Workspace
+                Registry Mapping Workspace
               </Badge>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -269,8 +269,8 @@ export function DataDictionary() {
                   <h2 className="text-2xl font-semibold tracking-tight">Real Data Dictionary</h2>
                 </div>
                 <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                  This view is generated from the harmonization registry instead of demo content. It shows the canonical field list,
-                  source-to-master mappings, terminology coverage, and validation context for the live BioLink dataset spanning {totalPatients} patients.
+                  This view is generated from the replacement db/test artifacts instead of demo content. It shows the canonical field list,
+                  source-to-concept mappings, coverage across BHS and EHVol, and normalization metadata for the live BioLink dataset spanning {totalPatients} patients.
                 </p>
               </div>
             </div>
@@ -283,7 +283,7 @@ export function DataDictionary() {
               <Button variant="outline" asChild>
                 <a href={exportDictionaryUrl} target="_blank" rel="noreferrer">
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  Export Harmonization CSV
+                  Export Mapping CSV
                 </a>
               </Button>
               <Button onClick={() => exportRowsToCsv(filteredFields)} disabled={filteredFields.length === 0}>
@@ -297,7 +297,7 @@ export function DataDictionary() {
             <MetricCard
               title="Canonical Fields"
               value={dictionaryFields.length.toLocaleString()}
-              hint="Master columns tracked in the harmonization registry"
+              hint="Canonical concepts tracked in the replacement registry mapping"
               icon={TableProperties}
               accentClass="border-slate-200 bg-white text-slate-700"
             />
@@ -318,7 +318,7 @@ export function DataDictionary() {
             <MetricCard
               title="Tier 1 Variables"
               value={derivedStats.tierOne.toLocaleString()}
-              hint="Priority variables marked as top harmonization tier"
+              hint="Concepts shared across both cohorts"
               icon={Database}
               accentClass="border-amber-200 bg-amber-50 text-amber-700"
             />
@@ -328,7 +328,7 @@ export function DataDictionary() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-700">
                 <Filter className="h-4 w-4" />
-                Filter the live schema
+                Filter the live concept catalog
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div className="relative md:col-span-2">
@@ -593,20 +593,20 @@ export function DataDictionary() {
                   <div className="rounded-2xl border p-4">
                     <p className="text-sm text-muted-foreground">Fields with units</p>
                     <p className="mt-2 text-2xl font-semibold">{derivedStats.unitDefined}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Explicit unit metadata stored in harmonization tiers.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Explicit unit metadata carried forward from the step_7 mapping outputs.</p>
                   </div>
                   <div className="rounded-2xl border p-4">
-                    <p className="text-sm text-muted-foreground">Columns tracked in provenance</p>
+                    <p className="text-sm text-muted-foreground">Concepts tracked in coverage audit</p>
                     <p className="mt-2 text-2xl font-semibold">{provenanceSummary?.columns_tracked ?? 0}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Variables that already participate in validation tracing.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Canonical concepts measured in the unification audit.</p>
                   </div>
                 </div>
 
                 <div className="rounded-2xl border p-4">
                   <div className="mb-4 flex items-center justify-between">
                     <div>
-                      <p className="font-medium">Tier distribution</p>
-                      <p className="text-sm text-muted-foreground">How the current field catalog is prioritized in the harmonization model.</p>
+                      <p className="font-medium">Coverage tier distribution</p>
+                      <p className="text-sm text-muted-foreground">How the current concept catalog is split between shared and single-cohort mappings.</p>
                     </div>
                   </div>
                   <div className="space-y-3">
@@ -633,7 +633,7 @@ export function DataDictionary() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Validation friction</CardTitle>
+                <CardTitle className="text-base">Coverage audit</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-3">
@@ -642,27 +642,27 @@ export function DataDictionary() {
                     <p className="mt-2 text-2xl font-semibold">{provenanceSummary?.total_records ?? 0}</p>
                   </div>
                   <div className="rounded-2xl border p-4 text-center">
-                    <p className="text-sm text-muted-foreground">Pass</p>
+                    <p className="text-sm text-muted-foreground">Shared</p>
                     <p className="mt-2 text-2xl font-semibold text-emerald-700">{provenanceSummary?.pass_count ?? 0}</p>
                   </div>
                   <div className="rounded-2xl border p-4 text-center">
-                    <p className="text-sm text-muted-foreground">Fail</p>
+                    <p className="text-sm text-muted-foreground">Single cohort</p>
                     <p className="mt-2 text-2xl font-semibold text-red-700">{provenanceSummary?.fail_count ?? 0}</p>
                   </div>
                 </div>
 
                 <div className="rounded-2xl border p-4">
-                  <p className="font-medium">Top failure reasons</p>
+                  <p className="font-medium">Top coverage gaps</p>
                   <div className="mt-3 space-y-3">
                     {topFailureRows.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No provenance failures are currently available.</p>
+                      <p className="text-sm text-muted-foreground">No single-cohort coverage gaps are currently available.</p>
                     ) : (
                       topFailureRows.map((failure) => (
                         <div key={`${failure.master_col}-${failure.reason}`} className="rounded-xl bg-slate-50 p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium">{failure.master_col}</p>
-                              <p className="mt-1 text-sm text-muted-foreground">{failure.reason || "No validation reason recorded"}</p>
+                              <p className="mt-1 text-sm text-muted-foreground">{failure.reason || "No coverage note recorded"}</p>
                             </div>
                             <Badge variant="outline">{failure.count}</Badge>
                           </div>
@@ -683,9 +683,9 @@ export function DataDictionary() {
                 <CardTitle className="text-base">How to read this page</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p><span className="font-medium text-foreground">Master column</span> is the canonical BioLink field used after harmonization.</p>
-                <p><span className="font-medium text-foreground">Source mapping</span> shows the original BHS and EHVol columns that feed that canonical field.</p>
-                <p><span className="font-medium text-foreground">Ontology coverage</span> reflects stored LOINC or SNOMED mappings only. Blank entries are unresolved metadata work.</p>
+                <p><span className="font-medium text-foreground">Master column</span> is the canonical BioLink concept used in the unified registry snapshot.</p>
+                <p><span className="font-medium text-foreground">Source mapping</span> shows the original BHS and EHVol columns that feed that concept.</p>
+                <p><span className="font-medium text-foreground">Coverage tier</span> separates shared concepts from dataset-specific concepts that still need interpretation.</p>
               </CardContent>
             </Card>
 
@@ -694,9 +694,9 @@ export function DataDictionary() {
                 <CardTitle className="text-base">Recommended next cleanup</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p>Prioritize uncoded Tier 1 fields so high-value variables have standard terminology coverage.</p>
-                <p>Review single-cohort mappings to decide whether they are legitimate registry differences or harmonization gaps.</p>
-                <p>Use provenance failures to tighten transforms before adding more narrative documentation.</p>
+                <p>Prioritize shared Tier 1 concepts so high-value variables have consistent cross-cohort definitions.</p>
+                <p>Review single-cohort mappings to decide whether they are legitimate registry differences or candidates for new canonical concepts.</p>
+                <p>Use the coverage gap list to guide the next db/test unification pass before expanding documentation.</p>
               </CardContent>
             </Card>
 

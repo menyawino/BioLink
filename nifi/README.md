@@ -1,33 +1,31 @@
 # BioLink NiFi 2.8.0 ETL Pipeline
 
 Apache NiFi 2.8.0 pipeline with automated REST bootstrap for the documented
-script ETL plan:
-- **Step 1**: schema matching via `nifi/pipeline/two_stage_match.py`
-- **Step 2**: harmonisation and de-identification via `nifi/pipeline/apply_schema.py`
-- **Step 3**: OMOP-aligned exports via `nifi/pipeline/omop_etl.py`
-- **Step 4**: quality and characterization via `nifi/pipeline/omop_quality.py`
+replacement ETL plan:
+- **db/test Step 3**: normalization profiling via `db/test/step_3_profile_normalization.py`
+- **db/test Step 4**: range cleaning via `db/test/step_4_apply_range_rules.py`
+- **db/test Step 5**: unit extraction via `db/test/step_5_extract_units.py`
+- **db/test Step 6**: fuzzy standardization via `db/test/step_6_fuzzy_match_v2.py`
+- **db/test Step 7**: unified snapshot generation via `db/test/step_7_unify_datasets.py`
 
-NiFi remains the execution engine, but the ETL method now follows the scripts
-pipeline rather than the older in-processor transformation logic.
+NiFi remains the execution engine, but the active registry pipeline now runs the
+replacement scripts under `db/test/` and publishes compatibility outputs under
+`outputs/` for the rest of the application.
 
 ---
 
 ## Architecture (auto-bootstrapped)
 
 ```
-Step 1 (runs on schedule or RUN_ONCE):
-GenerateFlowFile
-  -> BiolinkMasterSchemaProcessor
-  -> outputs/master_schema.csv
-
-Steps 2-4 (runs on schedule or RUN_ONCE):
+Registry pipeline (runs on schedule or RUN_ONCE):
 GenerateFlowFile
   -> BiolinkRegistryPipelineProcessor
+     -> db/test/step_7/unified_wide_table.csv
      -> outputs/unified_registry.csv
-     -> outputs/omop_cdm/*.csv
+     -> outputs/comparability_report.json
      -> outputs/data_quality_report.html
      -> outputs/cohort_characterization.csv
-     -> PostgreSQL: unified_registry + omop_* tables
+     -> PostgreSQL: unified_registry + participant tables + comparability_report
 ```
 
 ## Directory Structure
@@ -46,9 +44,9 @@ nifi/
 │   ├── BiolinkDataQualityProcessor.py  # Validation and quality scoring
 │   └── BiolinkJsonToSqlProcessor.py    # JSON → PostgreSQL INSERT/UPSERT SQL
 └── scripts/
-  ├── init_postgres_schema.sh      # Creates participant + harmonised tables/indexes
+  ├── init_postgres_schema.sh      # Creates participant tables/indexes
   ├── setup_nifi_flow.sh           # Legacy setup wrapper
-  └── bootstrap_nifi_graph.py      # Idempotent REST bootstrap for Step1+Step2 graph
+  └── bootstrap_nifi_graph.py      # Idempotent REST bootstrap for the active registry graph
 ```
 
 ## Python Processors
@@ -69,12 +67,12 @@ the same scripts described in `docs/README_registry_pipeline.md`.
 
 ### 2. BiolinkRegistryPipelineProcessor
 
-Runs the downstream script pipeline in one NiFi processor:
+Runs the replacement `db/test` pipeline in one NiFi processor:
 
-- Calls `nifi/pipeline/apply_schema.py` to build `outputs/unified_registry.csv`
-- Calls `nifi/pipeline/omop_etl.py` to build OMOP CSV tables under `outputs/omop_cdm/`
-- Calls `nifi/pipeline/omop_quality.py` to generate the HTML report and cohort characterization
-- Loads the unified registry snapshot and OMOP outputs into PostgreSQL
+- Calls `db/test/run_pipeline.py` to execute steps 3-7 and publish compatibility outputs
+- Builds `outputs/unified_registry.csv` from `db/test/step_7/unified_wide_table.csv`
+- Writes `outputs/comparability_report.json`, `outputs/data_quality_report.html`, and `outputs/cohort_characterization.csv`
+- Clears stale legacy OMOP and harmonization tables before loading the current unified snapshot into PostgreSQL
 - Persists a JSON manifest in `registry_etl_runs`
 
 ## Quick Start
@@ -119,7 +117,7 @@ python3 /app/nifi/scripts/bootstrap_nifi_graph.py \
   --password biolink_nifi_secret_123
 ```
 
-This populates the root flow with Step 1 + Step 2 process groups on every stack startup.
+This populates the root flow with the active db/test registry pipeline on every stack startup.
 
 Manual re-run:
 
@@ -156,30 +154,19 @@ Key changes from NiFi 1.26.0 → 2.8.0:
 | Health check retries | 5 | 10 (NiFi 2.x slower startup) |
 | Start period | 60s | 90s |
 
-## Cleaning Logic Reference
+## Current Outputs
 
-The transform processor ports the following Python ETL logic:
+The active pipeline publishes:
 
-| Function | Source | Description |
-|----------|--------|-------------|
-| `parse_date` | `schema_mappings.py` | 7 date formats → ISO 8601 |
-| `parse_numeric` | `schema_mappings.py` | Comma/space removal, range averaging |
-| `normalize_gender` | `schema_mappings.py` | male/m/1 → "Male" |
-| `normalize_boolean` | `schema_mappings.py` | yes/y/true/1/checked → True |
-| `normalize_city` | `schema_mappings.py` | 70+ Egyptian city/governorate variants |
-| `normalize_ethnicity` | `schema_mappings.py` | Nubian sub-groups, Egyptian |
-| `normalize_bp` | `schema_mappings.py` | Strip mmHg suffix |
-| `extract_systolic_bp` | `schema_mappings.py` | Split "120/80" → 120 |
-| `extract_diastolic_bp` | `schema_mappings.py` | Split "120/80" → 80 |
-| BP averaging | `transformer.py` | BHS: average of 3 brachial readings |
-| Quality scoring | `transformer.py` | Weighted severity scoring (0–1) |
-| City homogenization | `transformer.py` | CityHomogenizer with cache |
-| Collision-safe IDs | `transformer.py` | `{dataset}_{id}` with fallbacks |
-
-## Target Schema
-
-Each dataset is loaded into its own table (`bhs_participants`, `ehvol_participants`) with the same 33-column schema:
-- Identifiers (participant_id, source_dataset, source_record_id)
+- `outputs/unified_registry.csv`
+- `outputs/comparability_report.json`
+- `outputs/data_quality_report.html`
+- `outputs/cohort_characterization.csv`
+- `db/test/step_7/unified_wide_table.csv`
+- `db/test/step_7/column_mapping.csv`
+- `db/test/step_7/value_set_mapping.csv`
+- `db/test/step_7/unit_mapping.csv`
+- `db/test/step_7/modality_manifest.csv`
 - Demographics (DOB, age, gender, nationality, enrollment_date)
 - Location (current_city, childhood_city, father/mother origin)
 - Clinical (height, weight, BMI, heart_rate, systolic/diastolic BP)
