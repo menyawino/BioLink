@@ -367,6 +367,10 @@ def _load_dataset_participants(
     return len(payload)
 
 
+def _load_characterization_table(conn, csv_path: Path, sql_module) -> int:
+    return _create_or_replace_csv_table(conn, csv_path, "cohort_characterization", sql_module)
+
+
 def _store_run_manifest(conn, manifest: dict, json_cls) -> None:
     with conn.cursor() as cursor:
         cursor.execute(
@@ -658,6 +662,7 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                             "harmonization_provenance",
                             "harmonization_tiers",
                             "comparability_report",
+                            "cohort_characterization",
                         ],
                         psy_sql,
                     )
@@ -714,6 +719,17 @@ class BiolinkRegistryPipelineProcessor(FlowFileTransform):
                         conn.commit()
                         comparability_loaded = True
                     summary["postgres_comparability_loaded"] = comparability_loaded
+                    characterization_loaded = False
+                    characterization_rows = 0
+                    if characterization_csv.is_file():
+                        characterization_rows = _load_characterization_table(
+                            conn,
+                            characterization_csv,
+                            psy_sql,
+                        )
+                        characterization_loaded = True
+                    summary["postgres_characterization_loaded"] = characterization_loaded
+                    summary["postgres_characterization_rows"] = characterization_rows
                     _store_run_manifest(
                         conn,
                         {

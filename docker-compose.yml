@@ -197,19 +197,6 @@ services:
       timeout: 5s
       retries: 10
 
-  stakeholders:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.stakeholders
-    container_name: biolink-stakeholders
-    ports:
-      - "3002:80"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sSf http://localhost/ >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   frontend-dev:
     image: node:20-alpine
     container_name: biolink-frontend-dev
@@ -389,10 +376,8 @@ services:
       - ./nifi/flow/flow.json:/opt/nifi/nifi-current/conf/flow.json:ro
       # Chunked CSV input (writable for GetFile)
       - ./nifi/data-input:/opt/nifi/data-input
-      # Shared outputs directory (Step 1 writes master_schema.csv; Step 2 reads it)
+      # Shared outputs directory for the active db/test pipeline
       - ./outputs:/opt/nifi/outputs
-      # BioLink pipeline scripts (lexicon CSV + helper modules, read-only)
-      - ./nifi/pipeline:/opt/nifi/biolink_scripts:ro
     depends_on:
       postgres:
         condition: service_healthy

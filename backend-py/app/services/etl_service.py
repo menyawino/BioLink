@@ -49,7 +49,11 @@ NIFI_TRIGGER_DATASETS_PROPERTY = os.getenv(
 BHS_CANONICAL_FILENAME = "BHS_Full.csv"
 EHVOL_CANONICAL_FILENAME = "EHVol_Full.csv"
 LINEAGE_STAGE_ORDER = ["ingest", "profile", "unify", "quality", "publish"]
-SUPERSET_MANAGED_PIPELINE_TABLES = ("unified_registry", "comparability_report")
+SUPERSET_MANAGED_PIPELINE_TABLES = (
+    "unified_registry",
+    "comparability_report",
+    "cohort_characterization",
+)
 SUPERSET_MANAGED_PARTICIPANT_DATASETS = ("ehvol", "bhs")
 
 

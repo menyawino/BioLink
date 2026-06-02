@@ -25,56 +25,195 @@ VERIFICATION_DASHBOARD_SLUG = (
     os.getenv("SUPERSET_VERIFICATION_DASHBOARD_SLUG", "biolink-verification-dashboard").strip()
     or "biolink-verification-dashboard"
 )
+OVERVIEW_DASHBOARD_TITLE = "BioLink Cohort Overview"
+OVERVIEW_DASHBOARD_SLUG = "biolink-cohort-overview"
+WORKFLOW_DASHBOARD_TITLE = "BioLink Workflow Coverage"
+WORKFLOW_DASHBOARD_SLUG = "biolink-workflow-coverage"
+PIE_VIZ_TYPE = "pie"
+BIG_NUMBER_VIZ_TYPE = "big_number_total"
 SUPERSET_DATABASE_NAME = os.getenv("SUPERSET_DATABASE_NAME", "BioLink PostgreSQL")
 SUPERSET_DATABASE_SCHEMA = os.getenv("SUPERSET_DATABASE_SCHEMA", "public")
+LEGACY_PIPELINE_DATASET_TABLES = (
+    "_schema_registry",
+    "harmonization_tiers",
+    "harmonization_provenance",
+)
+NON_PUBLIC_DATASET_TABLES = (
+    "bhs_participants",
+    "ehvol_participants",
+)
+VERIFICATION_DATASET_TABLES = (
+    "unified_registry",
+    "comparability_report",
+    "cohort_characterization",
+)
+
+
+def _pie_chart_params(groupby: str) -> dict[str, Any]:
+    return {
+        "groupby": [groupby],
+        "metric": "count",
+        "row_limit": 1000,
+        "showLegend": True,
+        "legendType": "scroll",
+        "donut": False,
+        "innerRadius": 30,
+        "outerRadius": 70,
+        "labelType": "key",
+        "colorScheme": "supersetColors",
+    }
+
+
+def _big_number_params(subheader: str) -> dict[str, Any]:
+    return {
+        "metric": "count",
+        "y_axis_format": "SMART_NUMBER",
+        "subheader": subheader,
+        "header_font_size": 0.4,
+    }
+
+
 VERIFICATION_CHART_SPECS = (
+    {
+        "slice_name": "BioLink Verification Total Records",
+        "table_name": "unified_registry",
+        "viz_type": BIG_NUMBER_VIZ_TYPE,
+        "params": _big_number_params("Registry records"),
+    },
     {
         "slice_name": "BioLink Verification Records by Cohort",
         "table_name": "unified_registry",
-        "viz_type": "bar",
-        "params": {
-            "groupby": ["cohort"],
-            "metrics": ["count"],
-            "row_limit": 1000,
-            "show_legend": True,
-            "color_scheme": "supersetColors",
-        },
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("cohort"),
     },
     {
         "slice_name": "BioLink Verification Records by Source Dataset",
         "table_name": "unified_registry",
-        "viz_type": "bar",
-        "params": {
-            "groupby": ["source_dataset"],
-            "metrics": ["count"],
-            "row_limit": 1000,
-            "show_legend": True,
-            "color_scheme": "supersetColors",
-        },
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("source_dataset"),
     },
     {
-        "slice_name": "BioLink Verification EHVol Participants",
-        "table_name": "ehvol_participants",
-        "viz_type": "bar",
-        "params": {
-            "groupby": ["_source_dataset"],
-            "metrics": ["count"],
-            "row_limit": 1000,
-            "show_legend": True,
-            "color_scheme": "supersetColors",
-        },
+        "slice_name": "BioLink Verification Characterization Rows",
+        "table_name": "cohort_characterization",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("dataset_source"),
+    },
+)
+OVERVIEW_CHART_SPECS = (
+    {
+        "slice_name": "BioLink Overview Total Records",
+        "table_name": "unified_registry",
+        "viz_type": BIG_NUMBER_VIZ_TYPE,
+        "params": _big_number_params("Total participants"),
     },
     {
-        "slice_name": "BioLink Verification Participant Tables",
-        "table_name": "bhs_participants",
-        "viz_type": "bar",
-        "params": {
-            "groupby": ["_source_dataset"],
-            "metrics": ["count"],
-            "row_limit": 1000,
-            "show_legend": True,
-            "color_scheme": "supersetColors",
-        },
+        "slice_name": "BioLink Overview Records by Cohort",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("cohort"),
+    },
+    {
+        "slice_name": "BioLink Overview Records by Source Dataset",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("source_dataset"),
+    },
+    {
+        "slice_name": "BioLink Overview Gender Distribution",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("gender"),
+    },
+    {
+        "slice_name": "BioLink Overview Hypertension Status",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("hypertension_diagnosis"),
+    },
+    {
+        "slice_name": "BioLink Overview Diabetes Status",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("diabetes_diagnosis"),
+    },
+    {
+        "slice_name": "BioLink Overview Hyperlipidemia Status",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("hyperlipidemia_diagnosis"),
+    },
+    {
+        "slice_name": "BioLink Overview Angina Symptoms",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("angina_symptom"),
+    },
+)
+WORKFLOW_CHART_SPECS = (
+    {
+        "slice_name": "BioLink Workflow Consent Obtained",
+        "table_name": "unified_registry",
+        "viz_type": BIG_NUMBER_VIZ_TYPE,
+        "params": _big_number_params("Registry records"),
+    },
+    {
+        "slice_name": "BioLink Workflow ECG Agreement",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("agree_ecg_ecg"),
+    },
+    {
+        "slice_name": "BioLink Workflow TTE Agreement",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("agree_undergo_tte_admin"),
+    },
+    {
+        "slice_name": "BioLink Workflow CT Agreement",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("agree_ct_ct"),
+    },
+    {
+        "slice_name": "BioLink Workflow Carotid Duplex Agreement",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("agree_undergo_carotid_duplex_vascular"),
+    },
+    {
+        "slice_name": "BioLink Workflow Cardiac MRI Availability",
+        "table_name": "unified_registry",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("cardiac_mri_mri"),
+    },
+    {
+        "slice_name": "BioLink Workflow Characterization Rows",
+        "table_name": "cohort_characterization",
+        "viz_type": PIE_VIZ_TYPE,
+        "params": _pie_chart_params("dataset_source"),
+    },
+)
+SEEDED_DASHBOARD_SPECS = (
+    {
+        "title": VERIFICATION_DASHBOARD_TITLE,
+        "slug": VERIFICATION_DASHBOARD_SLUG,
+        "id_hint": VERIFICATION_DASHBOARD_ID_HINT,
+        "layout_key": "verification",
+        "chart_specs": VERIFICATION_CHART_SPECS,
+    },
+    {
+        "title": OVERVIEW_DASHBOARD_TITLE,
+        "slug": OVERVIEW_DASHBOARD_SLUG,
+        "id_hint": "",
+        "layout_key": "overview",
+        "chart_specs": OVERVIEW_CHART_SPECS,
+    },
+    {
+        "title": WORKFLOW_DASHBOARD_TITLE,
+        "slug": WORKFLOW_DASHBOARD_SLUG,
+        "id_hint": "",
+        "layout_key": "workflow",
+        "chart_specs": WORKFLOW_CHART_SPECS,
     },
 )
 
@@ -228,7 +367,7 @@ def _sync_chart(
     return chart, updated
 
 
-def _verification_dashboard_position(charts: list[Any]) -> dict[str, Any]:
+def _dashboard_position(charts: list[Any], layout_key: str) -> dict[str, Any]:
     position = {
         "ROOT_ID": {"type": "ROOT", "id": "ROOT_ID", "children": ["GRID_ID"]},
         "GRID_ID": {
@@ -242,7 +381,7 @@ def _verification_dashboard_position(charts: list[Any]) -> dict[str, Any]:
     charts_per_row = 2
     for row_index in range(0, len(charts), charts_per_row):
         row_charts = charts[row_index : row_index + charts_per_row]
-        row_id = f"ROW-verification-{(row_index // charts_per_row) + 1}"
+        row_id = f"ROW-{layout_key}-{(row_index // charts_per_row) + 1}"
         position["GRID_ID"]["children"].append(row_id)
         position[row_id] = {
             "type": "ROW",
@@ -254,7 +393,7 @@ def _verification_dashboard_position(charts: list[Any]) -> dict[str, Any]:
 
         width = 12 // max(len(row_charts), 1)
         for chart in row_charts:
-            component_id = f"CHART-verification-{chart.id}"
+            component_id = f"CHART-{layout_key}-{chart.id}"
             position[row_id]["children"].append(component_id)
             meta = {
                 "chartId": chart.id,
@@ -276,41 +415,48 @@ def _verification_dashboard_position(charts: list[Any]) -> dict[str, Any]:
     return position
 
 
-def _verification_dashboard_id_hint() -> int | None:
-    if VERIFICATION_DASHBOARD_ID_HINT.isdigit():
-        return int(VERIFICATION_DASHBOARD_ID_HINT)
+def _dashboard_id_hint(raw_hint: str) -> int | None:
+    if raw_hint.isdigit():
+        return int(raw_hint)
     return None
 
 
-def _ensure_verification_dashboard(db: Any, admin_user: Any) -> tuple[Any, bool]:
+def _ensure_dashboard(
+    db: Any,
+    admin_user: Any,
+    *,
+    title: str,
+    slug: str,
+    id_hint: str,
+) -> tuple[Any, bool]:
     from superset.models.dashboard import Dashboard
 
     dashboard = None
 
-    if VERIFICATION_DASHBOARD_SLUG:
+    if slug:
         dashboard = (
             db.session.query(Dashboard)
-            .filter(Dashboard.slug == VERIFICATION_DASHBOARD_SLUG)
+            .filter(Dashboard.slug == slug)
             .order_by(Dashboard.id.asc())
             .first()
         )
 
-    id_hint = _verification_dashboard_id_hint()
-    if dashboard is None and id_hint is not None:
-        dashboard = db.session.query(Dashboard).get(id_hint)
+    dashboard_id_hint = _dashboard_id_hint(id_hint)
+    if dashboard is None and dashboard_id_hint is not None:
+        dashboard = db.session.query(Dashboard).get(dashboard_id_hint)
 
-    if dashboard is None and VERIFICATION_DASHBOARD_TITLE:
+    if dashboard is None and title:
         dashboard = (
             db.session.query(Dashboard)
-            .filter(Dashboard.dashboard_title == VERIFICATION_DASHBOARD_TITLE)
+            .filter(Dashboard.dashboard_title == title)
             .order_by(Dashboard.id.asc())
             .first()
         )
 
     if dashboard is None:
         dashboard = Dashboard(
-            dashboard_title=VERIFICATION_DASHBOARD_TITLE,
-            slug=VERIFICATION_DASHBOARD_SLUG,
+            dashboard_title=title,
+            slug=slug,
             position_json=json.dumps(_empty_dashboard_position()),
             json_metadata="{}",
             published=True,
@@ -319,7 +465,7 @@ def _ensure_verification_dashboard(db: Any, admin_user: Any) -> tuple[Any, bool]
         db.session.add(dashboard)
         db.session.flush()
         logger.info(
-            "Created verification dashboard %s (slug=%s id=%s)",
+            "Created Superset dashboard %s (slug=%s id=%s)",
             dashboard.dashboard_title,
             dashboard.slug,
             dashboard.id,
@@ -330,11 +476,11 @@ def _ensure_verification_dashboard(db: Any, admin_user: Any) -> tuple[Any, bool]
     desired_owners = {admin_user.id}
     current_owners = {owner.id for owner in dashboard.owners}
 
-    if dashboard.dashboard_title != VERIFICATION_DASHBOARD_TITLE:
-        dashboard.dashboard_title = VERIFICATION_DASHBOARD_TITLE
+    if dashboard.dashboard_title != title:
+        dashboard.dashboard_title = title
         updated = True
-    if dashboard.slug != VERIFICATION_DASHBOARD_SLUG:
-        dashboard.slug = VERIFICATION_DASHBOARD_SLUG
+    if dashboard.slug != slug:
+        dashboard.slug = slug
         updated = True
     if current_owners != desired_owners:
         dashboard.owners = [admin_user]
@@ -352,7 +498,48 @@ def _ensure_verification_dashboard(db: Any, admin_user: Any) -> tuple[Any, bool]
     return dashboard, updated
 
 
-def _seed_verification_dashboard(app: Any, db: Any) -> None:
+def _prune_legacy_pipeline_assets(db: Any, database: Any) -> None:
+    from superset.connectors.sqla.models import SqlaTable
+    from superset.models.slice import Slice
+
+    legacy_datasets = (
+        db.session.query(SqlaTable)
+        .filter(SqlaTable.database_id == database.id)
+        .filter(SqlaTable.schema == SUPERSET_DATABASE_SCHEMA)
+        .filter(SqlaTable.table_name.in_(LEGACY_PIPELINE_DATASET_TABLES + NON_PUBLIC_DATASET_TABLES))
+        .all()
+    )
+    if not legacy_datasets:
+        logger.info("No legacy pipeline datasets found in Superset metadata")
+        return
+
+    legacy_dataset_ids = {dataset.id for dataset in legacy_datasets}
+    legacy_charts = (
+        db.session.query(Slice)
+        .filter(Slice.datasource_type == "table")
+        .filter(Slice.datasource_id.in_(legacy_dataset_ids))
+        .all()
+    )
+
+    removed_chart_names: list[str] = []
+    for chart in legacy_charts:
+        removed_chart_names.append(chart.slice_name)
+        db.session.delete(chart)
+
+    removed_dataset_names: list[str] = []
+    for dataset in legacy_datasets:
+        removed_dataset_names.append(dataset.table_name)
+        db.session.delete(dataset)
+
+    db.session.commit()
+    logger.info(
+        "Pruned Superset datasets outside the public analytics surface: datasets=%s charts=%s",
+        ", ".join(sorted(removed_dataset_names)) or "none",
+        ", ".join(sorted(removed_chart_names)) or "none",
+    )
+
+
+def _seed_dashboards(app: Any, db: Any) -> None:
     try:
         from flask import g
 
@@ -365,10 +552,16 @@ def _seed_verification_dashboard(app: Any, db: Any) -> None:
             )
             return
 
-        dashboard, dashboard_updated = _ensure_verification_dashboard(db, admin_user)
-
         g.user = admin_user
         database = _ensure_biolink_database(db)
+        _prune_legacy_pipeline_assets(db, database)
+
+        dataset_tables = {
+            spec["table_name"]
+            for dashboard_spec in SEEDED_DASHBOARD_SPECS
+            for spec in dashboard_spec["chart_specs"]
+        }
+        dataset_tables.update(VERIFICATION_DATASET_TABLES)
 
         datasets = {
             table_name: _ensure_dataset(
@@ -378,57 +571,66 @@ def _seed_verification_dashboard(app: Any, db: Any) -> None:
                 SUPERSET_DATABASE_SCHEMA,
                 table_name,
             )
-            for table_name in {spec["table_name"] for spec in VERIFICATION_CHART_SPECS}
+            for table_name in dataset_tables
         }
 
-        charts: list[Any] = []
-        dashboard_changed = dashboard_updated
-        for spec in VERIFICATION_CHART_SPECS:
-            chart, updated = _sync_chart(
+        for dashboard_spec in SEEDED_DASHBOARD_SPECS:
+            dashboard, dashboard_updated = _ensure_dashboard(
                 db,
                 admin_user,
-                datasets[spec["table_name"]],
-                spec["slice_name"],
-                spec["viz_type"],
-                spec["params"],
+                title=dashboard_spec["title"],
+                slug=dashboard_spec["slug"],
+                id_hint=dashboard_spec["id_hint"],
             )
-            charts.append(chart)
-            dashboard_changed = dashboard_changed or updated
 
-        target_chart_ids = [chart.id for chart in charts]
-        current_chart_ids = [chart.id for chart in dashboard.slices or []]
-        target_position = _verification_dashboard_position(charts)
-        current_position = json.loads(dashboard.position_json or "{}")
+            charts: list[Any] = []
+            dashboard_changed = dashboard_updated
+            for spec in dashboard_spec["chart_specs"]:
+                chart, updated = _sync_chart(
+                    db,
+                    admin_user,
+                    datasets[spec["table_name"]],
+                    spec["slice_name"],
+                    spec["viz_type"],
+                    spec["params"],
+                )
+                charts.append(chart)
+                dashboard_changed = dashboard_changed or updated
 
-        if current_chart_ids != target_chart_ids:
-            dashboard.slices = charts
-            dashboard_changed = True
-        if current_position != target_position:
-            dashboard.position_json = json.dumps(target_position)
-            dashboard_changed = True
-        if not dashboard.published:
-            dashboard.published = True
-            dashboard_changed = True
+            target_chart_ids = [chart.id for chart in charts]
+            current_chart_ids = [chart.id for chart in dashboard.slices or []]
+            target_position = _dashboard_position(charts, dashboard_spec["layout_key"])
+            current_position = json.loads(dashboard.position_json or "{}")
 
-        db.session.commit()
-        if dashboard_changed:
-            logger.info(
-                "Seeded verification dashboard %s (slug=%s id=%s) with charts %s",
-                dashboard.dashboard_title,
-                dashboard.slug,
-                dashboard.id,
-                ", ".join(str(chart_id) for chart_id in target_chart_ids),
-            )
-        else:
-            logger.info(
-                "Verification dashboard %s (slug=%s id=%s) already matched the seeded chart set",
-                dashboard.dashboard_title,
-                dashboard.slug,
-                dashboard.id,
-            )
+            if current_chart_ids != target_chart_ids:
+                dashboard.slices = charts
+                dashboard_changed = True
+            if current_position != target_position:
+                dashboard.position_json = json.dumps(target_position)
+                dashboard_changed = True
+            if not dashboard.published:
+                dashboard.published = True
+                dashboard_changed = True
+
+            db.session.commit()
+            if dashboard_changed:
+                logger.info(
+                    "Seeded Superset dashboard %s (slug=%s id=%s) with charts %s",
+                    dashboard.dashboard_title,
+                    dashboard.slug,
+                    dashboard.id,
+                    ", ".join(str(chart_id) for chart_id in target_chart_ids),
+                )
+            else:
+                logger.info(
+                    "Superset dashboard %s (slug=%s id=%s) already matched the seeded chart set",
+                    dashboard.dashboard_title,
+                    dashboard.slug,
+                    dashboard.id,
+                )
     except Exception as exc:
         db.session.rollback()
-        logger.warning("Superset init could not seed verification dashboard: %s", exc)
+        logger.warning("Superset init could not seed dashboards: %s", exc)
 
 
 def _empty_dashboard_position() -> dict[str, Any]:
@@ -601,7 +803,7 @@ def _run_superset_bootstrap() -> None:
         with app.app_context():
             _ensure_embedded_guest_permissions(app, db)
             _cleanup_orphaned_dashboard_layouts(db)
-            _seed_verification_dashboard(app, db)
+            _seed_dashboards(app, db)
     except Exception as exc:
         logger.warning("Superset init bootstrap failed: %s", exc)
 
@@ -625,7 +827,7 @@ def main() -> None:
             registry_count,
         )
         logger.info(
-            "Superset datasets are provisioned lazily by the BioLink backend integration route."
+            "Superset datasets and verification charts are provisioned during init for the active BioLink pipeline tables."
         )
     except Exception as exc:
         logger.warning("Superset init preflight could not verify BioLink source DB: %s", exc)

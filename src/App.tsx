@@ -9,6 +9,7 @@ import { RiskFactors } from "./components/RiskFactors";
 import { MedicalHistory } from "./components/MedicalHistory";
 import { TraditionalImaging } from "./components/TraditionalImaging";
 import { GenomicData } from "./components/GenomicData";
+import { SampleData } from "./components/SampleData";
 import { DataNotAvailable } from "./components/DataNotAvailable";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { KeyboardShortcutsHelp } from "./components/KeyboardShortcutsHelp";
@@ -538,6 +539,7 @@ function renderPatientView(
           <TabsTrigger value="vitals">Vital Signs</TabsTrigger>
           <TabsTrigger value="risk">Risk Factors</TabsTrigger>
           <TabsTrigger value="history">Medical History</TabsTrigger>
+          <TabsTrigger value="sample">Sample</TabsTrigger>
           <TabsTrigger value="genomics">Genomics</TabsTrigger>
           <TabsTrigger value="imaging">Imaging</TabsTrigger>
         </TabsList>
@@ -576,6 +578,14 @@ function renderPatientView(
               type="empty-for-patient"
             />
           )}
+        </TabsContent>
+
+        <TabsContent value="sample" className="patient-tab-panel">
+          <SampleData
+            patientId={patient.dna_id}
+            enrollmentDate={patient.enrollment_date}
+            genomicData={genomicsData}
+          />
         </TabsContent>
 
         <TabsContent value="genomics" className="patient-tab-panel">

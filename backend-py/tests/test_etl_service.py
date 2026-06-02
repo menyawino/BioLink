@@ -37,6 +37,7 @@ def test_superset_target_tables_include_current_pipeline_outputs():
     assert etl_service._superset_target_tables(["bhs"]) == [
         etl_service.settings.superset_default_table,
         "comparability_report",
+        "cohort_characterization",
         "bhs_participants",
         "ehvol_participants",
     ]
@@ -111,8 +112,9 @@ async def test_refresh_superset_registry_datasets_prunes_stale_biolink_datasets(
             dataset_ids = {
                 "unified_registry": 2,
                 "comparability_report": 10,
-                "bhs_participants": 11,
-                "ehvol_participants": 12,
+                "cohort_characterization": 11,
+                "bhs_participants": 12,
+                "ehvol_participants": 14,
             }
             return dataset_ids[table_name]
 

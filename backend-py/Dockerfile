@@ -4,20 +4,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    gcc \
-    python3-dev \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Copy and install Python dependencies
-COPY requirements.txt ./
+COPY requirements.docker.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.docker.txt
 
 # Copy application code
 COPY app ./app
@@ -32,7 +24,7 @@ EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3001/health || exit 1
+    CMD python -c "import sys, urllib.request; urllib.request.urlopen('http://localhost:3001/health', timeout=5); sys.exit(0)" || exit 1
 
 # Production: no --reload.  For dev, docker-compose bind-mounts app/ and
 # overrides CMD to add --reload.
