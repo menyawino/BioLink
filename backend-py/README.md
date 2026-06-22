@@ -4,12 +4,9 @@ FastAPI backend for BioLink (patients registry + analytics + charts).
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Raw Installation
 
-```bash
-cd backend-py
-pip install -r requirements.txt
-```
+No Python/Conda/Mamba package installation is performed by this backend setup.
 
 ### 2. Configure Environment
 

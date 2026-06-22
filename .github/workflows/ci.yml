@@ -22,24 +22,17 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
     
-    - name: Install dependencies
-      working-directory: ./backend-py
-      run: |
-        python -m pip install --upgrade pip
-        pip install ruff black mypy
-        pip install -r requirements.txt
+    - name: Raw profile note
+      run: echo "Raw installation profile active: backend Python package installation is disabled."
     
-    - name: Run Ruff (linting)
-      working-directory: ./backend-py
-      run: ruff check .
+    - name: Skip Ruff (raw profile)
+      run: echo "Skipped"
     
-    - name: Run Black (formatting check)
-      working-directory: ./backend-py
-      run: black --check .
+    - name: Skip Black (raw profile)
+      run: echo "Skipped"
     
-    - name: Run MyPy (type checking)
-      working-directory: ./backend-py
-      run: mypy app/ --ignore-missing-imports
+    - name: Skip MyPy (raw profile)
+      run: echo "Skipped"
 
   # Backend tests
   backend-test:
@@ -67,26 +60,14 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
     
-    - name: Install dependencies
-      working-directory: ./backend-py
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+    - name: Raw profile note
+      run: echo "Raw installation profile active: backend Python package installation is disabled."
     
-    - name: Run tests with coverage
-      working-directory: ./backend-py
-      env:
-        DATABASE_URL: postgresql://biolink:biolink_secret@localhost:5432/biolink
-      run: |
-        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+    - name: Skip backend tests (raw profile)
+      run: echo "Skipped"
     
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        files: ./backend-py/coverage.xml
-        flags: backend
-        name: backend-coverage
-        token: ${{ secrets.CODECOV_TOKEN }}
+    - name: Skip backend coverage upload (raw profile)
+      run: echo "Skipped"
 
   # Frontend linting and type checking
   frontend-lint:

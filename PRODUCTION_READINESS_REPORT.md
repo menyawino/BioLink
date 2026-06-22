@@ -55,7 +55,7 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 ```
 
-- `passlib[bcrypt]` already in `requirements.txt`
+- Bcrypt hashing is configured for new password registrations.
 - Existing pbkdf2 hashes will still verify (passlib handles migration)
 - New registrations automatically use bcrypt
 

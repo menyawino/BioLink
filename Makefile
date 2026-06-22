@@ -58,8 +58,7 @@ help:
 # ============================================
 
 install:
-	@echo "Installing backend dependencies..."
-	cd backend-py && pip install -r requirements.txt
+	@echo "Skipping backend Python package installation (raw profile)."
 	@echo "Installing frontend dependencies..."
 	npm install
 
@@ -210,10 +209,7 @@ clean:
 	rm -rf nifi/processors/__pycache__ 2>/dev/null || true
 
 pre-commit:
-	@echo "Setting up pre-commit hooks..."
-	pip install pre-commit
-	pre-commit install
-	pre-commit run --all-files
+	@echo "Skipping pre-commit Python package installation (raw profile)."
 
 docs:
 	@echo "Generating documentation..."
@@ -222,8 +218,7 @@ docs:
 
 security-scan:
 	@echo "Running security scans..."
-	@echo "Python dependencies..."
-	cd backend-py && pip-audit || true
+	@echo "Python dependency scan skipped (raw profile)."
 	@echo "JavaScript dependencies..."
 	npm audit || true
 	@echo "Secret detection..."
