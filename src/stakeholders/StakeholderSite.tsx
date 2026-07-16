@@ -134,9 +134,9 @@ const capabilities: Capability[] = [
   {
     label: "Family 3",
     title: "Semantic ML mapping",
-    description: "This codebase now standardizes cohorts through the db/test preparation flow, combining profiling, range rules, unit extraction, and fuzzy canonicalization.",
+    description: "The codebase now integrates the official SNOMED CT GPS release for terminology harmonization, utilizing RapidFuzz for high-speed semantic matching against 400,000+ clinical concepts.",
     icon: Brain,
-    bullets: ["Normalization profiling by observed values", "Range cleaning and outlier quarantine", "Geographic and nationality canonicalization"],
+    bullets: ["100% column canonicalization using SNOMED nomenclature", "Deep parsing with thresholded fuzzy mapping", "Range cleaning and outlier quarantine"],
   },
   {
     label: "Family 4",
@@ -155,9 +155,9 @@ const capabilities: Capability[] = [
   {
     label: "Governance",
     title: "Transparent unification outputs",
-    description: "The new pipeline publishes explicit mapping, value-set, unit, and modality outputs instead of hidden transformation state.",
+    description: "The new pipeline publishes explicit mapping, value-set, unit, and modality outputs instead of hidden transformation state, including manual review logs for low-confidence matches.",
     icon: LockKeyhole,
-    bullets: ["step_7/column_mapping.csv", "step_7/value_set_mapping.csv", "step_7/unit_mapping.csv and modality_manifest.csv"],
+    bullets: ["step_7/manual_snomed_review.csv (Low-confidence flagged matches)", "step_7/column_mapping.csv & step_7/value_set_mapping.csv", "step_7/unit_mapping.csv & modality_manifest.csv"],
   },
   {
     label: "Operations",

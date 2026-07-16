@@ -148,8 +148,8 @@ fi
 
 az postgres flexible-server firewall-rule create \
   --resource-group "$AZURE_RESOURCE_GROUP" \
-  --name "$AZURE_POSTGRES_SERVER" \
-  --rule-name allow-azure-services \
+  --server-name "$AZURE_POSTGRES_SERVER" \
+  --name allow-azure-services \
   --start-ip-address 0.0.0.0 \
   --end-ip-address 0.0.0.0 \
   --output none
@@ -157,13 +157,13 @@ az postgres flexible-server firewall-rule create \
 az postgres flexible-server db create \
   --resource-group "$AZURE_RESOURCE_GROUP" \
   --server-name "$AZURE_POSTGRES_SERVER" \
-  --database-name "$AZURE_POSTGRES_DATABASE" \
+  --name "$AZURE_POSTGRES_DATABASE" \
   --output none
 
 az postgres flexible-server db create \
   --resource-group "$AZURE_RESOURCE_GROUP" \
   --server-name "$AZURE_POSTGRES_SERVER" \
-  --database-name "$AZURE_POSTGRES_VECTOR_DATABASE" \
+  --name "$AZURE_POSTGRES_VECTOR_DATABASE" \
   --output none
 
 POSTGRES_HOST="$(az postgres flexible-server show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_POSTGRES_SERVER" --query fullyQualifiedDomainName -o tsv)"
