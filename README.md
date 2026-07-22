@@ -88,26 +88,27 @@ flowchart TD
         Stager --> Chunks
     end
 
-    subgraph NiFiTier["2. Apache NiFi Ingestion & Lineage Tier (Port 8443)"]
+    subgraph NiFiTier["2. Apache NiFi Ingestion & Lineage Tier (8 Separate Step Processors)"]
         GetFile["GetFile Processor"]
         
-        subgraph PipelineProcessor["BiolinkRegistryPipelineProcessor (db/test/run_pipeline.py)"]
-            P3["Step 3: Profile Normalization"]
-            P4["Step 4: Range Rules Validation"]
-            P5["Step 5: Unit Extraction & Standardizing"]
-            P6["Step 6: Fuzzy Match & Entity Resolution"]
-            P7["Step 7: Unify Datasets (unified_registry.csv)"]
+        subgraph PipelineProcessors["NiFi Step Processors (Steps 0 through 7)"]
+            S0["Step 0: BiolinkStep0ColumnMappingProcessor<br/>(CDISC / LOINC Terminology Mapping)"]
+            S1["Step 1: BiolinkStep1RemovePIIProcessor<br/>(PII Removal & Quality Scoring)"]
+            S2["Step 2: BiolinkStep2ReduceSparseColumnsProcessor<br/>(Sparsity Reduction)"]
+            S3["Step 3: BiolinkStep3ProfileNormalizationProcessor<br/>(Demographic & Clinical Normalization)"]
+            S4["Step 4: BiolinkStep4ApplyRangeRulesProcessor<br/>(Physiological Range Validation)"]
+            S5["Step 5: BiolinkStep5ExtractUnitsProcessor<br/>(Measurement Unit Extraction)"]
+            S6["Step 6: BiolinkStep6FuzzyMatchProcessor<br/>(Entity Resolution & Fuzzy Matching)"]
+            S7["Step 7: BiolinkStep7UnifyDatasetsProcessor<br/>(Unified Registry Assembly & Auto DB Loader)"]
 
-            P3 --> P4 --> P5 --> P6 --> P7
+            S0 --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
         end
 
         NiFiLineage["NiFi Provenance & Data Lineage Engine"]
-        DBLoader["Auto DB Loader (psycopg2)"]
 
         Chunks --> GetFile
-        GetFile --> PipelineProcessor
-        PipelineProcessor --> NiFiLineage
-        PipelineProcessor --> DBLoader
+        GetFile --> S0
+        S7 --> NiFiLineage
     end
 
     subgraph StorageTier["3. Storage & Persistence Tier"]
@@ -115,8 +116,8 @@ flowchart TD
         PGV[("pgvector (Port 5433)<br/>- RAG Vector Store<br/>- Embeddings")]
         Redis[("Redis (Port 6379)<br/>- App Cache & Rate Limits")]
 
-        DBLoader --> PG
-        DBLoader --> PGV
+        S7 --> PG
+        S7 --> PGV
     end
 
     subgraph BackendTier["4. Application & AI Agent Tier (Port 3001)"]
