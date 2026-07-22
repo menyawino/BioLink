@@ -161,7 +161,7 @@ services:
       - ./outputs:/app/outputs
       - etl_uploads:/shared/etl_uploads
     healthcheck:
-      test: ["CMD-SHELL", "curl -sSf http://localhost:3001/health >/dev/null"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3001/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -73,7 +73,87 @@ MYF BioLink is a sophisticated registry management system that provides:
 
 ## Architecture
 
-### Frontend
+### System Architecture & Data Flow
+
+```mermaid
+flowchart TD
+    subgraph DataSources["1. Source Data Tier"]
+        CSV1["BHS_Full.csv (Clinical Dataset 1)"]
+        CSV2["EHVol_Full.csv (Clinical Dataset 2)"]
+        Stager["split_csvs_host.py (Chunk Stager)"]
+        Chunks["nifi/data-input/ (*.csv Chunks)"]
+
+        CSV1 --> Stager
+        CSV2 --> Stager
+        Stager --> Chunks
+    end
+
+    subgraph NiFiTier["2. Apache NiFi Ingestion & Lineage Tier (Port 8443)"]
+        GetFile["GetFile Processor"]
+        
+        subgraph PipelineProcessor["BiolinkRegistryPipelineProcessor (db/test/run_pipeline.py)"]
+            P3["Step 3: Profile Normalization"]
+            P4["Step 4: Range Rules Validation"]
+            P5["Step 5: Unit Extraction & Standardizing"]
+            P6["Step 6: Fuzzy Match & Entity Resolution"]
+            P7["Step 7: Unify Datasets (unified_registry.csv)"]
+
+            P3 --> P4 --> P5 --> P6 --> P7
+        end
+
+        NiFiLineage["NiFi Provenance & Data Lineage Engine"]
+        DBLoader["Auto DB Loader (psycopg2)"]
+
+        Chunks --> GetFile
+        GetFile --> PipelineProcessor
+        PipelineProcessor --> NiFiLineage
+        PipelineProcessor --> DBLoader
+    end
+
+    subgraph StorageTier["3. Storage & Persistence Tier"]
+        PG[("PostgreSQL (Port 5432)<br/>- unified_registry<br/>- patients<br/>- registry_etl_runs<br/>- cohort_comparability")]
+        PGV[("pgvector (Port 5433)<br/>- RAG Vector Store<br/>- Embeddings")]
+        Redis[("Redis (Port 6379)<br/>- App Cache & Rate Limits")]
+
+        DBLoader --> PG
+        DBLoader --> PGV
+    end
+
+    subgraph BackendTier["4. Application & AI Agent Tier (Port 3001)"]
+        FastAPI["FastAPI Backend Server"]
+        
+        subgraph AIAgent["LangGraph AI Agent System"]
+            Orchestrator["Agent Orchestrator"]
+            SQLAgent["SQL Agent (Database Reader)"]
+            RAGAgent["RAG Agent (Vector Reader)"]
+            Ollama["Ollama LLM (Port 11434)"]
+
+            Orchestrator --> SQLAgent
+            Orchestrator --> RAGAgent
+            SQLAgent --> Ollama
+            RAGAgent --> Ollama
+        end
+
+        PG <--> FastAPI
+        PGV <--> RAGAgent
+        PG <--> SQLAgent
+        Redis <--> FastAPI
+        FastAPI <--> Orchestrator
+    end
+
+    subgraph PresentationTier["5. Presentation & Analytics Tier"]
+        Portal["React Research Portal (Port 3000)<br/>- Patient Registry & Profile<br/>- Cohort Builder<br/>- Chat Interface (AI Agent)<br/>- ETL Monitor"]
+        Superset["Apache Superset (Port 8088)<br/>- Embedded Dashboards<br/>- Visual SQL Analytics"]
+
+        FastAPI <--> Portal
+        FastAPI <--> Superset
+        PG <--> Superset
+    end
+```
+
+### Component Overview
+
+#### Frontend
 - **Framework**: React 18 + TypeScript
 - **Build Tool**: Vite
 - **UI Components**: shadcn/ui with Radix UI primitives
@@ -81,13 +161,19 @@ MYF BioLink is a sophisticated registry management system that provides:
 - **Charts**: Recharts
 - **State Management**: Custom React hooks with API integration
 
-### Backend
+#### Backend
 - **Runtime**: Python (FastAPI)
 - **Database**: PostgreSQL
 - **ORM/DB**: SQLAlchemy
 - **Development**: Uvicorn with hot reload
 
-### MCP (Local Tooling)
+#### Apache NiFi Pipeline
+- **Ingestion**: Chunked CSV file ingestion & staging
+- **Processor**: `BiolinkRegistryPipelineProcessor` executing step-by-step harmonization (`db/test/run_pipeline.py`)
+- **Lineage**: Visual step tracking, execution duration, and flowfile provenance engine
+- **Automated Loading**: Auto-ingestion into PostgreSQL `unified_registry` and comparability tables
+
+#### MCP (Local Tooling)
 - **Server**: Node.js MCP server in mcp/server.mjs
 - **Data**: PostgreSQL via DATABASE_URL
 - **Charts**: Vega-Lite specs returned from tools
