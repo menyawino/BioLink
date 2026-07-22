@@ -30,6 +30,9 @@ class BiolinkStep5ExtractUnitsProcessor(FlowFileTransform):
         description = "Step 5: Extracts and standardizes measurement units for clinical values."
         tags = ["biolink", "step5", "units", "ucum", "standardization"]
 
+    def __init__(self, **kwargs):
+        pass
+
     def transform(self, context, flowfile):
         content = flowfile.getContentsAsBytes().decode("utf-8")
         try:

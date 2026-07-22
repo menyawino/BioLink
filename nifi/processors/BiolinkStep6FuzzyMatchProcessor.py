@@ -19,11 +19,13 @@ class BiolinkStep6FuzzyMatchProcessor(FlowFileTransform):
         description = "Step 6: Performs multi-cohort entity resolution and fuzzy matching across BHS and EHVol datasets."
         tags = ["biolink", "step6", "fuzzy-matching", "entity-resolution"]
 
+    def __init__(self, **kwargs):
+        pass
+
     def transform(self, context, flowfile):
         content = flowfile.getContentsAsBytes().decode("utf-8")
         try:
             data = json.loads(content)
-            # Generate deterministic participant linkage hash
             anchor = data.get("record_id") or data.get("dna_id") or data.get("participant_id") or ""
             if anchor:
                 data["_linkage_key"] = f"PLK-{hash(str(anchor)) & 0xFFFFFFFF:08x}"

@@ -19,11 +19,13 @@ class BiolinkStep3ProfileNormalizationProcessor(FlowFileTransform):
         description = "Step 3: Normalizes demographic and clinical values across datasets."
         tags = ["biolink", "step3", "profile-normalization", "demographics"]
 
+    def __init__(self, **kwargs):
+        pass
+
     def transform(self, context, flowfile):
         content = flowfile.getContentsAsBytes().decode("utf-8")
         try:
             data = json.loads(content)
-            # Normalize boolean / clinical flags
             for key, val in list(data.items()):
                 if isinstance(val, str):
                     sval = val.strip().lower()

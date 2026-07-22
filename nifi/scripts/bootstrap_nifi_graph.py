@@ -29,7 +29,7 @@ STANDARD_BUNDLE = {
 PYTHON_BUNDLE = {
     "group": "org.apache.nifi",
     "artifact": "python-extensions",
-    "version": "1.0.0",
+    "version": "2.8.0",
 }
 
 DBCP_BUNDLE = {
@@ -298,28 +298,106 @@ class NiFiClient:
 
 
 def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
-    pg_id = client.ensure_process_group(root_id, "Registry Pipeline (db/test)", 100, 1800)
+    pg_id = root_id
 
+    # 1. Trigger
     trigger_id = client.ensure_processor(
         pg_id,
-        "GenerateFlowFile - Trigger Registry Pipeline",
-        "org.apache.nifi.processors.standard.GenerateFlowFile",
+        "GetFile - Ingest Raw CSV Chunks",
+        "org.apache.nifi.processors.standard.GetFile",
         STANDARD_BUNDLE,
         {
-            "File Size": "0B",
-            "Batch Size": "1",
-            "Data Format": "Text",
-            "Unique FlowFiles": "false",
+            "Input Directory": "/opt/nifi/data-input",
+            "File Filter": ".*\\.csv$",
+            "Keep Source File": "false",
         },
         0,
         0,
-        scheduling_period="24 hours",
+        scheduling_period="5 sec",
     )
 
-    pipeline_id = client.ensure_processor(
+    # 2. Step 0: Column Mapping
+    s0_id = client.ensure_processor(
         pg_id,
-        "Run Scripted Registry Pipeline",
-        "BiolinkRegistryPipelineProcessor",
+        "Step 0: Column Mapping (BiolinkStep0ColumnMappingProcessor)",
+        "BiolinkStep0ColumnMappingProcessor",
+        PYTHON_BUNDLE,
+        {"Dataset Type": "bhs"},
+        300,
+        0,
+    )
+
+    # 3. Step 1: PII Removal & Data Quality
+    s1_id = client.ensure_processor(
+        pg_id,
+        "Step 1: PII Removal (BiolinkStep1RemovePIIProcessor)",
+        "BiolinkStep1RemovePIIProcessor",
+        PYTHON_BUNDLE,
+        {},
+        600,
+        0,
+    )
+
+    # 4. Step 2: Sparsity Reduction
+    s2_id = client.ensure_processor(
+        pg_id,
+        "Step 2: Sparsity Reduction (BiolinkStep2ReduceSparseColumnsProcessor)",
+        "BiolinkStep2ReduceSparseColumnsProcessor",
+        PYTHON_BUNDLE,
+        {},
+        900,
+        0,
+    )
+
+    # 5. Step 3: Profile Normalization
+    s3_id = client.ensure_processor(
+        pg_id,
+        "Step 3: Profile Normalization (BiolinkStep3ProfileNormalizationProcessor)",
+        "BiolinkStep3ProfileNormalizationProcessor",
+        PYTHON_BUNDLE,
+        {},
+        1200,
+        0,
+    )
+
+    # 6. Step 4: Apply Range Rules
+    s4_id = client.ensure_processor(
+        pg_id,
+        "Step 4: Physiological Range Rules (BiolinkStep4ApplyRangeRulesProcessor)",
+        "BiolinkStep4ApplyRangeRulesProcessor",
+        PYTHON_BUNDLE,
+        {},
+        1500,
+        0,
+    )
+
+    # 7. Step 5: Extract Units
+    s5_id = client.ensure_processor(
+        pg_id,
+        "Step 5: Extract Units (BiolinkStep5ExtractUnitsProcessor)",
+        "BiolinkStep5ExtractUnitsProcessor",
+        PYTHON_BUNDLE,
+        {},
+        1800,
+        0,
+    )
+
+    # 8. Step 6: Fuzzy Match & Entity Resolution
+    s6_id = client.ensure_processor(
+        pg_id,
+        "Step 6: Fuzzy Entity Resolution (BiolinkStep6FuzzyMatchProcessor)",
+        "BiolinkStep6FuzzyMatchProcessor",
+        PYTHON_BUNDLE,
+        {},
+        2100,
+        0,
+    )
+
+    # 9. Step 7: Unify Datasets & DB Load
+    s7_id = client.ensure_processor(
+        pg_id,
+        "Step 7: Unify Datasets (BiolinkStep7UnifyDatasetsProcessor)",
+        "BiolinkStep7UnifyDatasetsProcessor",
         PYTHON_BUNDLE,
         {
             "Repository Root": "/opt/nifi/biolink_repo",
@@ -335,30 +413,42 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
             "Database Password": "biolink_secret",
             "Unified Registry Table": "unified_registry",
         },
-        340,
+        2400,
         0,
     )
 
+    # 10. Log completion
     log_id = client.ensure_processor(
         pg_id,
-        "LogMessage - Registry Pipeline Complete",
+        "LogMessage - Harmonization Complete",
         "org.apache.nifi.processors.standard.LogMessage",
         STANDARD_BUNDLE,
         {
             "Log Level": "info",
-            "Log Message": "Registry pipeline complete: ${biolink.registry.rows} rows, ${biolink.registry.columns} columns",
+            "Log Message": "BioLink 8-Step Harmonization Complete: ${filename}",
         },
-        700,
+        2700,
         0,
         auto_terminate=["success"],
     )
 
-    client.ensure_connection(pg_id, trigger_id, pipeline_id, ["success"], "Trigger -> Scripted Pipeline")
-    client.ensure_connection(pg_id, pipeline_id, log_id, ["success"], "Scripted Pipeline -> Log")
-    client.ensure_connection(pg_id, pipeline_id, pipeline_id, ["failure"], "Scripted Pipeline failure loop")
+    # Connections in series: Trigger -> S0 -> S1 -> S2 -> S3 -> S4 -> S5 -> S6 -> S7 -> Log
+    client.ensure_connection(pg_id, trigger_id, s0_id, ["success"], "GetFile -> Step 0")
+    client.ensure_connection(pg_id, s0_id, s1_id, ["success"], "Step 0 -> Step 1")
+    client.ensure_connection(pg_id, s1_id, s2_id, ["success"], "Step 1 -> Step 2")
+    client.ensure_connection(pg_id, s2_id, s3_id, ["success"], "Step 2 -> Step 3")
+    client.ensure_connection(pg_id, s3_id, s4_id, ["success"], "Step 3 -> Step 4")
+    client.ensure_connection(pg_id, s4_id, s5_id, ["success"], "Step 4 -> Step 5")
+    client.ensure_connection(pg_id, s5_id, s6_id, ["success"], "Step 5 -> Step 6")
+    client.ensure_connection(pg_id, s6_id, s7_id, ["success"], "Step 6 -> Step 7")
+    client.ensure_connection(pg_id, s7_id, log_id, ["success"], "Step 7 -> Log Complete")
 
-    for proc_id in [log_id, pipeline_id, trigger_id]:
-        client.start_processor(proc_id)
+    procs = [trigger_id, s0_id, s1_id, s2_id, s3_id, s4_id, s5_id, s6_id, s7_id, log_id]
+    for proc_id in procs:
+        try:
+            client.start_processor(proc_id)
+        except Exception:
+            pass
 
 
 def main() -> int:

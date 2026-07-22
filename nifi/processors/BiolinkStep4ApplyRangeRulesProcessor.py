@@ -32,6 +32,9 @@ class BiolinkStep4ApplyRangeRulesProcessor(FlowFileTransform):
         description = "Step 4: Validates clinical measurement boundaries and flags out-of-range values."
         tags = ["biolink", "step4", "range-rules", "validation"]
 
+    def __init__(self, **kwargs):
+        pass
+
     def transform(self, context, flowfile):
         content = flowfile.getContentsAsBytes().decode("utf-8")
         try:
