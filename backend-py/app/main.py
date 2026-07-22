@@ -7,7 +7,6 @@ from app.config import settings
 from app.database import test_connection
 from app.database import engine
 from app.db_bootstrap import ensure_schema
-from app.services.harmonization_loader import ensure_harmonization_artifacts_loaded
 from app.services.registry_loader import ensure_registry_snapshot_loaded
 from app.routes import (
     chat,
@@ -54,12 +53,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Registry snapshot startup reload failed: {e}")
 
-    try:
-        harmonization_result = ensure_harmonization_artifacts_loaded(engine)
-        if harmonization_result.get("loaded"):
-            logger.info("✓ Harmonization artifacts synced during startup")
-    except Exception as e:
-        logger.warning(f"Harmonization artifact startup sync failed: {e}")
 
     # Bootstrap auth tables + seed default users
     try:
@@ -315,9 +308,9 @@ app.include_router(
     prefix="/api/harmonization",
     tags=["harmonization"],
     dependencies=[Depends(auth.require_scopes("read"))],
-)health_router.router)
+)
+app.include_router(health_router.router)
 
-app.include_router(
 app.include_router(
     cohort.router,
     prefix="/api/cohort",

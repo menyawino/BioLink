@@ -75,9 +75,7 @@
       },
       "scripts": {
             "dev": "vite",
-            "dev:stakeholders": "vite --config vite.stakeholders.config.ts --port 3002",
             "build": "vite build",
-            "build:stakeholders": "vite build --config vite.stakeholders.config.ts",
             "lint": "eslint src/ --ext .ts,.tsx --max-warnings=0",
             "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
             "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
