@@ -88,5 +88,12 @@
     server: {
       port: 3000,
       open: true,
+      proxy: {
+        '/superset': 'http://localhost:8088',
+        '/embedded': 'http://localhost:8088',
+        '/static': 'http://localhost:8088',
+        '/login': 'http://localhost:8088',
+        '/api/v1': 'http://localhost:8088',
+      },
     },
   });

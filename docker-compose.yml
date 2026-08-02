@@ -155,12 +155,13 @@ services:
       DATABASE_URL: postgresql://biolink:biolink_secret@postgres:5432/biolink
       RAG_PG_URL: postgresql://biolink:biolink_secret@pgvector:5432/biolink_vector
       OLLAMA_BASE_URL: http://ollama:11434
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:3001,http://127.0.0.1:5173,http://127.0.0.1:3000,http://127.0.0.1:3001}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-a-long-random-string}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       SUPERSET_URL: ${SUPERSET_URL:-http://superset:8088}
       SUPERSET_PUBLIC_URL: ${SUPERSET_PUBLIC_URL:-http://localhost:8088}
       SUPERSET_ADMIN_USER: ${SUPERSET_ADMIN_USER:-admin}
-      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-CHANGE_ME_SUPerset_PASSWORD}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin}
     volumes:
       - ./backend-py/app:/app/app
       - ./db:/app/db
@@ -190,7 +191,7 @@ services:
         VITE_OLLAMA_TOOL_MODEL_FALLBACK: llama3.2:3b
         VITE_SQL_AGENT_ENABLED: "true"
         VITE_SUPERSET_URL: ${VITE_SUPERSET_URL:-}
-        VITE_SUPERSET_DASHBOARD_ID: "biolink-verification-dashboard"
+        VITE_SUPERSET_DASHBOARD_ID: "1"
         VITE_NIFI_URL: ${VITE_NIFI_URL:-}
     container_name: biolink-frontend
     depends_on:
@@ -267,7 +268,7 @@ services:
       BIOLINK_PG_DB: biolink
       BIOLINK_PG_USER: biolink
       BIOLINK_PG_PASSWORD: ${POSTGRES_PASSWORD:-biolink_secret}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:3001,http://127.0.0.1:5173,http://127.0.0.1:3000,http://127.0.0.1:3001}
       SUPERSET_EMBEDDED_ALLOWED_DOMAINS: ${SUPERSET_EMBEDDED_ALLOWED_DOMAINS:-}
       SUPERSET_METADATA_DATABASE_URI: ${SUPERSET_METADATA_DATABASE_URI:-postgresql+psycopg2://biolink:biolink_secret@postgres:5432/biolink}
       SUPERSET_METADATA_SCHEMA: ${SUPERSET_METADATA_SCHEMA:-superset_meta}

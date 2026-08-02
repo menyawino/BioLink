@@ -91,55 +91,67 @@ export function LoginPage() {
     'transition-all shadow-sm';
 
   return (
-    <div className="min-h-screen w-full flex font-sans">
+    <div className="login-page min-h-screen w-full bg-[#f4f7f8] font-sans text-slate-900">
 
       {/* ━━━ LEFT: Full-bleed photo ━━━ */}
-      <div className="hidden lg:block lg:w-[55%] relative">
+      <div className="login-visual relative hidden min-h-screen overflow-hidden bg-[#123b45] lg:block">
         {/* Photo — object-cover + center keeps the building centred at any viewport */}
         <img
           src={loginVisual}
           alt="Magdi Yacoub Heart Center, Aswan"
-          className="absolute inset-0 w-full h-full object-cover object-center"
+          className="login-visual-image absolute inset-0 h-full w-full object-cover object-center"
         />
         {/* Dark-to-transparent gradient from bottom so the text is legible */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+        <div className="login-visual-scrim absolute inset-0" />
 
         {/* Floating content pinned to bottom-left */}
-        <div className="absolute bottom-0 left-0 right-0 p-10 xl:p-14 space-y-5">
-          <div className="inline-flex items-center bg-white/95 backdrop-blur rounded-xl px-4 py-2.5 shadow-lg">
-            <img src={logo} alt="MYF" className="h-9 w-auto object-contain" />
+        <div className="login-visual-content absolute bottom-0 left-0 right-0 space-y-5 p-10 xl:p-14">
+          <div className="inline-flex items-center gap-3 rounded-2xl border border-white/40 bg-white/95 px-4 py-3 shadow-xl shadow-black/10 backdrop-blur">
+            <img src={logo} alt="MYF" className="h-10 w-auto object-contain" />
+            <span className="border-l border-slate-200 pl-3 text-sm font-semibold tracking-[0.16em] text-slate-700">BIOLINK</span>
           </div>
-          <h1 className="text-3xl xl:text-4xl font-extrabold text-white leading-snug drop-shadow-lg">
-            BioLink Clinical<br />Data Platform
+          <h1 className="max-w-xl text-4xl font-bold leading-[1.08] tracking-[-0.03em] text-white drop-shadow-lg xl:text-5xl">
+            Clinical data,<br />made useful.
           </h1>
-          <p className="text-base text-white/80 max-w-lg leading-relaxed drop-shadow">
-            A secure environment for standardising, analysing, and exploring
-            cardiovascular patient registries across multiple cohorts.
+          <p className="max-w-lg text-base leading-relaxed text-white/80 drop-shadow">
+            A secure workspace for standardising, analysing, and exploring cardiovascular patient registries across multiple cohorts.
           </p>
-          <div className="text-xs text-white/50 pt-2">
-            © {new Date().getFullYear()} Magdi Yacoub Heart Foundation · v1.2.0
+          <div className="flex items-center gap-3 pt-2 text-xs font-medium tracking-wide text-white/60">
+            <span className="h-px w-8 bg-white/40" />
+            <span>Magdi Yacoub Heart Foundation · v1.2.0</span>
           </div>
         </div>
       </div>
 
       {/* ━━━ RIGHT: Form column ━━━ */}
-      <div className="w-full lg:w-[45%] flex flex-col bg-white">
+      <div className="login-form-shell flex min-h-screen w-full flex-col bg-[#f4f7f8]">
         {/* Mobile-only header */}
-        <div className="lg:hidden flex items-center gap-3 p-6 border-b border-slate-100">
-          <img src={logo} alt="MYF" className="h-8 w-auto object-contain" />
-          <span className="text-base font-bold text-slate-800">BioLink</span>
+        <div className="flex items-center justify-between border-b border-slate-200/70 bg-white/70 px-6 py-5 backdrop-blur lg:hidden">
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="MYF" className="h-9 w-auto object-contain" />
+            <span className="text-base font-bold tracking-tight text-slate-900">BioLink</span>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Clinical workspace</span>
         </div>
 
         {/* Vertically centred form area */}
-        <div className="flex-1 flex items-center justify-center px-6 py-10 sm:px-12 lg:px-14 xl:px-20">
-          <div className="w-full max-w-[420px] space-y-7">
+        <div className="login-form-area flex flex-1 items-center justify-center px-5 py-10 sm:px-10 lg:px-12 xl:px-20">
+          <div className="login-form-card w-full max-w-[468px] space-y-7 rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_24px_70px_-34px_rgba(18,59,69,0.42)] sm:p-9">
 
             {/* Heading */}
-            <div className="space-y-1">
-              <h2 className="text-2xl font-bold text-slate-900">
-                {mode === 'login' ? 'Welcome back' : 'Request Access'}
-              </h2>
-              <p className="text-sm text-slate-500">
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#2f8390]">Welcome to BioLink</p>
+                  <h2 className="text-3xl font-bold tracking-[-0.03em] text-slate-950">
+                    {mode === 'login' ? 'Welcome back' : 'Request Access'}
+                  </h2>
+                </div>
+                <div className="mt-1 hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e6f2f1] text-[#2f8390] sm:flex">
+                  <Lock className="h-5 w-5" />
+                </div>
+              </div>
+              <p className="max-w-sm text-sm leading-6 text-slate-500">
                 {mode === 'login'
                   ? 'Sign in to access the clinical workspace.'
                   : 'Fill in your details to request access.'}
@@ -147,15 +159,15 @@ export function LoginPage() {
             </div>
 
             {/* Segmented control */}
-            <div className="flex bg-slate-100 p-1 rounded-lg">
+            <div className="flex rounded-xl border border-slate-200 bg-slate-100/80 p-1">
               {(['login', 'request_access'] as Mode[]).map((m) => (
                 <button
                   key={m}
                   type="button"
                   onClick={() => { resetForm(); setMode(m); }}
-                  className={`flex-1 py-2.5 text-sm font-semibold rounded-md transition-all ${
+                    className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-all ${
                     mode === m
-                      ? 'bg-white text-slate-900 shadow-sm'
+                      ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
@@ -217,7 +229,7 @@ export function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                      className="password-toggle absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}

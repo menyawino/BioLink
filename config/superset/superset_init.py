@@ -38,12 +38,11 @@ LEGACY_PIPELINE_DATASET_TABLES = (
     "harmonization_tiers",
     "harmonization_provenance",
 )
-NON_PUBLIC_DATASET_TABLES = (
-    "bhs_participants",
-    "ehvol_participants",
-)
+NON_PUBLIC_DATASET_TABLES = ()
 VERIFICATION_DATASET_TABLES = (
     "unified_registry",
+    "bhs_participants",
+    "ehvol_participants",
     "comparability_report",
     "cohort_characterization",
 )

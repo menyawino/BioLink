@@ -64,8 +64,8 @@ function getConfiguredDashboardRef() {
 
 function getDefaultSupersetUrl() {
   const configured = import.meta.env.VITE_SUPERSET_URL?.trim();
-  if (configured) {
-    return configured;
+  if (configured && !/^https?:\/\/(localhost|127\.0\.0\.1)(:8088)?\/?$/i.test(configured)) {
+    return configured.replace(/\/$/, "");
   }
 
   if (typeof window === "undefined") {
@@ -73,13 +73,24 @@ function getDefaultSupersetUrl() {
   }
 
   const hostname = window.location.hostname;
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    const url = new URL(window.location.origin);
-    url.port = "8088";
-    return url.toString().replace(/\/$/, "");
+  // Keep Superset on the same origin so forwarded ports and production hosts
+  // do not lose access to the browser-facing Superset proxy.
+  return window.location.origin;
+}
+
+function normalizeSupersetDomain(domain: string) {
+  if (typeof window === "undefined") return domain.replace(/\/$/, "");
+
+  try {
+    const parsed = new URL(domain);
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+      return window.location.origin;
+    }
+  } catch {
+    return window.location.origin;
   }
 
-  return "http://localhost:8088";
+  return domain.replace(/\/$/, "");
 }
 
 const SUPERSET_SHORTCUTS = [
@@ -92,12 +103,12 @@ const SUPERSET_SHORTCUTS = [
 ];
 
 const BIOLINK_DATASETS = [
-  { value: "unified_registry", label: "unified_registry (Harmonized Patient Master)" },
+  { value: "unified_registry", label: "Unified Dataset (Harmonized Master - BHS & EHVol)" },
+  { value: "bhs_participants", label: "BHS Dataset (Harmonized BHS Cohort Table)" },
+  { value: "ehvol_participants", label: "EHVOL Dataset (Harmonized EHVol Cohort Table)" },
   { value: "patient_demographics", label: "patient_demographics (Age, Sex, Nationality)" },
   { value: "clinical_vitals", label: "clinical_vitals (Blood Pressure, BMI, HR)" },
   { value: "genomic_variants", label: "genomic_variants (DNA Sequencing & Biomarkers)" },
-  { value: "comorbidities", label: "comorbidities (Hypertension, Diabetes, Cardiac)" },
-  { value: "imaging_metadata", label: "imaging_metadata (Echocardiogram, CT, MRI)" },
 ];
 
 const CHART_VIZ_TYPES = [
@@ -132,6 +143,7 @@ export function SupersetWorkspace() {
   const [embedDomain, setEmbedDomain] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [retryKey, setRetryKey] = useState(0);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const dashboardRef = getConfiguredDashboardRef();
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -253,7 +265,7 @@ export function SupersetWorkspace() {
     const stored = localStorage.getItem(SUPERSET_URL_KEY)?.trim();
     const defaultSupersetUrl = getDefaultSupersetUrl();
 
-    if (stored) {
+    if (stored && !/^https?:\/\/(localhost|127\.0\.0\.1)(:8088)?\/?$/i.test(stored)) {
       setUrl(stored);
     } else if (defaultSupersetUrl) {
       setUrl(defaultSupersetUrl);
@@ -322,11 +334,12 @@ export function SupersetWorkspace() {
         }
 
         firstGuestToken = initialPayload.guest_token;
-        setEmbedDomain(initialPayload.superset_domain.replace(/\/$/, ""));
+        setEmbedDomain(normalizeSupersetDomain(initialPayload.superset_domain));
 
+        const browserSupersetDomain = normalizeSupersetDomain(initialPayload.superset_domain);
         embeddedDashboard = await embedDashboard({
           id: embeddedDashboardId,
-          supersetDomain: initialPayload.superset_domain,
+          supersetDomain: browserSupersetDomain,
           mountPoint: mountRef.current,
           fetchGuestToken: async () => {
             if (firstGuestToken) {
@@ -335,7 +348,7 @@ export function SupersetWorkspace() {
               return token;
             }
             const refreshedPayload = await fetchEmbedPayload();
-            setEmbedDomain(refreshedPayload.superset_domain.replace(/\/$/, ""));
+            setEmbedDomain(normalizeSupersetDomain(refreshedPayload.superset_domain));
             return refreshedPayload.guest_token;
           },
           dashboardUiConfig: {
@@ -371,7 +384,17 @@ export function SupersetWorkspace() {
       if (embeddedDashboard) embeddedDashboard.unmount();
       if (mountRef.current) mountRef.current.replaceChildren();
     };
-  }, [activeTab, dashboardRef, refreshKey]);
+  }, [activeTab, dashboardRef, refreshKey, retryKey]);
+
+  useEffect(() => {
+    if (activeTab !== "embed" || embedState !== "fallback") return;
+
+    const retryTimer = window.setTimeout(() => {
+      setRetryKey((key) => key + 1);
+    }, 10000);
+
+    return () => window.clearTimeout(retryTimer);
+  }, [activeTab, embedState]);
 
   // Handle studio path shortcut click
   const navigateStudio = (path: string) => {

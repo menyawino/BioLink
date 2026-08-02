@@ -51,6 +51,8 @@ EHVOL_CANONICAL_FILENAME = "EHVol_Full.csv"
 LINEAGE_STAGE_ORDER = ["ingest", "profile", "unify", "quality", "publish"]
 SUPERSET_MANAGED_PIPELINE_TABLES = (
     "unified_registry",
+    "bhs_participants",
+    "ehvol_participants",
     "comparability_report",
     "cohort_characterization",
 )

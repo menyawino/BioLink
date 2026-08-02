@@ -380,6 +380,9 @@ class SupersetClient:
         title_or_slug: str | int,
     ) -> int | str:
         ref_str = str(title_or_slug).strip()
+        if ref_str.isdigit():
+            return int(ref_str)
+
         dashboards = await self._list_resource(session, access_token, "dashboard")
         for d in dashboards:
             if str(d.get("id")) == ref_str or d.get("slug") == ref_str or d.get("dashboard_title") == ref_str:
@@ -489,10 +492,15 @@ class SupersetClient:
             dashboard_id_or_slug,
         )
         if existing is not None:
-            existing_domains = [
-                str(domain).strip() for domain in existing.get("allowed_domains", [])
-            ]
-            if existing_domains == allowed_domains:
+            existing_domains = {
+                str(domain).strip().rstrip("/").lower()
+                for domain in existing.get("allowed_domains", [])
+            }
+            configured_domains = {
+                str(domain).strip().rstrip("/").lower()
+                for domain in allowed_domains
+            }
+            if existing_domains == configured_domains:
                 return existing
 
             updated = await self._request(

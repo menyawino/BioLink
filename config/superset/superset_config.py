@@ -61,6 +61,8 @@ SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
 FEATURE_FLAGS = {
     "EMBEDDED_SUPERSET": True
 }
+GUEST_ROLE_NAME = "Public"
+PUBLIC_ROLE_LIKE = "Gamma"
 
 # Enable CSV upload UI/handlers in Superset
 FEATURE_FLAGS.update({
