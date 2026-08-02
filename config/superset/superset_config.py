@@ -109,9 +109,9 @@ RATELIMIT_STORAGE_URI = os.getenv(
 
 # Branding
 APP_NAME = "BioLink Visualize"
-APP_ICON = "/static/assets/images/custom_logo.png"
-APP_ICON_WIDTH = 32
-APP_ICON_HEIGHT = 32
+APP_ICON = "/static/assets/images/custom_logo_v2.png"
+APP_ICON_WIDTH = 69
+APP_ICON_HEIGHT = 24
 APP_FAVICON = "/static/assets/images/custom_img_favicon.png"
 
 # Theme (Ant Design v5 tokens)

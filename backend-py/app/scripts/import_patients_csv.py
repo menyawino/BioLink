@@ -5,6 +5,7 @@ import csv
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 from sqlalchemy import text
@@ -251,7 +252,44 @@ ON CONFLICT (dna_id) DO UPDATE SET
 """)
 
 
+import sys
+
+_candidate_paths = [
+    Path(__file__).resolve().parents[3] / "db" / "test",
+    Path("/app/db/test"),
+    Path.cwd() / "db" / "test",
+]
+for _candidate in _candidate_paths:
+    if (_candidate / "src" / "pipeline").exists():
+        _p = str(_candidate)
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+        break
+
+from src.pipeline.step_6_fuzzy_match_v2 import find_best_nationality_match
+
+
+def normalize_nationality(val: str | None) -> str | None:
+    if not val:
+        return None
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() in {"na", "n/a", "none", "null", "unknown", "—"}:
+        return None
+
+    match = find_best_nationality_match(val_str)
+    if match and match[0]:
+        return match[0].title()
+    return val_str.title()
+
+
 def row_to_record(row: dict[str, str]) -> dict[str, Any] | None:
+    norm_row: dict[str, str] = {}
+    for k, v in row.items():
+        if k:
+            clean_k = re.sub(r"[^0-9a-zA-Z]+", "_", k).strip("_").lower()
+            norm_row[clean_k] = v
+    row = norm_row
+
     dna_id = _to_none(row.get("dna_id"))
     if dna_id is None:
         return None
@@ -273,7 +311,7 @@ def row_to_record(row: dict[str, str]) -> dict[str, Any] | None:
         "date_of_birth": parse_date(row.get("date_of_birth")),
         "age": parse_int(row.get("age")),
         "gender": _to_none(row.get("gender")),
-        "nationality": _to_none(row.get("nationality")),
+        "nationality": normalize_nationality(row.get("nationality")),
         "enrollment_date": parse_date(row.get("date_of_enrolment")),
         "current_city": _to_none(row.get("current_city_of_residence")),
         "current_city_category": _to_none(row.get("current_city_category")),
@@ -374,8 +412,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--csv",
-        default="../db/100925_Cleaned_EHVol_Data_STANDARDIZED.csv",
-        help="Path to CSV file (default: ../db/100925_Cleaned_EHVol_Data_STANDARDIZED.csv)",
+        default="/app/db/EHVol_Full.csv",
+        help="Path to CSV file (default: /app/db/EHVol_Full.csv)",
     )
     parser.add_argument("--batch-size", type=int, default=1000)
     parser.add_argument(
@@ -387,6 +425,17 @@ def main() -> None:
 
     args = parser.parse_args()
     csv_path = Path(args.csv).expanduser().resolve()
+
+    if not csv_path.exists():
+        fallback_paths = [
+            Path("/app/db/EHVol_Full.csv"),
+            Path("../db/EHVol_Full.csv"),
+            Path("db/EHVol_Full.csv"),
+        ]
+        for p in fallback_paths:
+            if p.exists():
+                csv_path = p.resolve()
+                break
 
     if not csv_path.exists():
         raise SystemExit(f"CSV not found: {csv_path}")

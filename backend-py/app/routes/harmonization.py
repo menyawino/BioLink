@@ -28,13 +28,18 @@ def _workspace_root() -> Path:
         Path.cwd(),
     ]
     for candidate in candidates:
-        if (candidate / "db" / "test" / "step_7").exists():
+        if (candidate / "db" / "test" / "data" / "processed").exists():
             return candidate
     return candidates[0]
 
 
 def _artifact_path(*parts: str) -> Path:
-    return _workspace_root().joinpath(*parts)
+    root = _workspace_root()
+    if len(parts) >= 3 and parts[:3] == ("db", "test", "step_7"):
+        return root.joinpath("db", "test", "data", "processed", "step_7", *parts[3:])
+    if len(parts) >= 1 and parts[0] == "outputs":
+        return root.joinpath("db", "test", "data", "processed", *parts[1:])
+    return root.joinpath(*parts)
 
 
 def _read_csv_rows(path: Path) -> list[dict[str, str]]:

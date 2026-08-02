@@ -160,7 +160,7 @@ export function WelcomeScreen({
           <motion.img
             src={logo}
             alt="Magdi Yacoub Heart Foundation"
-            className="h-12 w-auto"
+            className="h-10 max-w-[140px] w-auto object-contain"
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.5 }}

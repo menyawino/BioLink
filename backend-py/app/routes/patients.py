@@ -19,14 +19,23 @@ ALLOWED_SORT_COLUMNS = {
     "nationality",
     "enrollment_date",
     "data_completeness",
+    "systolic_bp",
+    "diastolic_bp",
+    "bmi",
+    "echo_ef",
+    "mri_ef",
+    "heart_rate",
+    "hba1c",
 }
 ALLOWED_DATASETS = {"all", "ehvol", "bhs"}
 DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
 LEGACY_FALLBACK_VIEW = "ehvol"
 
 
-def _normalized_dataset(dataset: str | None) -> str:
-    value = (dataset or "all").lower()
+def _normalized_dataset(dataset: object) -> str:
+    if hasattr(dataset, "default"):
+        dataset = getattr(dataset, "default")
+    value = str(dataset or "all").lower()
     return value if value in ALLOWED_DATASETS else "all"
 
 
@@ -56,8 +65,28 @@ def _dataset_tables(dataset: str | None) -> list[str]:
 
 
 def _table_has_rows(db, table_name: str) -> bool:
+    try:
+        row = db.execute(text(f"SELECT 1 FROM {table_name} WHERE dna_id IS NOT NULL OR participant_id IS NOT NULL LIMIT 1")).fetchone()
+        if row is not None:
+            return True
+    except Exception:
+        pass
     row = db.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1")).fetchone()
     return row is not None
+
+
+def _table_has_valid_data(db, table_name: str) -> bool:
+    try:
+        rows = db.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = :t"), {"t": table_name}).fetchall()
+        cols = {r[0] for r in rows}
+        id_cols = [c for c in ["dna_id", "participant_id", "record_id", "id"] if c in cols]
+        if id_cols:
+            where_clause = " OR ".join([f"({c} IS NOT NULL AND TRIM(CAST({c} AS TEXT)) != '')" for c in id_cols])
+            row = db.execute(text(f"SELECT 1 FROM {table_name} WHERE {where_clause} LIMIT 1")).fetchone()
+            return row is not None
+        return False
+    except Exception:
+        return False
 
 
 def _registry_source_table(db, dataset: str | None) -> str:
@@ -65,12 +94,12 @@ def _registry_source_table(db, dataset: str | None) -> str:
 
     if normalized == "all":
         tables = _dataset_tables(normalized)
-        if any(_table_has_rows(db, table_name) for table_name in tables):
+        if all(_table_has_valid_data(db, table_name) for table_name in tables):
             return aligned_union_sql(db, tables)
 
-        if _table_has_rows(db, "patients"):
+        if _table_has_valid_data(db, "patients"):
             logger.warning(
-                "Falling back to legacy EHVOL view because participant tables are empty"
+                "Falling back to legacy EHVOL view because participant tables have missing or invalid identifiers"
             )
             return LEGACY_FALLBACK_VIEW
 
@@ -78,12 +107,12 @@ def _registry_source_table(db, dataset: str | None) -> str:
 
     source_table = _dataset_table(normalized)
 
-    if _table_has_rows(db, source_table):
+    if _table_has_valid_data(db, source_table):
         return source_table
 
-    if normalized == "ehvol" and _table_has_rows(db, "patients"):
+    if normalized == "ehvol" and _table_has_valid_data(db, "patients"):
         logger.warning(
-            "Falling back to legacy EHVOL view because %s is empty",
+            "Falling back to legacy EHVOL view because %s has no valid data",
             source_table,
         )
         return LEGACY_FALLBACK_VIEW
@@ -172,12 +201,13 @@ def _dataset_field_exprs(columns: set[str], dataset: str) -> dict[str, str]:
     normalized_dataset = _normalized_dataset(dataset).upper()
     has_clinical_json = "clinical_data" in columns
 
-    id_col = _first_column(columns, "participant_id", "dna_id", "record_id", "id")
-    if not id_col:
+    id_cols = [c for c in ["dna_id", "participant_id", "record_id", "id"] if c in columns]
+    if not id_cols:
         raise HTTPException(
             status_code=500,
             detail="No identifier column found in participant dataset table",
         )
+    id_col = f"COALESCE({', '.join([f'CAST({c} AS TEXT)' for c in id_cols])})"
 
     source_record_col = _first_column(columns, "source_record_id", "record_id")
     if not source_record_col and has_clinical_json:
@@ -535,6 +565,9 @@ async def get_patients(
                 )
 
         # Validate and sanitize sort parameters
+        sort_by_str = str(getattr(sortBy, "default", sortBy) or "dna_id")
+        sort_order_str = str(getattr(sortOrder, "default", sortOrder) or "asc")
+
         sort_column_map = {
             "dna_id": expr["id_col"],
             "age": expr["age_expr"],
@@ -542,11 +575,18 @@ async def get_patients(
             "nationality": expr["nationality_expr"],
             "enrollment_date": expr["enrollment_expr"],
             "data_completeness": completeness_expr,
+            "systolic_bp": expr["systolic_expr"],
+            "diastolic_bp": expr["diastolic_expr"],
+            "bmi": expr["bmi_expr"],
+            "echo_ef": expr["echo_expr"],
+            "mri_ef": mri_value_expr,
+            "heart_rate": expr["heart_rate_expr"],
+            "hba1c": expr["hba1c_expr"],
         }
         sort_column = sort_column_map.get(
-            sortBy if sortBy in ALLOWED_SORT_COLUMNS else "dna_id", expr["id_col"]
+            sort_by_str if sort_by_str in ALLOWED_SORT_COLUMNS else "dna_id", expr["id_col"]
         )
-        sort_direction = "DESC" if sortOrder.lower() == "desc" else "ASC"
+        sort_direction = "DESC" if sort_order_str.lower() == "desc" else "ASC"
 
         # Calculate offset for pagination
         offset = (page - 1) * limit

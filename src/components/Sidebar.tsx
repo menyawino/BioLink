@@ -80,7 +80,7 @@ export function Sidebar({ currentView, onViewChange, className }: SidebarProps) 
           <img 
             src={logo} 
             alt="Magdi Yacoub Heart Foundation" 
-            className="h-10 w-auto"
+            className="h-8 max-w-[120px] w-auto object-contain flex-shrink-0"
           />
           <div>
             <h2 className="text-lg font-medium text-sidebar-foreground">MYF Biolink</h2>

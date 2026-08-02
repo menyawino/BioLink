@@ -110,7 +110,7 @@ class ToolRegistry:
         if "search" in args and args["search"]:
             search_term = f"%{args['search']}%"
             conditions.append(
-                "(LOWER(name) LIKE :search OR CAST(dna_id AS TEXT) LIKE :search)"
+                "CAST(dna_id AS TEXT) LIKE :search"
             )
             params["search"] = search_term.lower()
 
@@ -131,7 +131,7 @@ class ToolRegistry:
         limit = min(limit, self._max_limit)
 
         query = f"""
-        SELECT dna_id, name, age, gender, enrollment_date
+        SELECT dna_id, age, gender, enrollment_date
         FROM patients
         WHERE {where_clause}
         ORDER BY enrollment_date DESC
@@ -223,7 +223,7 @@ class ToolRegistry:
 
         query = f"""
         SELECT
-          dna_id, name, age, gender,
+          dna_id, age, gender,
           diabetes_mellitus, high_blood_pressure,
           echo_ef, mri_ef,
           enrollment_date

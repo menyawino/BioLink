@@ -17,12 +17,10 @@ from sqlalchemy import text
 
 from app.database import get_db
 from app.routes.auth import get_current_active_user
-from app.routes._dataset_union import aligned_union_sql
+from app.routes.patients import _registry_source_table
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-DATASET_TABLES = {"ehvol": "ehvol_participants", "bhs": "bhs_participants"}
 
 
 class CohortCriteria(BaseModel):
@@ -48,20 +46,8 @@ class CohortExportRequest(BaseModel):
     fields: Optional[List[str]] = None
 
 
-ALLOWED_EXPORT_FIELDS = {
-    "participant_id", "dna_id", "age", "gender", "nationality",
-    "enrollment_date", "current_city", "heart_rate", "systolic_bp",
-    "diastolic_bp", "bmi", "hba1c", "echo_ef", "troponin_i",
-}
-
-
 def _source_expr(db, dataset: str) -> str:
-    normalized = (dataset or "all").lower()
-    if normalized == "all":
-        return aligned_union_sql(db, [DATASET_TABLES["ehvol"], DATASET_TABLES["bhs"]])
-    if normalized in DATASET_TABLES:
-        return f"{DATASET_TABLES[normalized]} AS registry"
-    raise HTTPException(status_code=422, detail=f"Invalid dataset: {dataset}")
+    return _registry_source_table(db, dataset)
 
 
 @router.post("/query")
@@ -100,7 +86,7 @@ async def query_cohort(
 
         where = " AND ".join(conditions)
         rows = db.execute(
-            text(f"SELECT participant_id, age, gender, nationality FROM {source} WHERE {where} LIMIT 5000"),
+            text(f"SELECT COALESCE(CAST(dna_id AS TEXT), CAST(id AS TEXT)) AS dna_id, COALESCE(CAST(dna_id AS TEXT), CAST(id AS TEXT)) AS participant_id, age, gender, nationality FROM {source} WHERE {where} LIMIT 5000"),
             params,
         ).mappings().fetchall()
 
@@ -130,7 +116,7 @@ async def cohort_summary(
         if not body.patientIds:
             return {"success": True, "data": {}}
 
-        ids = body.patientIds[:5000]  # cap
+        ids = [str(i) for i in body.patientIds[:5000]]  # cap
 
         source = _source_expr(db, "all")
         row = db.execute(
@@ -139,7 +125,7 @@ async def cohort_summary(
                 f"COUNT(*) FILTER (WHERE LOWER(gender) IN ('male','m')), "
                 f"COUNT(*) FILTER (WHERE LOWER(gender) IN ('female','f')), "
                 f"AVG(bmi), AVG(systolic_bp), AVG(hba1c) "
-                f"FROM {source} WHERE participant_id = ANY(:ids)"
+                f"FROM {source} WHERE (CAST(dna_id AS TEXT) = ANY(:ids) OR CAST(id AS TEXT) = ANY(:ids))"
             ),
             {"ids": ids},
         ).fetchone()
@@ -172,16 +158,16 @@ async def export_cohort(
         if not body.patientIds:
             raise HTTPException(status_code=400, detail="No patient IDs provided")
 
-        ids = body.patientIds[:5000]
+        ids = [str(i) for i in body.patientIds[:5000]]
         fields = [f for f in (body.fields or list(ALLOWED_EXPORT_FIELDS)) if f in ALLOWED_EXPORT_FIELDS]
         if not fields:
             fields = list(ALLOWED_EXPORT_FIELDS)
 
-        select_cols = ", ".join(fields)
+        select_cols = ", ".join([f if f != "participant_id" else "COALESCE(CAST(dna_id AS TEXT), CAST(id AS TEXT)) AS participant_id" for f in fields])
         source = _source_expr(db, "all")
 
         rows = db.execute(
-            text(f"SELECT {select_cols} FROM {source} WHERE participant_id = ANY(:ids)"),
+            text(f"SELECT {select_cols} FROM {source} WHERE (CAST(dna_id AS TEXT) = ANY(:ids) OR CAST(id AS TEXT) = ANY(:ids))"),
             {"ids": ids},
         ).mappings().fetchall()
 

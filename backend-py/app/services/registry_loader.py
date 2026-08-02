@@ -8,7 +8,21 @@ import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
+_candidate_paths = [
+    Path(__file__).resolve().parents[3] / "db" / "test",
+    Path("/app/db/test"),
+    Path.cwd() / "db" / "test",
+]
+for _candidate in _candidate_paths:
+    if (_candidate / "src" / "pipeline").exists():
+        _p = str(_candidate)
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
+        break
+
+from src.pipeline.step_6_fuzzy_match_v2 import find_best_nationality_match
 from psycopg2 import sql
 from psycopg2.extras import Json, execute_values
 from sqlalchemy import text
@@ -298,9 +312,22 @@ def _load_unified_registry(raw_conn, csv_path: Path, table_name: str) -> int:
                 cursor,
                 insert_sql.as_string(cursor),
                 payload,
-                page_size=250,
+                page_size=20,
             )
     return len(rows)
+
+
+def normalize_nationality(val: str | None) -> str | None:
+    if not val:
+        return None
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() in {"na", "n/a", "none", "null", "unknown", "—"}:
+        return None
+
+    match = find_best_nationality_match(val_str)
+    if match and match[0]:
+        return match[0].title()
+    return val_str.title()
 
 
 def _load_dataset_participants(
@@ -341,7 +368,15 @@ def _load_dataset_participants(
                 elif column_name == "_source_raw_json":
                     values.append(Json(row))
                 else:
-                    values.append(_clean_cell(row.get(column_name), data_type))
+                    raw_val = row.get(column_name)
+                    if raw_val is None or str(raw_val).strip() == "":
+                        if column_name in {"dna_id", "record_id", "participant_id"}:
+                            raw_val = row.get("participant_id") or row.get("dna_id") or row.get("record_id")
+                        elif column_name == "nationality":
+                            raw_val = row.get("ethnicity_related_nationality_data_finding_demographics")
+                    if column_name == "nationality":
+                        raw_val = normalize_nationality(raw_val)
+                    values.append(_clean_cell(raw_val, data_type))
 
             if key_column:
                 key_index = next(
@@ -372,7 +407,7 @@ def _load_dataset_participants(
                     sql.Identifier(column_name) for column_name, _ in columns
                 ),
             )
-            execute_values(cursor, insert_sql.as_string(cursor), payload, page_size=250)
+            execute_values(cursor, insert_sql.as_string(cursor), payload, page_size=25)
 
     return len(payload)
 

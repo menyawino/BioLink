@@ -87,7 +87,17 @@ def build_chat_ollama(
     temperature: float,
     fallback_models: Optional[Iterable[str]] = None,
     **kwargs,
-) -> ChatOllama:
+):
+    import os
+    from app.config import Settings
+    from app.services.mistral_llm import ChatMistralAI
+
+    mistral_key = os.getenv("MISTRAL_API_KEY")
+    if mistral_key:
+        model = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+        logger.info("Using Mistral AI API model '%s' for agent LLM execution", model)
+        return ChatMistralAI(api_key=mistral_key, model=model, temperature=temperature)
+
     resolved_model = resolve_ollama_model(base_url, requested_model, fallback_models)
     return ChatOllama(
         base_url=base_url,

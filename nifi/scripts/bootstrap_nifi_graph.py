@@ -322,9 +322,10 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         "Step 0: Column Mapping (BiolinkStep0ColumnMappingProcessor)",
         "BiolinkStep0ColumnMappingProcessor",
         PYTHON_BUNDLE,
-        {"Dataset Type": "bhs"},
+        {},
         300,
         0,
+        auto_terminate=["failure"],
     )
 
     # 3. Step 1: PII Removal & Data Quality
@@ -336,6 +337,7 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         {},
         600,
         0,
+        auto_terminate=["failure"],
     )
 
     # 4. Step 2: Sparsity Reduction
@@ -347,6 +349,7 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         {},
         900,
         0,
+        auto_terminate=["failure"],
     )
 
     # 5. Step 3: Profile Normalization
@@ -358,6 +361,7 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         {},
         1200,
         0,
+        auto_terminate=["failure"],
     )
 
     # 6. Step 4: Apply Range Rules
@@ -369,6 +373,7 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         {},
         1500,
         0,
+        auto_terminate=["failure"],
     )
 
     # 7. Step 5: Extract Units
@@ -380,6 +385,7 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         {},
         1800,
         0,
+        auto_terminate=["failure"],
     )
 
     # 8. Step 6: Fuzzy Match & Entity Resolution
@@ -391,6 +397,7 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         {},
         2100,
         0,
+        auto_terminate=["failure"],
     )
 
     # 9. Step 7: Unify Datasets & DB Load
@@ -399,22 +406,10 @@ def build_registry_pipeline_group(client: NiFiClient, root_id: str) -> None:
         "Step 7: Unify Datasets (BiolinkStep7UnifyDatasetsProcessor)",
         "BiolinkStep7UnifyDatasetsProcessor",
         PYTHON_BUNDLE,
-        {
-            "Repository Root": "/opt/nifi/biolink_repo",
-            "Unified Output Relative Path": "outputs/unified_registry.csv",
-            "Quality Report Relative Path": "outputs/data_quality_report.html",
-            "Characterization Relative Path": "outputs/cohort_characterization.csv",
-            "Comparability Report Relative Path": "outputs/comparability_report.json",
-            "Load To PostgreSQL": "true",
-            "Database Host": "postgres",
-            "Database Port": "5432",
-            "Database Name": "biolink",
-            "Database User": "biolink",
-            "Database Password": "biolink_secret",
-            "Unified Registry Table": "unified_registry",
-        },
+        {},
         2400,
         0,
+        auto_terminate=["failure"],
     )
 
     # 10. Log completion

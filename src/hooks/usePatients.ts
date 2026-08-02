@@ -15,7 +15,35 @@ import type { Patient, PatientDetail, PatientVitals, ImagingData, RiskFactors, G
 export function usePatients(params: PatientsQueryParams = {}) {
   return useQuery<Patient[]>(
     () => getPatients(params),
-    [params.page, params.limit, params.search, params.gender, params.ageMin, params.ageMax, params.sortBy, params.sortOrder, params.dataset]
+    [
+      params.page,
+      params.limit,
+      params.search,
+      params.gender,
+      params.nationality,
+      params.hasEcho,
+      params.hasMri,
+      params.hasLabs,
+      params.hasImaging,
+      params.hasGenomics,
+      params.hasCoronaryDisease,
+      params.hasHeartFailure,
+      params.hasDiabetes,
+      params.hasHypertension,
+      params.hasDyslipidemia,
+      params.hasSmoking,
+      params.hasObesity,
+      params.hasFamilyHistory,
+      params.minDataCompleteness,
+      params.region,
+      params.enrollmentDateFrom,
+      params.enrollmentDateTo,
+      params.ageMin,
+      params.ageMax,
+      params.sortBy,
+      params.sortOrder,
+      params.dataset,
+    ]
   );
 }
 

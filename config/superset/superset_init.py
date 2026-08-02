@@ -283,16 +283,20 @@ def _ensure_dataset(
         .first()
     )
     if dataset is None:
-        dataset = CreateDatasetCommand(
-            {
-                "database": database.id,
-                "schema": schema,
-                "table_name": table_name,
-                "owners": [owner_id],
-            }
-        ).run()
-        logger.info("Created Superset dataset %s.%s", schema, table_name)
-        return dataset
+        try:
+            dataset = CreateDatasetCommand(
+                {
+                    "database": database.id,
+                    "schema": schema,
+                    "table_name": table_name,
+                    "owners": [owner_id],
+                }
+            ).run()
+            logger.info("Created Superset dataset %s.%s", schema, table_name)
+            return dataset
+        except Exception as exc:
+            logger.warning("Could not create Superset dataset %s.%s: %s", schema, table_name, exc)
+            return None
 
     metadata_result = dataset.fetch_metadata()
     if metadata_result.added or metadata_result.removed or metadata_result.modified:
@@ -586,10 +590,18 @@ def _seed_dashboards(app: Any, db: Any) -> None:
             charts: list[Any] = []
             dashboard_changed = dashboard_updated
             for spec in dashboard_spec["chart_specs"]:
+                dataset = datasets.get(spec["table_name"])
+                if dataset is None:
+                    logger.warning(
+                        "Skipping chart %s: dataset table %s is not available",
+                        spec["slice_name"],
+                        spec["table_name"],
+                    )
+                    continue
                 chart, updated = _sync_chart(
                     db,
                     admin_user,
-                    datasets[spec["table_name"]],
+                    dataset,
                     spec["slice_name"],
                     spec["viz_type"],
                     spec["params"],
@@ -808,22 +820,81 @@ def _run_superset_bootstrap() -> None:
         logger.warning("Superset init bootstrap failed: %s", exc)
 
 
+def _ensure_pipeline_tables_in_pg() -> None:
+    try:
+        engine = create_engine(_database_uri(), pool_pre_ping=True)
+        with engine.begin() as conn:
+            comp_exists = conn.execute(
+                text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'comparability_report')")
+            ).scalar()
+            if not comp_exists:
+                comp_candidates = [
+                    Path("/app/outputs/comparability_report.json"),
+                    Path("/app/db/test/data/processed/comparability_report.json"),
+                    Path("outputs/comparability_report.json"),
+                    Path("db/test/data/processed/comparability_report.json"),
+                ]
+                for path in comp_candidates:
+                    if path.exists():
+                        report_data = json.loads(path.read_text(encoding="utf-8"))
+                        conn.execute(
+                            text("CREATE TABLE IF NOT EXISTS public.comparability_report (id BIGSERIAL PRIMARY KEY, report JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())")
+                        )
+                        conn.execute(
+                            text("INSERT INTO public.comparability_report (report) VALUES (:report)"),
+                            {"report": json.dumps(report_data)},
+                        )
+                        logger.info("Loaded comparability_report table into PostgreSQL from %s", path)
+                        break
+
+            char_exists = conn.execute(
+                text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'cohort_characterization')")
+            ).scalar()
+            if not char_exists:
+                char_candidates = [
+                    Path("/app/outputs/cohort_characterization.csv"),
+                    Path("/app/db/test/data/processed/cohort_characterization.csv"),
+                    Path("outputs/cohort_characterization.csv"),
+                    Path("db/test/data/processed/cohort_characterization.csv"),
+                ]
+                for path in char_candidates:
+                    if path.exists():
+                        with path.open(encoding="utf-8") as f:
+                            reader = csv.DictReader(f)
+                            rows = list(reader)
+                            cols = reader.fieldnames or []
+                        if cols:
+                            col_names = ", ".join(['"' + c.replace('"', '""') + '"' for c in cols])
+                            col_params = ", ".join([":" + c for c in cols])
+                            col_defs = ", ".join(['"' + c.replace('"', '""') + '" TEXT' for c in cols])
+                            conn.execute(text(f"CREATE TABLE IF NOT EXISTS public.cohort_characterization ({col_defs})"))
+                            insert_stmt = text(f"INSERT INTO public.cohort_characterization ({col_names}) VALUES ({col_params})")
+                            for row in rows:
+                                conn.execute(insert_stmt, row)
+                            logger.info("Loaded cohort_characterization table into PostgreSQL from %s", path)
+                        break
+        engine.dispose()
+    except Exception as exc:
+        logger.warning("Failed to auto-provision pipeline tables in PostgreSQL: %s", exc)
+
+
 def main() -> None:
     upload_folder = Path(os.getenv("SUPERSET_UPLOAD_FOLDER", "/tmp/superset_uploads"))
     upload_folder.mkdir(parents=True, exist_ok=True)
     logger.info("Ensured Superset upload folder exists at %s", upload_folder)
 
+    _ensure_pipeline_tables_in_pg()
     _run_superset_bootstrap()
 
     try:
         engine = create_engine(_database_uri(), pool_pre_ping=True)
         with engine.connect() as conn:
-            view_count = conn.execute(text('SELECT COUNT(*) FROM public.ehvol')).scalar()
-            registry_count = conn.execute(text('SELECT COUNT(*) FROM public.unified_registry')).scalar()
+            ehvol_count = conn.execute(text("SELECT COUNT(*) FROM public.ehvol_participants")).scalar()
+            registry_count = conn.execute(text("SELECT COUNT(*) FROM public.unified_registry")).scalar()
         engine.dispose()
         logger.info(
-            "BioLink source database reachable from Superset init: ehvol=%s unified_registry=%s",
-            view_count,
+            "BioLink source database reachable from Superset init: ehvol_participants=%s unified_registry=%s",
+            ehvol_count,
             registry_count,
         )
         logger.info(

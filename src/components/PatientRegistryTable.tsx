@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -7,10 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Search, Download, Eye, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { usePatients } from "../hooks/usePatients";
-import type { DatasetFilter } from "../api/patients";
-import type { Patient } from "../api/types";
+import { useCohortFilterOptions } from "../hooks/useAnalytics";
+import type { CohortFilterOption } from "../api/types";
+import type { DatasetFilter, PatientsQueryParams } from "../api/patients";
 import { downloadCohortCsv } from "../api/cohort";
 
 interface PatientRegistryTableProps {
@@ -22,10 +22,85 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterGender, setFilterGender] = useState<string>("all");
+  const [filterNationality, setFilterNationality] = useState<string>("all");
+  const [filterRegion, setFilterRegion] = useState<string>("all");
+  const [filterDataType, setFilterDataType] = useState<string>("all");
   const [dataset, setDataset] = useState<DatasetFilter>("all");
   const [page, setPage] = useState(1);
   const [sortField, setSortField] = useState<string>("dna_id");
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>("asc");
+
+  const {
+    data: filterOptions,
+    isLoading: filterOptionsLoading,
+    error: filterOptionsError,
+  } = useCohortFilterOptions(dataset);
+
+  const availableGenders = useMemo(
+    () => (filterOptions?.genders ?? []).filter((option) => option.count > 0),
+    [filterOptions],
+  );
+  const availableNationalities = useMemo(
+    () =>
+      (filterOptions?.nationalities ?? []).filter(
+        (option) => option.count > 0 && option.label !== "Unknown",
+      ),
+    [filterOptions],
+  );
+  const availableRegions = useMemo(
+    () => (filterOptions?.regions ?? []).filter((option) => option.count > 0 && option.label !== "Unknown"),
+    [filterOptions],
+  );
+  const availableDataTypes = useMemo(
+    () => (filterOptions?.dataTypes ?? []).filter((option) => option.count > 0),
+    [filterOptions],
+  );
+
+  const dataAvailabilityParams = useMemo(() => {
+    const params: Pick<
+      PatientsQueryParams,
+      "hasEcho" | "hasMri" | "hasImaging" | "hasLabs" | "hasGenomics"
+    > = {};
+
+    if (filterDataType === "Imaging") params.hasImaging = true;
+    if (filterDataType === "Echocardiography") params.hasEcho = true;
+    if (filterDataType === "Cardiac MRI") params.hasMri = true;
+    if (filterDataType === "Clinical Labs") params.hasLabs = true;
+    if (filterDataType === "Genomics") params.hasGenomics = true;
+
+    return params;
+  }, [filterDataType]);
+
+  const isValidSelectedOption = (selected: string, options: CohortFilterOption[]) => {
+    if (selected === "all") {
+      return true;
+    }
+    return options.some((option) => option.label === selected);
+  };
+
+  useEffect(() => {
+    if (!isValidSelectedOption(filterGender, availableGenders)) {
+      setFilterGender("all");
+    }
+    if (!isValidSelectedOption(filterNationality, availableNationalities)) {
+      setFilterNationality("all");
+    }
+    if (!isValidSelectedOption(filterRegion, availableRegions)) {
+      setFilterRegion("all");
+    }
+    if (!isValidSelectedOption(filterDataType, availableDataTypes)) {
+      setFilterDataType("all");
+    }
+  }, [
+    availableDataTypes,
+    availableGenders,
+    availableNationalities,
+    availableRegions,
+    filterDataType,
+    filterGender,
+    filterNationality,
+    filterRegion,
+  ]);
 
   // Debounce search
   useEffect(() => {
@@ -41,13 +116,23 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
     limit: 50,
     search: debouncedSearch || undefined,
     gender: filterGender !== "all" ? filterGender : undefined,
+    nationality: filterNationality !== "all" ? filterNationality : undefined,
+    region: filterRegion !== "all" ? filterRegion : undefined,
+    ...dataAvailabilityParams,
     dataset,
     sortBy: sortField,
     sortOrder: sortDirection,
   });
 
   const patients = patientsData || [];
-  const activeFilters = [filterGender !== "all", dataset !== "all", Boolean(debouncedSearch)].filter(Boolean).length;
+  const activeFilters = [
+    filterGender !== "all",
+    filterNationality !== "all",
+    filterRegion !== "all",
+    filterDataType !== "all",
+    dataset !== "all",
+    Boolean(debouncedSearch),
+  ].filter(Boolean).length;
 
   const handleExport = () => {
     const selectedData = patients
@@ -78,15 +163,6 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
       setSortDirection('asc');
     }
   };
-
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-
-  const rowVirtualizer = useVirtualizer({
-    count: patients.length,
-    getScrollElement: () => tableContainerRef.current,
-    estimateSize: useCallback(() => 52, []),
-    overscan: 5,
-  });
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -195,13 +271,58 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
             </div>
             
             <Select value={filterGender} onValueChange={(value) => { setFilterGender(value); setPage(1); }}>
-              <SelectTrigger className="registry-select w-40">
+              <SelectTrigger className="registry-select w-36">
                 <SelectValue placeholder="Gender" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Genders</SelectItem>
-                <SelectItem value="Male">Male</SelectItem>
-                <SelectItem value="Female">Female</SelectItem>
+                {availableGenders.map((option) => (
+                  <SelectItem key={`gender-${option.label}`} value={option.label}>
+                    {option.label} ({option.count.toLocaleString()})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filterNationality} onValueChange={(value) => { setFilterNationality(value); setPage(1); }}>
+              <SelectTrigger className="registry-select w-40">
+                <SelectValue placeholder="Nationality" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Nationalities</SelectItem>
+                {availableNationalities.map((option) => (
+                  <SelectItem key={`nationality-${option.label}`} value={option.label}>
+                    {option.label} ({option.count.toLocaleString()})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filterRegion} onValueChange={(value) => { setFilterRegion(value); setPage(1); }}>
+              <SelectTrigger className="registry-select w-40">
+                <SelectValue placeholder="Region" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Regions</SelectItem>
+                {availableRegions.map((option) => (
+                  <SelectItem key={`region-${option.label}`} value={option.label}>
+                    {option.label} ({option.count.toLocaleString()})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filterDataType} onValueChange={(value) => { setFilterDataType(value); setPage(1); }}>
+              <SelectTrigger className="registry-select w-36">
+                <SelectValue placeholder="Data Column" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Data Columns</SelectItem>
+                {availableDataTypes.map((option) => (
+                  <SelectItem key={`datatype-${option.label}`} value={option.label}>
+                    {option.label} ({option.count.toLocaleString()})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -219,6 +340,18 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
             <Badge variant="outline" className="registry-toolbar-status px-3 py-2 text-xs font-medium">
               {activeFilters === 0 ? "No filters applied" : `${activeFilters} filter${activeFilters === 1 ? '' : 's'} applied`}
             </Badge>
+
+            {filterOptionsLoading ? (
+              <Badge variant="secondary" className="px-3 py-2 text-xs">
+                Syncing live filter columns...
+              </Badge>
+            ) : null}
+
+            {filterOptionsError ? (
+              <Badge variant="outline" className="px-3 py-2 text-xs text-red-600">
+                Live filters unavailable
+              </Badge>
+            ) : null}
 
             <Button 
               variant="outline" 
@@ -253,12 +386,12 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                   <SortableHeader field="dna_id">DNA ID</SortableHeader>
                   <SortableHeader field="age">Age</SortableHeader>
                   <SortableHeader field="gender">Gender</SortableHeader>
-                  <TableHead>Nationality</TableHead>
+                  <SortableHeader field="nationality">Nationality</SortableHeader>
                   <SortableHeader field="enrollment_date">Enrollment Date</SortableHeader>
-                  <TableHead>BP (mmHg)</TableHead>
-                  <TableHead>BMI</TableHead>
-                  <TableHead>Echo EF</TableHead>
-                  <TableHead>MRI EF</TableHead>
+                  <SortableHeader field="systolic_bp">BP (mmHg)</SortableHeader>
+                  <SortableHeader field="bmi">BMI</SortableHeader>
+                  <SortableHeader field="echo_ef">Echo EF</SortableHeader>
+                  <SortableHeader field="mri_ef">MRI EF</SortableHeader>
                   <SortableHeader field="data_completeness">Data Completeness</SortableHeader>
                   <TableHead>Imaging</TableHead>
                   <TableHead>Actions</TableHead>
@@ -272,106 +405,73 @@ export function PatientRegistryTable({ onPatientSelect }: PatientRegistryTablePr
                     </TableCell>
                   </TableRow>
                 ) : (
-                  <>
-                    <tr>
-                      <td colSpan={13}>
-                        <div
-                          ref={tableContainerRef}
-                          style={{ height: '500px', overflow: 'auto' }}
+                  patients.map((patient) => (
+                    <TableRow key={patient.dna_id} className="registry-row">
+                      <TableCell className="w-12">
+                        <Checkbox
+                          checked={selectedPatients.includes(patient.dna_id)}
+                          onCheckedChange={(checked) => handleSelectPatient(patient.dna_id, checked as boolean)}
+                        />
+                      </TableCell>
+                      <TableCell className="font-mono text-[0.82rem] tracking-[0.08em] uppercase">
+                        <button
+                          onClick={() => onPatientSelect(patient.dna_id)}
+                          className="registry-link cursor-pointer text-[#00a2ddff]"
                         >
-                          <div
-                            style={{
-                              height: `${rowVirtualizer.getTotalSize()}px`,
-                              width: '100%',
-                              position: 'relative',
-                            }}
-                          >
-                            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                              const patient = patients[virtualRow.index];
-                              return (
-                                <TableRow
-                                  key={patient.dna_id}
-                                  className="registry-row"
-                                  style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    width: '100%',
-                                    height: `${virtualRow.size}px`,
-                                    transform: `translateY(${virtualRow.start}px)`,
-                                  }}
-                                >
-                                  <TableCell>
-                                    <Checkbox
-                                      checked={selectedPatients.includes(patient.dna_id)}
-                                      onCheckedChange={(checked) => handleSelectPatient(patient.dna_id, checked as boolean)}
-                                    />
-                                  </TableCell>
-                                  <TableCell className="font-mono text-[0.82rem] tracking-[0.08em] uppercase">
-                                    <button
-                                      onClick={() => onPatientSelect(patient.dna_id)}
-                                      className="registry-link cursor-pointer text-[#00a2ddff]"
-                                    >
-                                      {patient.dna_id}
-                                    </button>
-                                  </TableCell>
-                                  <TableCell>{patient.age ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
-                                  <TableCell>{patient.gender ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
-                                  <TableCell>{patient.nationality ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
-                                  <TableCell>{patient.enrollment_date ? new Date(patient.enrollment_date).toLocaleDateString() : <span className="text-muted-foreground/50">—</span>}</TableCell>
-                                  <TableCell>
-                                    {patient.systolic_bp && patient.diastolic_bp
-                                      ? `${Math.round(Number(patient.systolic_bp))}/${Math.round(Number(patient.diastolic_bp))}`
-                                      : <span className="text-muted-foreground/50">—</span>
-                                    }
-                                  </TableCell>
-                                  <TableCell>
-                                    {patient.bmi ? Number(patient.bmi).toFixed(1) : <span className="text-muted-foreground/50">—</span>}
-                                  </TableCell>
-                                  <TableCell>
-                                    {patient.echo_ef ? `${patient.echo_ef}%` : <span className="text-muted-foreground/50">—</span>}
-                                  </TableCell>
-                                  <TableCell>
-                                    {patient.mri_ef ? `${patient.mri_ef}%` : <span className="text-muted-foreground/50">—</span>}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="flex items-center space-x-2">
-                                      <div className="h-2 w-14 rounded-full bg-gray-200/80">
-                                        <div
-                                          className={`h-2 rounded-full registry-progress-bar ${
-                                            patient.data_completeness >= 80 ? 'bg-green-500' :
-                                            patient.data_completeness >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                                          }`}
-                                          style={{ width: `${patient.data_completeness}%` }}
-                                        />
-                                      </div>
-                                      <span className="text-xs">{patient.data_completeness}%</span>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="flex space-x-1">
-                                      {patient.has_echo && <Badge variant="secondary" className="text-xs">Echo</Badge>}
-                                      {patient.has_mri && <Badge variant="secondary" className="text-xs">MRI</Badge>}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="registry-row-action"
-                                      onClick={() => onPatientSelect(patient.dna_id)}
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
+                          {patient.dna_id}
+                        </button>
+                      </TableCell>
+                      <TableCell>{patient.age ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                      <TableCell>{patient.gender ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                      <TableCell>{patient.nationality ?? <span className="text-muted-foreground/50">—</span>}</TableCell>
+                      <TableCell>{patient.enrollment_date ? new Date(patient.enrollment_date).toLocaleDateString() : <span className="text-muted-foreground/50">—</span>}</TableCell>
+                      <TableCell>
+                        {patient.systolic_bp && patient.diastolic_bp
+                          ? `${Math.round(Number(patient.systolic_bp))}/${Math.round(Number(patient.diastolic_bp))}`
+                          : <span className="text-muted-foreground/50">—</span>
+                        }
+                      </TableCell>
+                      <TableCell>
+                        {patient.bmi ? Number(patient.bmi).toFixed(1) : <span className="text-muted-foreground/50">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        {patient.echo_ef ? `${patient.echo_ef}%` : <span className="text-muted-foreground/50">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        {patient.mri_ef ? `${patient.mri_ef}%` : <span className="text-muted-foreground/50">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <div className="h-2 w-14 rounded-full bg-gray-200/80">
+                            <div
+                              className={`h-2 rounded-full registry-progress-bar ${
+                                patient.data_completeness >= 80 ? 'bg-green-500' :
+                                patient.data_completeness >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                              }`}
+                              style={{ width: `${patient.data_completeness}%` }}
+                            />
                           </div>
+                          <span className="text-xs">{patient.data_completeness}%</span>
                         </div>
-                      </td>
-                    </tr>
-                  </>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex space-x-1">
+                          {patient.has_echo && <Badge variant="secondary" className="text-xs">Echo</Badge>}
+                          {patient.has_mri && <Badge variant="secondary" className="text-xs">MRI</Badge>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="registry-row-action"
+                          onClick={() => onPatientSelect(patient.dna_id)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
               </TableBody>
             </Table>

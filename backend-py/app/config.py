@@ -27,20 +27,22 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://biolink:biolink_secret@localhost:5432/biolink"
 
-    # Ollama / LangChain SQL agent
+    # Mistral API & Ollama LLM provider
+    mistral_api_key: str = ""
+    mistral_model: str = "mistral-small-latest"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:3b"
-    ollama_orchestrator_model: str = "llama3.2:3b"
-    ollama_data_model: str = "llama3.2:3b"
-    ollama_medical_model: str = "llama3.2:3b"
-    ollama_coding_model: str = "llama3.2:3b"
+    ollama_model: str = "qwen2.5:14b"
+    ollama_orchestrator_model: str = "qwen2.5:14b"
+    ollama_data_model: str = "qwen2.5:14b"
+    ollama_medical_model: str = "qwen2.5:14b"
+    ollama_coding_model: str = "qwen2.5:14b"
     sql_agent_default_limit: int = 200
     llm_max_retries: int = 2
     llm_retry_backoff_s: float = 0.4
     llm_retry_jitter_s: float = 0.2
-    orchestrator_llm_timeout_s: float = 8.0
-    data_llm_timeout_s: float = 20.0
-    medical_llm_timeout_s: float = 20.0
+    orchestrator_llm_timeout_s: float = 120.0
+    data_llm_timeout_s: float = 120.0
+    medical_llm_timeout_s: float = 120.0
 
     # RAG / pgvector
     rag_pg_url: str = (

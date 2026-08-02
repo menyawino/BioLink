@@ -372,6 +372,43 @@ class SupersetClient:
             raise RuntimeError(f"Failed to create Superset dashboard: {created}")
         return dashboard_id
 
+    async def get_or_create_dashboard(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+        csrf_token: str,
+        title_or_slug: str | int,
+    ) -> int | str:
+        ref_str = str(title_or_slug).strip()
+        dashboards = await self._list_resource(session, access_token, "dashboard")
+        for d in dashboards:
+            if str(d.get("id")) == ref_str or d.get("slug") == ref_str or d.get("dashboard_title") == ref_str:
+                return int(d["id"])
+
+        payload = {
+            "dashboard_title": ref_str.replace("-", " ").replace("_", " ").title(),
+            "slug": ref_str if not ref_str.isdigit() else None,
+            "published": True,
+        }
+        try:
+            created = await self._request(
+                session,
+                "POST",
+                "/api/v1/dashboard/",
+                access_token,
+                csrf_token,
+                json_body=payload,
+            )
+            dashboard_id = self._extract_id(created)
+            if dashboard_id is None:
+                raise RuntimeError(f"Failed to create Superset dashboard: {created}")
+            return dashboard_id
+        except RuntimeError as exc:
+            if "slug" in str(exc).lower() or "must be unique" in str(exc).lower():
+                logger.info("Dashboard slug '%s' already exists; returning reference", ref_str)
+                return ref_str
+            raise
+
     async def get_dashboard(
         self,
         session: aiohttp.ClientSession,
@@ -396,11 +433,14 @@ class SupersetClient:
         csrf_token: str,
         dashboard_id_or_slug: str | int,
     ) -> str:
+        dashboard_id = await self.get_or_create_dashboard(
+            session, access_token, csrf_token, dashboard_id_or_slug
+        )
         embedded = await self.ensure_embedded_dashboard(
             session,
             access_token,
             csrf_token,
-            dashboard_id_or_slug,
+            dashboard_id,
             settings.superset_embedded_allowed_domains_list,
         )
         embedded_uuid = str(embedded.get("uuid") or "").strip()
