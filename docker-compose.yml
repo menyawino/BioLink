@@ -343,7 +343,8 @@ services:
     environment:
       # --- NiFi 2.x single-user auth (HTTPS) ---
       SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME:-admin}
-      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD:-biolink_nifi_secret_123}
+      NIFI_PASSWORD: ${NIFI_PASSWORD:-biolink_nifi_secret_123}
       NIFI_WEB_HTTPS_HOST: nifi
       NIFI_WEB_PROXY_HOST: localhost:8443,127.0.0.1:8443,localhost:3000,frontend,frontend:80
       NIFI_JVM_HEAP_INIT: 2g
