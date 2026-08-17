@@ -27,8 +27,10 @@ share/python-wheels/
 MANIFEST
 node_modules/
 pgdata/
-db/
 backend/
+# Ignore data CSVs in db
+db/**/*.csv
+db/*.csv
 build/
 outputs/
 scripts/

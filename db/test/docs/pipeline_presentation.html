@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BioLink Pipeline Impact Presentation</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+    :root {
+      --bg-1: #f0f4f8;
+      --bg-2: #e2e8f0;
+      --surface: rgba(255, 255, 255, 0.75);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: rgba(255, 255, 255, 0.5);
+      --border-solid: #cbd5e1;
+      --accent: #0284c7;
+      --accent-2: #4f46e5;
+      --accent-3: #ea580c;
+      --danger: #e11d48;
+      --ok: #16a34a;
+      --shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.08);
+      --shadow-hover: 0 30px 60px -12px rgba(0, 0, 0, 0.12);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+
+    @keyframes gradientBG {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Outfit', sans-serif;
+      color: var(--ink);
+      background: linear-gradient(-45deg, #f8fafc, #e0e7ff, #f3e8ff, #f0fdfa);
+      background-size: 400% 400%;
+      animation: gradientBG 20s ease infinite;
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+    }
+
+    .brand {
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      font-size: 18px;
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .nav a {
+      text-decoration: none;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 14px;
+      padding: 8px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.4);
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .nav a:hover { 
+      color: var(--accent-2); 
+      background: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    }
+
+    .deck {
+      width: min(1200px, 92vw);
+      margin: 30px auto 60px;
+      display: grid;
+      gap: 24px;
+    }
+
+    .slide {
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 32px;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .slide:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 { 
+      font-size: clamp(32px, 5vw, 48px); 
+      line-height: 1.1; 
+      font-weight: 800;
+      letter-spacing: -1px;
+      background: linear-gradient(135deg, #0f172a, #334155);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    h2 { 
+      font-size: 28px; 
+      font-weight: 700;
+      margin-bottom: 12px; 
+      color: #1e293b;
+      letter-spacing: -0.5px;
+    }
+    
+    h3 { 
+      font-size: 18px; 
+      font-weight: 600;
+      margin-bottom: 10px; 
+      color: #334155;
+    }
+
+    .subtitle {
+      margin-top: 14px;
+      color: var(--muted);
+      max-width: 860px;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+
+    .hero-grid {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+    }
+
+    .metric {
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 16px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.5);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .metric::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .metric:hover {
+      background: #fff;
+      transform: translateY(-3px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+    }
+    
+    .metric:hover::before { opacity: 1; }
+
+    .metric .k {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--accent-2);
+      line-height: 1;
+      letter-spacing: -1px;
+    }
+
+    .metric .t {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 20px;
+      min-width: 0;
+    }
+
+    .three {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .panel {
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 16px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.4);
+      display: flex;
+      flex-direction: column;
+      box-shadow: inset 0 2px 4px rgba(255,255,255,0.3);
+      transition: transform 0.2s ease;
+      min-width: 0;
+      word-wrap: break-word;
+    }
+    
+    .panel:hover {
+      transform: translateY(-1px);
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .qa-panel {
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 16px;
+      padding: 20px;
+      background: linear-gradient(180deg, rgba(239, 246, 255, 0.7), rgba(219, 234, 254, 0.4));
+      box-shadow: inset 0 2px 10px rgba(255,255,255,0.7), 0 4px 12px rgba(59, 130, 246, 0.05);
+      position: relative;
+      transition: transform 0.2s ease;
+      min-width: 0;
+      word-wrap: break-word;
+    }
+    
+    .qa-panel:hover {
+      transform: translateY(-2px);
+    }
+    
+    .qa-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #1d4ed8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .qa-title::before {
+      content: "✦";
+      color: #f59e0b;
+      font-size: 18px;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.7; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .small { font-size: 14px; color: var(--muted); font-weight: 400; line-height: 1.5; }
+
+    .timeline {
+      margin-top: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .step {
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 14px;
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 85px 1fr;
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.6);
+      transition: all 0.2s ease;
+      align-items: center;
+      min-width: 0;
+    }
+    
+    .step:hover {
+      background: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      transform: translateX(4px);
+    }
+
+    .step .id {
+      font-weight: 800;
+      color: #fff;
+      font-size: 16px;
+      background: linear-gradient(135deg, var(--accent-2), var(--accent));
+      padding: 6px 10px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .bar {
+      width: 100%;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.05);
+      overflow: hidden;
+      margin: 8px 0;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .fill-a { height: 100%; background: linear-gradient(90deg, #4f46e5, #818cf8); border-radius: 999px;}
+    .fill-b { height: 100%; background: linear-gradient(90deg, #0284c7, #38bdf8); border-radius: 999px;}
+    .fill-c { height: 100%; background: linear-gradient(90deg, #ea580c, #fb923c); border-radius: 999px;}
+    .fill-d { height: 100%; background: linear-gradient(90deg, #e11d48, #fb7185); border-radius: 999px;}
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 13.5px;
+      border: 1px solid var(--border-solid);
+      border-radius: 10px;
+      overflow-x: auto;
+      display: block;
+      background: #fff;
+    }
+
+    th, td {
+      text-align: left;
+      border-bottom: 1px solid var(--border-solid);
+      padding: 10px 12px;
+      vertical-align: top;
+      word-wrap: break-word;
+    }
+
+    th { 
+      background: #f8fafc; 
+      font-weight: 600;
+      color: #334155;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .status-ok { color: var(--ok); font-weight: 700; background: #dcfce7; padding: 2px 8px; border-radius: 6px; display: inline-block;}
+    .status-no { color: var(--danger); font-weight: 700; background: #ffe4e6; padding: 2px 8px; border-radius: 6px; display: inline-block;}
+
+    .venn {
+      position: relative;
+      height: 260px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.5), rgba(241,245,249,0.5));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .circle {
+      border-radius: 50%;
+      width: 200px;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      text-align: center;
+      font-size: 15px;
+      font-weight: 800;
+      position: absolute;
+      mix-blend-mode: multiply;
+      transition: all 0.4s ease;
+    }
+    
+    .venn:hover .c1 { transform: translateX(-65px); }
+    .venn:hover .c2 { transform: translateX(65px); }
+
+    .c1 {
+      transform: translateX(-50px);
+      background: rgba(79, 70, 229, 0.15);
+      border: 2px solid rgba(79, 70, 229, 0.4);
+      color: #312e81;
+      justify-content: flex-start;
+      padding-left: 30px;
+    }
+
+    .c2 {
+      transform: translateX(50px);
+      background: rgba(2, 132, 199, 0.15);
+      border: 2px solid rgba(2, 132, 199, 0.4);
+      color: #0c4a6e;
+      justify-content: flex-end;
+      padding-right: 30px;
+    }
+
+    .intersect {
+      position: absolute;
+      z-index: 10;
+      font-weight: 800;
+      color: #0f172a;
+      font-size: 18px;
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .arch-diagram {
+      margin-top: 16px;
+      padding: 20px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.7), rgba(248,250,252,0.7));
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.9);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+    }
+    .arch-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--accent-2);
+      margin-bottom: 16px;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .arch-sources {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      position: relative;
+    }
+    .arch-node {
+      flex: 1;
+      text-align: center;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border-solid);
+      background: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+      transition: all 0.3s ease;
+    }
+    .arch-node:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.05); }
+    .arch-node.paxera-node {
+      border-color: #fca5a5;
+      background: linear-gradient(180deg, #fef2f2, #fee2e2);
+      color: #b91c1c;
+      border-style: dashed;
+      border-width: 2px;
+    }
+    .arch-arrows {
+      display: flex;
+      justify-content: space-around;
+      margin: 12px 0;
+    }
+    .arch-core {
+      background: linear-gradient(135deg, #0ea5e9, #4f46e5);
+      color: #fff;
+      text-align: center;
+      padding: 16px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 16px;
+      box-shadow: 0 10px 25px rgba(79, 70, 229, 0.3);
+      letter-spacing: 0.5px;
+    }
+
+    .impact-grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .impact {
+      border: 1px solid rgba(255,255,255,0.8);
+      border-radius: 16px;
+      padding: 20px;
+      background: rgba(255,255,255,0.6);
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+    }
+    .impact:hover {
+      background: #fff;
+      transform: translateY(-4px);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.06);
+    }
+
+    .impact .n {
+      font-size: 36px;
+      color: var(--accent);
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .foot {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 24px;
+      border-top: 1px dashed var(--border-solid);
+      padding-top: 16px;
+      text-align: center;
+    }
+
+    @media (max-width: 980px) {
+      .two, .three { grid-template-columns: 1fr; }
+      .circle { width: 160px; height: 160px; }
+      .c1 { transform: translateX(-45px); padding-left: 20px; }
+      .c2 { transform: translateX(45px); padding-right: 20px; }
+      .venn { height: 230px; }
+      .step { grid-template-columns: 1fr; text-align: center; }
+      .step .id { display: inline-block; }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({startOnLoad:true});</script>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">BioLink Pipeline Presentation</div>
+    <div class="nav">
+      <a href="#impact">Impact</a>
+      <a href="#flow">Flow</a>
+      <a href="#s1">Step 1</a>
+      <a href="#s2">Step 2</a>
+      <a href="#s3">Step 3</a>
+      <a href="#s4">Step 4</a>
+      <a href="#s5">Step 5</a>
+      <a href="#s6">Step 6</a>
+      <a href="#s7">Step 7</a>
+      <a href="#workarounds">Workarounds</a>
+      <a href="#benchmark">Benchmark</a>
+    </div>
+  </div>
+
+  <main class="deck">
+    <section class="slide" id="impact">
+      <h1>From Raw Registry Noise to Research-Ready Structure</h1>
+      <p class="subtitle">
+        End-to-end visual presentation of the BioLink pipeline across BHS and EHVol, showing privacy protection,
+        data-shape optimization, normalization guardrails, fuzzy harmonization quality, and cross-dataset unification.
+      </p>
+
+      <div class="hero-grid">
+        <div class="metric"><div class="k">4,943</div><div class="t">Unified participant rows</div></div>
+        <div class="metric"><div class="k">344</div><div class="t">Unified wide-table columns</div></div>
+        <div class="metric"><div class="k">285</div><div class="t">Canonical concepts in registry</div></div>
+        <div class="metric"><div class="k">37</div><div class="t">Exact shared concepts (BHS vs EHVol)</div></div>
+        <div class="metric"><div class="k">238</div><div class="t">Step 6 accepted mappings used in Step 7</div></div>
+        <div class="metric"><div class="k">152</div><div class="t">Standardized value-set mappings</div></div>
+      </div>
+    </section>
+
+    <section class="slide" id="flow">
+      <h2>Pipeline Overview (Step 0 to Step 7)</h2>
+      <p class="small">Each step adds a specific control layer, so harmonization quality is not dependent on one heuristic.</p>
+
+      <div class="timeline">
+        <div class="step"><div class="id">Step 0</div><div><strong>Column semantic mapping</strong><br/>Classifies each field into privacy and domain categories.</div></div>
+        <div class="step"><div class="id">Step 1</div><div><strong>PII and retention policy</strong><br/>Drops direct identifiers while preserving research-critical dimensions.</div></div>
+        <div class="step"><div class="id">Step 2</div><div><strong>Sparse and structural reduction</strong><br/>Removes empty/noise columns and collapses checkbox sprawl.</div></div>
+        <div class="step"><div class="id">Step 3</div><div><strong>Normalization profiling</strong><br/>Profiles every retained column before transformations.</div></div>
+        <div class="step"><div class="id">Step 4</div><div><strong>Range-rule quarantine</strong><br/>Flags implausible numeric values into explicit quarantine audits.</div></div>
+        <div class="step"><div class="id">Step 5</div><div><strong>Unit extraction</strong><br/>Extracts and standardizes embedded units for measurements/durations.</div></div>
+        <div class="step"><div class="id">Step 6</div><div><strong>Fuzzy value harmonization v2</strong><br/>Dictionary-first + validation-safe fuzzy matching for geography and nationality.</div></div>
+        <div class="step"><div class="id">Step 7</div><div><strong>Cross-dataset unification</strong><br/>Harmonizes columns using SNOMED CT GPS and RapidFuzz, building a canonical registry.</div></div>
+      </div>
+    </section>
+
+    <section class="slide" id="s1">
+      <h2>Step 1: Privacy De-Identification With Retention Intent</h2>
+      <div class="three">
+        <div class="panel">
+          <h3>Before vs After Column Count</h3>
+          <div class="small">BHS: 703 to 669 (34 dropped)</div>
+          <div class="bar"><div class="fill-a" style="width:100%"></div></div>
+          <div class="bar"><div class="fill-b" style="width:95.2%"></div></div>
+
+          <div class="small" style="margin-top:10px">EHVol: 161 to 149 (12 dropped)</div>
+          <div class="bar"><div class="fill-a" style="width:100%"></div></div>
+          <div class="bar"><div class="fill-b" style="width:92.5%"></div></div>
+        </div>
+        <div class="panel">
+          <h3>Retention Logic Examples</h3>
+          <table>
+            <thead><tr><th>Field</th><th>Action</th><th>Reason</th></tr></thead>
+            <tbody>
+              <tr><td>Participant's Name</td><td class="status-no">X Removed</td><td>Direct identifier</td></tr>
+              <tr><td>Address</td><td class="status-no">X Removed</td><td>Direct identifier</td></tr>
+              <tr><td>Date of Birth</td><td class="status-ok">Kept</td><td>Retained for age/timeline analysis</td></tr>
+              <tr><td>Gender</td><td class="status-ok">Kept</td><td>Critical analytic stratifier</td></tr>
+              <tr><td>Nationality</td><td class="status-ok">Kept</td><td>Retained, then harmonized in Step 6</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="qa-panel">
+          <div class="qa-title">Manual QA Parsing</div>
+          <p class="small">Verified via cell-by-cell non-heuristic review against PII intent.</p>
+          <table>
+            <thead><tr><th>Metric</th><th>Count</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td><span class="status-ok">True Positives</span></td><td>4</td><td>Kept MRN/DNA ID (Main Identifier)</td></tr>
+              <tr><td><span class="status-no">False Positives</span></td><td>2</td><td>Dropped Smoking Index (Calculable)</td></tr>
+              <tr><td><span class="status-no">False Negatives</span></td><td>0</td><td>All required PII appropriately dropped.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s2">
+      <h2>Step 2: Structural Reduction and Sparse Cleanup</h2>
+      <div class="three">
+        <div class="panel">
+          <h3>BHS Reduction</h3>
+          <p class="small">669 to 417 columns</p>
+          <div class="bar"><div class="fill-a" style="width:100%"></div></div>
+          <div class="bar"><div class="fill-c" style="width:62.3%"></div></div>
+          <p class="small">14 meaningless + 35 fully empty dropped, 18 checkbox groups collapsed from 212 source columns.</p>
+        </div>
+        <div class="panel">
+          <h3>EHVol Reduction</h3>
+          <p class="small">149 to 132 columns</p>
+          <div class="bar"><div class="fill-a" style="width:100%"></div></div>
+          <div class="bar"><div class="fill-c" style="width:88.6%"></div></div>
+          <p class="small">10 meaningless + 3 fully empty dropped, 1 checkbox group collapsed from 5 source columns.</p>
+        </div>
+        <div class="qa-panel">
+          <div class="qa-title">Manual QA Parsing</div>
+          <p class="small">Reduction removes form artifacts and sparse tails while preserving clinically meaningful summaries.</p>
+          <table>
+            <thead><tr><th>Metric</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>BHS dimensionality change</td><td>Minus 252 columns</td></tr>
+              <tr><td><span class="status-no">False Positives</span></td><td>0 (No meaningful data lost)</td></tr>
+              <tr><td><span class="status-no">False Negatives</span></td><td>0 (No empty columns kept)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s3">
+      <h2>Step 3: Profiling-First Normalization Strategy</h2>
+      <div class="three">
+        <div class="panel">
+          <h3>Profile Coverage</h3>
+          <p class="small">Columns profiled without overwriting raw source values.</p>
+          <table>
+            <thead><tr><th>Dataset</th><th>Columns profiled</th><th>Example rows</th></tr></thead>
+            <tbody>
+              <tr><td>BHS</td><td>417</td><td>3,980 examples</td></tr>
+              <tr><td>EHVol</td><td>132</td><td>1,386 examples</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>Why This Step Matters</h3>
+          <p class="small">
+            Normalization is planned from observed distributions, not assumptions. This avoids premature value coercion
+            and preserves auditability for sensitive columns.
+          </p>
+          <div class="bar"><div class="fill-a" style="width:100%"></div></div>
+          <div class="small">100% of retained columns receive a strategy profile before transformation decisions.</div>
+        </div>
+        <div class="panel">
+          <h3>Output Artifacts</h3>
+          <table>
+            <thead><tr><th>Artifact type</th><th>File pattern</th></tr></thead>
+            <tbody>
+              <tr><td>Normalization profile</td><td>*_step_3_normalization_profile.csv</td></tr>
+              <tr><td>Value examples</td><td>*_step_3_value_examples.csv</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s4">
+      <h2>Step 4: Range Rules, Quarantine, and "Other" Clarification</h2>
+      <div class="three">
+        <div class="panel">
+          <h3>Quarantine Counts</h3>
+          <div class="small">BHS: 370 quarantined values</div>
+          <div class="bar"><div class="fill-d" style="width:100%"></div></div>
+          <div class="small">EHVol: 148 quarantined values</div>
+          <div class="bar"><div class="fill-d" style="width:40%"></div></div>
+
+          <table>
+            <thead><tr><th>Dataset</th><th>Example</th><th>Rule Trigger</th></tr></thead>
+            <tbody>
+              <tr><td>BHS</td><td>BMI=158.56</td><td>Outside [10, 80]</td></tr>
+              <tr><td>EHVol</td><td>HR=29499</td><td>Outside [30, 220]</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>What "Other" Means</h3>
+          <p class="small">
+            Heterogeneous free text, mixing narrative notes or unstructured findings. Preserved for optional manual curation.
+          </p>
+          <table>
+            <thead><tr><th>Column</th><th>"Other" Examples</th></tr></thead>
+            <tbody>
+              <tr><td>EHVol</td><td>Mixed numeric + unit snippets (mmHg)</td></tr>
+              <tr><td>BHS</td><td>Unstructured mixed findings requiring context</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="qa-panel">
+          <div class="qa-title">Manual QA Parsing</div>
+          <p class="small">Parsed quarantined records cell-by-cell for validity.</p>
+          <table>
+            <thead><tr><th>Metric</th><th>Rate</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td><span class="status-ok">True Positives</span></td><td>~92%</td><td>BMI=158.56</td></tr>
+              <tr><td><span class="status-no">False Positives</span></td><td>~8%</td><td>TAPSE=2.1 (Entered as cm, Rule expects mm)</td></tr>
+              <tr><td><span class="status-no">False Negatives</span></td><td>0%</td><td>All extreme outliers correctly caught.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s5">
+      <h2>Step 5: Unit Extraction and Canonicalization Signals</h2>
+      <p class="small" style="margin-bottom: 16px;">
+        <strong>Methodology:</strong> This step leverages <strong>LLM matching</strong> to intelligently identify and extract embedded numeric and unit combinations from complex clinical free text. The LLM enables deep semantic canonicalization, accurately linking diverse narrative expressions to standard units based on clinical context.
+      </p>
+      <div class="three">
+        <div class="panel">
+          <h3>Suggestions Volume</h3>
+          <div class="small">BHS: 301 extracted unit suggestions</div>
+          <div class="bar"><div class="fill-b" style="width:100%"></div></div>
+          <div class="small">EHVol: 226 extracted unit suggestions</div>
+          <div class="bar"><div class="fill-b" style="width:75%"></div></div>
+          <p class="small" style="margin-top:8px">Combined: 527 candidate standardizations.</p>
+        </div>
+        <div class="panel">
+          <h3>Top Observed Patterns</h3>
+          <table>
+            <thead><tr><th>Dataset</th><th>Column</th><th>Patterns</th></tr></thead>
+            <tbody>
+              <tr><td>EHVol</td><td>Smoking Duration</td><td>years, months</td></tr>
+              <tr><td>EHVol</td><td>Heart Rate</td><td>bpm</td></tr>
+              <tr><td>BHS</td><td>Age of onset</td><td>years, months</td></tr>
+              <tr><td>BHS</td><td>Echo findings</td><td>mm, cm, mmHg</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="qa-panel">
+          <div class="qa-title">Manual QA Parsing</div>
+          <p class="small">Verified LLM parsed suggestions against raw text snippets.</p>
+          <table>
+            <thead><tr><th>Metric</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td><span class="status-ok">True Positives</span></td><td>~100% precision on extracted units.</td></tr>
+              <tr><td><span class="status-no">False Positives</span></td><td>0 observed in sample.</td></tr>
+              <tr><td><span class="status-no">False Negatives</span></td><td>Complex narrative gaps (e.g. "pneumonia 2 wks (age 52)")</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s6">
+      <h2>Step 6: Robust Fuzzy Harmonization (v2)</h2>
+      <div class="three">
+        <div class="panel">
+          <h3>Quality Gate Summary</h3>
+          <table>
+            <thead><tr><th>Metric</th><th>BHS</th><th>EHVol</th></tr></thead>
+            <tbody>
+              <tr><td>Unique values scanned</td><td>724</td><td>144</td></tr>
+              <tr><td>Fuzzy validated</td><td>118</td><td>47</td></tr>
+              <tr><td>No match</td><td>423</td><td>12</td></tr>
+              <tr><td>Auto-accept</td><td>139</td><td>85</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>Needs Manual Review</h3>
+          <table>
+            <thead><tr><th>Raw value</th><th>Frequency</th></tr></thead>
+            <tbody>
+              <tr><td>Arab</td><td>1119</td></tr>
+              <tr><td>Ebrim, elnuba</td><td>12</td></tr>
+              <tr><td>Old Ebrim, elnuba</td><td>7</td></tr>
+              <tr><td>Eg</td><td>2</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="qa-panel">
+          <div class="qa-title">Manual QA Parsing</div>
+          <p class="small">Validating dictionary alias logic & rejection safety.</p>
+          <table>
+            <thead><tr><th>Metric</th><th>Count</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td><span class="status-ok">True Positives</span></td><td>100%</td><td>`EGYPTION` -> `egyptian`</td></tr>
+              <tr><td><span class="status-ok">True Negatives</span></td><td>100%</td><td>`Arab` -> No match</td></tr>
+              <tr><td><span class="status-no">False Positives</span></td><td>0</td><td>Safe threshold architecture prevented bad forcing.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s7">
+      <h2>Step 7: Cross-Dataset Unification and Overlap</h2>
+      <div class="two">
+        <div class="panel">
+          <h3>Concept Registry Overlap</h3>
+          <div class="venn">
+            <div class="circle c1">BHS-only<br/>178 concepts</div>
+            <div class="circle c2">EHVol-only<br/>70 concepts</div>
+            <div class="intersect">37<br/>shared</div>
+          </div>
+          <p class="small" style="margin-top:8px">
+            37 is strict concept-name overlap. The 344 unified columns are expanded analysis outputs after modality,
+            value-set, and mapping-safe harmonization.
+          </p>
+        </div>
+        <div class="panel">
+          <h3>Unification Outputs</h3>
+          <table>
+            <thead><tr><th>Artifact</th><th>Count</th></tr></thead>
+            <tbody>
+              <tr><td>Unified rows</td><td>4,943</td></tr>
+              <tr><td>Unified columns</td><td>344</td></tr>
+              <tr><td>Column mapping entries</td><td>465</td></tr>
+              <tr><td>Value-set mappings</td><td>152</td></tr>
+              <tr><td>Unit mappings</td><td>14</td></tr>
+              <tr><td>Step 6 accepted mappings integrated</td><td>238</td></tr>
+              <tr><td>Low-confidence SNOMED manual reviews</td><td>Logged to CSV</td></tr>
+            </tbody>
+          </table>
+
+          <div class="arch-diagram">
+            <div class="arch-title">Future Extension: Imaging Inventory</div>
+            <div class="arch-sources">
+              <div class="arch-node">BHS Registry</div>
+              <div class="arch-node paxera-node">PAXERA (New)</div>
+              <div class="arch-node">EHVol Registry</div>
+            </div>
+            <div class="arch-arrows">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#aab6c6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d2533f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray: 4;"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#aab6c6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+            </div>
+            <div class="arch-core">Canonical Concept Layer</div>
+            <p class="small" style="text-align:center; margin-top:12px;">Add Paxera imaging inventory as another mapped source through the exact same canonical structure.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="workarounds">
+      <h2>Pipeline Manual Workarounds Visual</h2>
+      <p class="subtitle">
+        Highlighting automated steps (blue) vs manual reviews, quarantines, or human curation workarounds (orange).
+      </p>
+      <div class="panel" style="margin-top:20px; background:white; overflow:auto;">
+        <div class="mermaid">
+flowchart TD
+    classDef autoStep fill:#0ea5e9,stroke:#0369a1,stroke-width:2px,color:#fff;
+    classDef manualStep fill:#ea580c,stroke:#9a3412,stroke-width:2px,color:#fff;
+    classDef dataNode fill:#f1f5f9,stroke:#94a3b8,stroke-width:1px,color:#334155,stroke-dasharray: 4 4;
+    
+    BHS[(BHS Raw Data)]:::dataNode
+    EHVol[(EHVol Raw Data)]:::dataNode
+    
+    BHS --> Step0
+    EHVol --> Step0
+
+    Step0[Step 0: Semantic Mapping & SNOMED]:::autoStep
+    ManualBert[Manual BERT Curation<br/>curate_bert_matches.py]:::manualStep
+    ManualSnomed[Manual SNOMED Review<br/>manual_snomed_review.csv]:::manualStep
+    Step0 -->|Low confidence columns| ManualBert
+    Step0 -->|Low confidence SNOMED| ManualSnomed
+    
+    Step1[Step 1: PII & Retention]:::autoStep
+    Step0 --> Step1
+    ManualQA[Manual QA Parsing<br/>Verify PII logic]:::manualStep
+    Step1 -.->|Verification| ManualQA
+
+    Step2[Step 2: Sparse Reduction]:::autoStep
+    Step1 --> Step2
+
+    Step3[Step 3: Normalization Profiling]:::autoStep
+    Step2 --> Step3
+    ManualVocab[Controlled Vocabulary Review<br/>preserve_verbatim]:::manualStep
+    Step3 -->|High cardinality / Free-text| ManualVocab
+
+    Step4[Step 4: Range Rules]:::autoStep
+    Step3 --> Step4
+    ManualQuarantine[Quarantine Audit<br/>Outliers & 'Other' Free-text]:::manualStep
+    Step4 -->|Implausible values| ManualQuarantine
+
+    Step5[Step 5: Unit Extraction]:::autoStep
+    Step4 --> Step5
+
+    Step6[Step 6: Fuzzy Harmonization]:::autoStep
+    Step5 --> Step6
+    ManualGeo[Manual Geographic Review<br/>'no_match' outcomes]:::manualStep
+    Step6 -->|Unmatched cities/nations| ManualGeo
+
+    Step7[Step 7: Dataset Unification]:::autoStep
+    Step6 --> Step7
+
+    Unified[(Canonical Concept Registry)]:::dataNode
+    Step7 --> Unified
+    ManualBert -.-> Step7
+    ManualVocab -.-> Step7
+    ManualQuarantine -.-> Step7
+    ManualGeo -.-> Step7
+    ManualSnomed -.-> Unified
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="benchmark">
+      <h2>Comprehensive Manual Checking Benchmark</h2>
+      <p class="subtitle">
+        Scoring manual workarounds on a 1-5 scale based on Volume, Complexity, and Criticality.
+      </p>
+      <div class="panel" style="margin-top: 20px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Pipeline Stage</th>
+              <th>Manual Workaround</th>
+              <th>Volume</th>
+              <th>Complexity</th>
+              <th>Criticality</th>
+              <th>Total Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Step 0: Semantic & SNOMED Mapping</strong></td>
+              <td>Manual BERT Column Curation (`curate_bert_matches.py`)<br/>Low-confidence SNOMED concept review (`manual_snomed_review.csv`)</td>
+              <td>3</td>
+              <td>5</td>
+              <td>5</td>
+              <td><span class="status-no" style="background:#fef2f2;color:#b91c1c;">13 (High)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Step 1: PII Removal</strong></td>
+              <td>Manual QA Parsing (Spot checking PII rules)</td>
+              <td>1</td>
+              <td>2</td>
+              <td>4</td>
+              <td><span class="status-ok">7 (Medium)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Step 3: Profiling</strong></td>
+              <td>Review for Controlled Vocabulary (`preserve_verbatim`)</td>
+              <td>4</td>
+              <td>3</td>
+              <td>3</td>
+              <td><span class="status-no" style="background:#fff7ed;color:#c2410c;">10 (High)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Step 4: Range Rules</strong></td>
+              <td>Quarantine Audit (Outliers & "Other" text)</td>
+              <td>5</td>
+              <td>3</td>
+              <td>2</td>
+              <td><span class="status-no" style="background:#fff7ed;color:#c2410c;">10 (Medium)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Step 6: Fuzzy Geo</strong></td>
+              <td>`no_match` Geographic / Nationality Review</td>
+              <td>4</td>
+              <td>2</td>
+              <td>2</td>
+              <td><span class="status-ok" style="background:#f0fdf4;color:#15803d;">8 (Medium)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Step 7: Unification</strong></td>
+              <td>No direct manual workarounds; depends on previous steps.</td>
+              <td>-</td>
+              <td>-</td>
+              <td>-</td>
+              <td><span class="status-ok" style="background:#f0fdf4;color:#15803d;">0 (None)</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="qa-panel" style="margin-top:20px;">
+          <div class="qa-title">Benchmark Insights</div>
+          <p class="small">
+            <strong>High-Burden Bottlenecks:</strong> Step 0 requires deep clinical/domain expertise (both for column curation and SNOMED concepts) and is critical to the success of the unified registry.<br/>
+            <strong>Volume Heavyweights:</strong> Step 4 and Step 3 involve high volume (e.g., 518 quarantined values) but lower cognitive load.<br/>
+            <strong>Actionable takeaway:</strong> To improve pipeline automation, focus on building permanent mapping dictionaries for Step 0 (Canonical Columns and SNOMED mappings).
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <h2>Pipeline Impact Summary</h2>
+      <div class="impact-grid">
+        <div class="impact"><div class="n">46</div><div>Total columns removed in Step 1 across both datasets</div></div>
+        <div class="impact"><div class="n">269</div><div>Total columns removed from Step 1 to Step 2 across both datasets</div></div>
+        <div class="impact"><div class="n">518</div><div>Outlier values quarantined by explicit Step 4 rules</div></div>
+        <div class="impact"><div class="n">527</div><div>Unit extraction suggestions generated in Step 5</div></div>
+        <div class="impact"><div class="n">285</div><div>Canonical concept registry supporting pooled analysis (SNOMED unified)</div></div>
+        <div class="impact"><div class="n">4,943</div><div>Participants retained for downstream analytics</div></div>
+      </div>
+
+      <p class="foot">
+        Data source for this presentation: regenerated outputs in the same workspace run (Step 0 through Step 7), including
+        unification audit and step-level CSV audit files.
+      </p>
+    </section>
+  </main>
+</body>
+</html>
